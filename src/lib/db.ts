@@ -102,6 +102,24 @@ async function getFirstStage(): Promise<{ id: number; name: string }> {
   return { id: Number(rows[0].id), name: String(rows[0].name) };
 }
 
+async function getDefaultCreateStage(): Promise<{ id: number; name: string }> {
+  await ensureSchema();
+
+  const appliedRows = (await sql`
+    SELECT id, name
+    FROM stages
+    WHERE LOWER(name) = LOWER(${ "Applied" })
+    ORDER BY sort_order ASC, id ASC
+    LIMIT 1;
+  `) as Record<string, unknown>[];
+
+  if (appliedRows.length > 0) {
+    return { id: Number(appliedRows[0].id), name: String(appliedRows[0].name) };
+  }
+
+  return getFirstStage();
+}
+
 async function selectApplicationById(id: number): Promise<Application | null> {
   await ensureSchema();
 
@@ -289,7 +307,7 @@ export async function createApplication(input: CreateApplicationInput): Promise<
   const stage =
     selectedStageRows.length > 0
       ? { id: Number(selectedStageRows[0].id), name: String(selectedStageRows[0].name) }
-      : await getFirstStage();
+      : await getDefaultCreateStage();
 
   const insertRows = (await sql`
     INSERT INTO applications (
@@ -315,11 +333,6 @@ export async function createApplication(input: CreateApplicationInput): Promise<
   `) as Record<string, unknown>[];
 
   const applicationId = Number(insertRows[0].id);
-
-  await sql`
-    INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
-    VALUES (${applicationId}, ${"created"}, ${stage.name}, NOW());
-  `;
 
   const application = await selectApplicationById(applicationId);
   if (!application) {
@@ -399,13 +412,14 @@ export async function getSankeyData(): Promise<SankeyPayload> {
   const transitions = (await sql`
     SELECT from_status AS fromStatus, to_status AS toStatus, COUNT(*)::int AS value
     FROM application_transitions
+    WHERE LOWER(from_status) <> LOWER(${ "created" }) AND LOWER(to_status) <> LOWER(${ "created" })
     GROUP BY from_status, to_status;
   `) as Record<string, unknown>[];
 
   const stages = await listStages();
   const currentStageNames = stages.map((stage) => stage.name);
   const transitionStageNames = transitions.flatMap((row) => [String(row.fromstatus), String(row.tostatus)]);
-  const nodeNames = Array.from(new Set(["created", ...currentStageNames, ...transitionStageNames]));
+  const nodeNames = Array.from(new Set([...currentStageNames, ...transitionStageNames]));
 
   return {
     nodes: nodeNames.map((name) => ({ name })),

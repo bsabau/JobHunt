@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "reset:db": "node scripts/reset-neon-db.mjs"
+    "reset:db": "node scripts/reset-neon-db.mjs",
+    "cleanup:created": "node scripts/cleanup-created-transitions.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",

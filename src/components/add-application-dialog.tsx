@@ -22,6 +22,11 @@ interface AddApplicationDialogProps {
   onCreated: (application: Application) => void;
 }
 
+function getDefaultStageId(stages: Stage[]): number {
+  const applied = stages.find((stage) => stage.name.trim().toLowerCase() === "applied");
+  return applied?.id ?? stages[0]?.id ?? 0;
+}
+
 export function AddApplicationDialog({ stages, onCreated }: AddApplicationDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -30,12 +35,12 @@ export function AddApplicationDialog({ stages, onCreated }: AddApplicationDialog
     role: "",
     sourceUrl: "",
     notes: "",
-    stageId: stages[0]?.id ?? 0
+    stageId: getDefaultStageId(stages)
   });
 
   useEffect(() => {
     if (!stages.find((stage) => stage.id === form.stageId)) {
-      setForm((current) => ({ ...current, stageId: stages[0]?.id ?? 0 }));
+      setForm((current) => ({ ...current, stageId: getDefaultStageId(stages) }));
     }
   }, [stages, form.stageId]);
 
@@ -57,7 +62,7 @@ export function AddApplicationDialog({ stages, onCreated }: AddApplicationDialog
       const created = (await response.json()) as Application;
       onCreated(created);
       setOpen(false);
-      setForm({ company: "", role: "", sourceUrl: "", notes: "", stageId: stages[0]?.id ?? 0 });
+      setForm({ company: "", role: "", sourceUrl: "", notes: "", stageId: getDefaultStageId(stages) });
     } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "Could not add application.");
