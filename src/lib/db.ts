@@ -401,15 +401,43 @@ export async function getSankeyData(): Promise<SankeyPayload> {
 
   const stages = await listStages();
   const currentStageNames = stages.map((stage) => stage.name);
+
+  const stageCounts = (await sql`
+    SELECT s.name AS stageName, COUNT(*)::int AS value
+    FROM applications a
+    JOIN stages s ON s.id = a.stage_id
+    GROUP BY s.name;
+  `) as Record<string, unknown>[];
+
   const transitionStageNames = transitions.flatMap((row) => [String(row.fromstatus), String(row.tostatus)]);
+
+  if (transitions.length === 0 && stageCounts.length > 0) {
+    const defaultStage = await getDefaultCreateStage();
+    const initialNode = `${defaultStage.name} (initial)`;
+    const nodeNames = Array.from(new Set([initialNode, ...currentStageNames, ...stageCounts.map((row) => String(row.stagename))]));
+
+    return {
+      nodes: nodeNames.map((name) => ({ name })),
+      links: stageCounts
+        .map((row) => ({
+          source: nodeNames.indexOf(initialNode),
+          target: nodeNames.indexOf(String(row.stagename)),
+          value: Number(row.value)
+        }))
+        .filter((link) => link.source >= 0 && link.target >= 0 && link.value > 0)
+    };
+  }
+
   const nodeNames = Array.from(new Set([...currentStageNames, ...transitionStageNames]));
 
   return {
     nodes: nodeNames.map((name) => ({ name })),
-    links: transitions.map((row) => ({
-      source: nodeNames.indexOf(String(row.fromstatus)),
-      target: nodeNames.indexOf(String(row.tostatus)),
-      value: Number(row.value)
-    }))
+    links: transitions
+      .map((row) => ({
+        source: nodeNames.indexOf(String(row.fromstatus)),
+        target: nodeNames.indexOf(String(row.tostatus)),
+        value: Number(row.value)
+      }))
+      .filter((link) => link.source >= 0 && link.target >= 0 && link.value > 0)
   };
 }
