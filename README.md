@@ -40,7 +40,6 @@ npm run migrate:up
 Other commands:
 
 ```bash
-npm run migrate:down
 npm run migrate:create -- <migration-name>
 ```
 

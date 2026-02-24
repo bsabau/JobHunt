@@ -7,9 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "migrate:up": "node-pg-migrate up -m migrations",
-    "migrate:down": "node-pg-migrate down -m migrations",
-    "migrate:create": "node-pg-migrate create -m migrations",
+    "migrate:up": "node scripts/migrate-up.mjs",
+    "migrate:create": "node scripts/migrate-create.mjs",
     "reset:db": "node scripts/reset-neon-db.mjs",
     "cleanup:created": "node scripts/cleanup-created-transitions.mjs"
   },
@@ -36,7 +35,6 @@
     "@types/react-dom": "^19.1.5",
     "eslint": "^9.39.3",
     "eslint-config-next": "^16.1.6",
-    "node-pg-migrate": "^8.0.3",
     "tailwindcss": "^4.1.8",
     "typescript": "^5.8.3"
   },
