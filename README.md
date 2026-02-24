@@ -31,10 +31,26 @@ DATABASE_URL="postgresql://..."
 
 For Vercel deployment, add the same `DATABASE_URL` value in Project Settings -> Environment Variables.
 
+## Database migrations
+
+```bash
+npm run migrate:up
+```
+
+Other commands:
+
+```bash
+npm run migrate:down
+npm run migrate:create -- <migration-name>
+```
+
+Run migrations before starting the app in a new environment.
+
 ## Run locally
 
 ```bash
 npm install
+npm run migrate:up
 npm run dev
 ```
 

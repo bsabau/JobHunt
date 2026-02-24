@@ -1,5 +1,4 @@
 import { neon } from "@neondatabase/serverless";
-import { DEFAULT_STAGE_NAMES } from "@/lib/constants";
 import { Application, SankeyPayload, Stage } from "@/lib/types";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -40,44 +39,28 @@ function mapApplication(row: Record<string, unknown>): Application {
 async function ensureSchema(): Promise<void> {
   if (!schemaReadyPromise) {
     schemaReadyPromise = (async () => {
-      await sql`
-        CREATE TABLE IF NOT EXISTS stages (
-          id SERIAL PRIMARY KEY,
-          name TEXT NOT NULL UNIQUE,
-          sort_order INTEGER NOT NULL
-        );
-      `;
+      const checks = (await sql`
+        SELECT
+          EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'stages'
+          ) AS has_stages,
+          EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'applications'
+          ) AS has_applications,
+          EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'application_transitions'
+          ) AS has_application_transitions;
+      `) as Record<string, unknown>[];
 
-      await sql`
-        CREATE TABLE IF NOT EXISTS applications (
-          id SERIAL PRIMARY KEY,
-          company TEXT NOT NULL,
-          role TEXT NOT NULL,
-          notes TEXT,
-          source_url TEXT,
-          logo_url TEXT,
-          stage_id INTEGER NOT NULL REFERENCES stages(id) ON DELETE RESTRICT,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS application_transitions (
-          id SERIAL PRIMARY KEY,
-          application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-          from_status TEXT NOT NULL,
-          to_status TEXT NOT NULL,
-          transitioned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-      `;
-
-      for (const [index, name] of DEFAULT_STAGE_NAMES.entries()) {
-        await sql`
-          INSERT INTO stages (name, sort_order)
-          VALUES (${name}, ${index})
-          ON CONFLICT (name) DO NOTHING;
-        `;
+      const row = checks[0];
+      if (!row.has_stages || !row.has_applications || !row.has_application_transitions) {
+        throw new Error("Database schema is missing. Run `npm run migrate:up`.");
       }
     })();
   }
