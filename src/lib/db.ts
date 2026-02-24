@@ -27,6 +27,7 @@ function mapApplication(row: Record<string, unknown>): Application {
     company: String(row.company),
     role: String(row.role),
     notes: row.notes ? String(row.notes) : null,
+    interviewDate: row.interviewdate ? String(row.interviewdate) : null,
     sourceUrl: row.sourceurl ? String(row.sourceurl) : null,
     logoUrl: row.logourl ? String(row.logourl) : null,
     stageId: Number(row.stageid),
@@ -112,6 +113,7 @@ async function selectApplicationById(id: number): Promise<Application | null> {
       a.company,
       a.role,
       a.notes,
+      a.interview_date AS interviewDate,
       a.source_url AS sourceUrl,
       a.logo_url AS logoUrl,
       a.stage_id AS stageId,
@@ -247,6 +249,7 @@ export async function listApplications(): Promise<Application[]> {
       a.company,
       a.role,
       a.notes,
+      a.interview_date AS interviewDate,
       a.source_url AS sourceUrl,
       a.logo_url AS logoUrl,
       a.stage_id AS stageId,
@@ -265,6 +268,7 @@ interface CreateApplicationInput {
   company: string;
   role: string;
   notes?: string;
+  interviewDate?: string | null;
   sourceUrl?: string;
   logoUrl?: string | null;
   stageId?: number;
@@ -297,6 +301,7 @@ export async function createApplication(input: CreateApplicationInput): Promise<
       company,
       role,
       notes,
+      interview_date,
       source_url,
       logo_url,
       stage_id,
@@ -306,6 +311,7 @@ export async function createApplication(input: CreateApplicationInput): Promise<
       ${input.company.trim()},
       ${input.role.trim()},
       ${input.notes?.trim() || null},
+      ${input.interviewDate ? input.interviewDate : null},
       ${input.sourceUrl?.trim() || null},
       ${input.logoUrl || null},
       ${stage.id},
@@ -387,6 +393,69 @@ export async function deleteApplication(id: number): Promise<boolean> {
   `) as Record<string, unknown>[];
 
   return deletedRows.length > 0;
+}
+
+interface UpdateApplicationInput {
+  company: string;
+  role: string;
+  notes?: string;
+  interviewDate?: string | null;
+  sourceUrl?: string;
+  stageId: number;
+}
+
+export async function updateApplication(id: number, input: UpdateApplicationInput): Promise<Application | null> {
+  await ensureSchema();
+
+  const currentRows = (await sql`
+    SELECT a.id, a.stage_id AS stageId, s.name AS stageName
+    FROM applications a
+    JOIN stages s ON s.id = a.stage_id
+    WHERE a.id = ${id}
+    LIMIT 1;
+  `) as Record<string, unknown>[];
+
+  if (currentRows.length === 0) {
+    return null;
+  }
+
+  const targetRows = (await sql`
+    SELECT id, name
+    FROM stages
+    WHERE id = ${input.stageId}
+    LIMIT 1;
+  `) as Record<string, unknown>[];
+
+  if (targetRows.length === 0) {
+    throw new Error("Target stage not found");
+  }
+
+  await sql`
+    UPDATE applications
+    SET
+      company = ${input.company.trim()},
+      role = ${input.role.trim()},
+      notes = ${input.notes?.trim() || null},
+      interview_date = ${input.interviewDate ? input.interviewDate : null},
+      source_url = ${input.sourceUrl?.trim() || null},
+      stage_id = ${Number(targetRows[0].id)},
+      updated_at = NOW()
+    WHERE id = ${id};
+  `;
+
+  const currentStageName = String(currentRows[0].stagename);
+  const currentStageId = Number(currentRows[0].stageid);
+  const targetStageName = String(targetRows[0].name);
+  const targetStageId = Number(targetRows[0].id);
+
+  if (currentStageId !== targetStageId) {
+    await sql`
+      INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
+      VALUES (${id}, ${currentStageName}, ${targetStageName}, NOW());
+    `;
+  }
+
+  return selectApplicationById(id);
 }
 
 export async function getSankeyData(): Promise<SankeyPayload> {

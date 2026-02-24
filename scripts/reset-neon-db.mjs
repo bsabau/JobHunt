@@ -39,6 +39,7 @@ await sql`
     company TEXT NOT NULL,
     role TEXT NOT NULL,
     notes TEXT,
+    interview_date DATE,
     source_url TEXT,
     logo_url TEXT,
     stage_id INTEGER NOT NULL REFERENCES stages(id) ON DELETE RESTRICT,

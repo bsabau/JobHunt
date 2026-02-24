@@ -7,6 +7,7 @@ import { Application, Stage } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AddApplicationDialog } from "@/components/add-application-dialog";
+import { EditApplicationDialog } from "@/components/edit-application-dialog";
 
 interface KanbanBoardProps {
   initialApplications: Application[];
@@ -54,6 +55,8 @@ function CompanyLogo({ company, logoUrl, logoBgClass }: { company: string; logoU
 export function KanbanBoard({ initialApplications, initialStages }: KanbanBoardProps) {
   const [applications, setApplications] = useState<Application[]>(initialApplications);
   const [stages, setStages] = useState<Stage[]>(initialStages);
+  const [editingApplication, setEditingApplication] = useState<Application | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
   const [draggedItem, setDraggedItem] = useState<DragItem>(null);
   const [stageDropTargetId, setStageDropTargetId] = useState<number | null>(null);
   const [binHover, setBinHover] = useState(false);
@@ -189,6 +192,10 @@ export function KanbanBoard({ initialApplications, initialStages }: KanbanBoardP
     setBinHover(false);
   }
 
+  function formatInterviewDate(date: string) {
+    return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date(date));
+  }
+
   async function onDropToBin() {
     if (!draggedItem) {
       return;
@@ -272,6 +279,10 @@ export function KanbanBoard({ initialApplications, initialStages }: KanbanBoardP
                     draggable
                     onDragStart={() => setDraggedItem({ type: "application", id: app.id })}
                     onDragEnd={onAnyDragEnd}
+                    onDoubleClick={() => {
+                      setEditingApplication(app);
+                      setEditOpen(true);
+                    }}
                     className="cursor-move border-border/70 bg-card/80 backdrop-blur"
                   >
                     <CardHeader className="pb-3">
@@ -282,7 +293,6 @@ export function KanbanBoard({ initialApplications, initialStages }: KanbanBoardP
                         <CompanyLogo company={app.company} logoUrl={app.logoUrl} logoBgClass={tone.logoBg} />
                         <p className="text-sm text-muted-foreground">{app.role}</p>
                       </div>
-                      {app.notes ? <p className="text-xs text-muted-foreground">{app.notes}</p> : null}
                       {app.sourceUrl ? (
                         <a
                           className="text-xs font-medium text-sky-400 hover:text-sky-300"
@@ -292,6 +302,14 @@ export function KanbanBoard({ initialApplications, initialStages }: KanbanBoardP
                         >
                           Job post
                         </a>
+                      ) : null}
+                      {app.notes || app.interviewDate ? (
+                        <div className="space-y-1 rounded-md border border-border/60 bg-background/70 p-2">
+                          {app.interviewDate ? (
+                            <p className="text-xs text-amber-300">Interview: {formatInterviewDate(app.interviewDate)}</p>
+                          ) : null}
+                          {app.notes ? <p className="text-xs text-muted-foreground">{app.notes}</p> : null}
+                        </div>
                       ) : null}
                     </CardContent>
                   </Card>
@@ -323,6 +341,16 @@ export function KanbanBoard({ initialApplications, initialStages }: KanbanBoardP
           <Trash2 className="h-7 w-7" />
         </div>
       </div>
+      <EditApplicationDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        application={editingApplication}
+        stages={stages}
+        onUpdated={(updated) => {
+          setApplications((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+          setEditingApplication(updated);
+        }}
+      />
     </section>
   );
 }

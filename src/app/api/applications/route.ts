@@ -21,6 +21,7 @@ export async function POST(request: NextRequest) {
       company: String(payload.company),
       role: String(payload.role),
       notes: payload.notes ? String(payload.notes) : undefined,
+      interviewDate: payload.interviewDate ? String(payload.interviewDate) : undefined,
       sourceUrl: payload.sourceUrl ? String(payload.sourceUrl) : undefined,
       stageId: payload.stageId ? Number(payload.stageId) : undefined,
       logoUrl

@@ -9,6 +9,7 @@ export interface Application {
   company: string;
   role: string;
   notes: string | null;
+  interviewDate: string | null;
   sourceUrl: string | null;
   logoUrl: string | null;
   stageId: number;
