@@ -24,6 +24,24 @@ interface EditApplicationDialogProps {
   onUpdated: (application: Application) => void;
 }
 
+function normalizeDateForInput(value: string | null): string {
+  if (!value) {
+    return "";
+  }
+
+  // Prefer already-normalized date strings from API.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+
+  return parsed.toISOString().slice(0, 10);
+}
+
 export function EditApplicationDialog({ open, onOpenChange, application, stages, onUpdated }: EditApplicationDialogProps) {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
@@ -45,7 +63,7 @@ export function EditApplicationDialog({ open, onOpenChange, application, stages,
       role: application.role,
       sourceUrl: application.sourceUrl ?? "",
       notes: application.notes ?? "",
-      interviewDate: application.interviewDate ?? "",
+      interviewDate: normalizeDateForInput(application.interviewDate),
       stageId: application.stageId
     });
   }, [application]);
