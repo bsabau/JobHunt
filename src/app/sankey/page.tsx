@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SankeyChart } from "@/components/sankey-chart";
+import { LogoutButton } from "@/components/logout-button";
 import { Button } from "@/components/ui/button";
 import { getSankeyData } from "@/lib/db";
 
@@ -15,9 +16,12 @@ export default async function SankeyPage() {
           <p className="text-xs uppercase tracking-[0.25em] text-sky-300/80">Analytics</p>
           <h1 className="text-3xl font-bold">Application Flow</h1>
         </div>
-        <Button variant="outline" asChild>
-          <Link href="/">Back to Board</Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/">Back to Board</Link>
+          </Button>
+          <LogoutButton />
+        </div>
       </div>
       <SankeyChart data={sankey} />
     </main>
