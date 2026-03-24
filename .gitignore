@@ -11,3 +11,4 @@ pnpm-debug.log*
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+tsconfig.tsbuildinfo
