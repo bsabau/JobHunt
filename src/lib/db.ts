@@ -478,35 +478,54 @@ export async function getSankeyData(): Promise<SankeyPayload> {
     GROUP BY s.name;
   `) as Record<string, unknown>[];
 
+  // Applications that have never been moved — they sit in their original stage
+  // with no rows in application_transitions.
+  const unmoved = (await sql`
+    SELECT s.name AS stageName, COUNT(*)::int AS value
+    FROM applications a
+    JOIN stages s ON s.id = a.stage_id
+    WHERE NOT EXISTS (
+      SELECT 1 FROM application_transitions t WHERE t.application_id = a.id
+    )
+    GROUP BY s.name;
+  `) as Record<string, unknown>[];
+
   const transitionStageNames = transitions.flatMap((row) => [String(row.fromstatus), String(row.tostatus)]);
 
-  if (transitions.length === 0 && stageCounts.length > 0) {
-    const defaultStage = await getDefaultCreateStage();
-    const initialNode = `${defaultStage.name} (initial)`;
-    const nodeNames = Array.from(new Set([initialNode, ...currentStageNames, ...stageCounts.map((row) => String(row.stagename))]));
+  const defaultStage = await getDefaultCreateStage();
+  const initialNode = `${defaultStage.name} (initial)`;
 
-    return {
-      nodes: nodeNames.map((name) => ({ name })),
-      links: stageCounts
-        .map((row) => ({
-          source: nodeNames.indexOf(initialNode),
-          target: nodeNames.indexOf(String(row.stagename)),
-          value: Number(row.value)
-        }))
-        .filter((link) => link.source >= 0 && link.target >= 0 && link.value > 0)
-    };
+  const nodeNames = Array.from(new Set([
+    initialNode,
+    ...currentStageNames,
+    ...transitionStageNames,
+    ...stageCounts.map((row) => String(row.stagename))
+  ]));
+
+  const links: { source: number; target: number; value: number }[] = [];
+
+  // Add transition-based links
+  for (const row of transitions) {
+    const source = nodeNames.indexOf(String(row.fromstatus));
+    const target = nodeNames.indexOf(String(row.tostatus));
+    const value = Number(row.value);
+    if (source >= 0 && target >= 0 && value > 0) {
+      links.push({ source, target, value });
+    }
   }
 
-  const nodeNames = Array.from(new Set([...currentStageNames, ...transitionStageNames]));
+  // Add initial-placement links for applications that never moved
+  for (const row of unmoved) {
+    const target = nodeNames.indexOf(String(row.stagename));
+    const source = nodeNames.indexOf(initialNode);
+    const value = Number(row.value);
+    if (source >= 0 && target >= 0 && value > 0) {
+      links.push({ source, target, value });
+    }
+  }
 
   return {
     nodes: nodeNames.map((name) => ({ name })),
-    links: transitions
-      .map((row) => ({
-        source: nodeNames.indexOf(String(row.fromstatus)),
-        target: nodeNames.indexOf(String(row.tostatus)),
-        value: Number(row.value)
-      }))
-      .filter((link) => link.source >= 0 && link.target >= 0 && link.value > 0)
+    links
   };
 }
