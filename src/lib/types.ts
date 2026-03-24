@@ -19,6 +19,6 @@ export interface Application {
 }
 
 export interface SankeyPayload {
-  nodes: { name: string }[];
-  links: { source: number; target: number; value: number }[];
+  nodes: { name: string; companies?: string[] }[];
+  links: { source: number; target: number; value: number; companies?: string[] }[];
 }

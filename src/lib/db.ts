@@ -461,71 +461,103 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
 export async function getSankeyData(): Promise<SankeyPayload> {
   await ensureSchema();
 
-  const transitions = (await sql`
-    SELECT from_status AS fromStatus, to_status AS toStatus, COUNT(*)::int AS value
-    FROM application_transitions
-    WHERE LOWER(from_status) <> LOWER(${ "created" }) AND LOWER(to_status) <> LOWER(${ "created" })
-    GROUP BY from_status, to_status;
+  // Transition counts with company names
+  const transitionDetails = (await sql`
+    SELECT t.from_status AS fromStatus, t.to_status AS toStatus, a.company
+    FROM application_transitions t
+    JOIN applications a ON a.id = t.application_id
+    WHERE LOWER(t.from_status) <> LOWER(${ "created" }) AND LOWER(t.to_status) <> LOWER(${ "created" });
   `) as Record<string, unknown>[];
+
+  // Group transitions: key = "from|to", value = { count, companies }
+  const transitionMap = new Map<string, { from: string; to: string; count: number; companies: string[] }>();
+  for (const row of transitionDetails) {
+    const from = String(row.fromstatus);
+    const to = String(row.tostatus);
+    const key = `${from}|${to}`;
+    const entry = transitionMap.get(key) ?? { from, to, count: 0, companies: [] };
+    entry.count += 1;
+    entry.companies.push(String(row.company));
+    transitionMap.set(key, entry);
+  }
 
   const stages = await listStages();
   const currentStageNames = stages.map((stage) => stage.name);
 
-  const stageCounts = (await sql`
-    SELECT s.name AS stageName, COUNT(*)::int AS value
+  // For each application, determine the entry stage and collect company names
+  const entryDetails = (await sql`
+    SELECT
+      COALESCE(
+        (SELECT t.from_status FROM application_transitions t
+         WHERE t.application_id = a.id
+         ORDER BY t.transitioned_at ASC LIMIT 1),
+        s.name
+      ) AS entryStage,
+      a.company
     FROM applications a
-    JOIN stages s ON s.id = a.stage_id
-    GROUP BY s.name;
+    JOIN stages s ON s.id = a.stage_id;
   `) as Record<string, unknown>[];
 
-  // Applications that have never been moved — they sit in their original stage
-  // with no rows in application_transitions.
-  const unmoved = (await sql`
-    SELECT s.name AS stageName, COUNT(*)::int AS value
+  const entryMap = new Map<string, { count: number; companies: string[] }>();
+  for (const row of entryDetails) {
+    const stage = String(row.entrystage);
+    const entry = entryMap.get(stage) ?? { count: 0, companies: [] };
+    entry.count += 1;
+    entry.companies.push(String(row.company));
+    entryMap.set(stage, entry);
+  }
+
+  // Companies currently in each stage (for node tooltips)
+  const nodeCompanies = (await sql`
+    SELECT s.name AS stageName, a.company
     FROM applications a
-    JOIN stages s ON s.id = a.stage_id
-    WHERE NOT EXISTS (
-      SELECT 1 FROM application_transitions t WHERE t.application_id = a.id
-    )
-    GROUP BY s.name;
+    JOIN stages s ON s.id = a.stage_id;
   `) as Record<string, unknown>[];
 
-  const transitionStageNames = transitions.flatMap((row) => [String(row.fromstatus), String(row.tostatus)]);
+  const nodeCompanyMap = new Map<string, string[]>();
+  for (const row of nodeCompanies) {
+    const stage = String(row.stagename);
+    const list = nodeCompanyMap.get(stage) ?? [];
+    list.push(String(row.company));
+    nodeCompanyMap.set(stage, list);
+  }
 
-  const defaultStage = await getDefaultCreateStage();
-  const initialNode = `${defaultStage.name} (initial)`;
+  const transitionStageNames = Array.from(transitionMap.values()).flatMap((t) => [t.from, t.to]);
+
+  const entryNode = "New";
 
   const nodeNames = Array.from(new Set([
-    initialNode,
+    entryNode,
     ...currentStageNames,
     ...transitionStageNames,
-    ...stageCounts.map((row) => String(row.stagename))
+    ...Array.from(entryMap.keys())
   ]));
 
-  const links: { source: number; target: number; value: number }[] = [];
+  const links: { source: number; target: number; value: number; companies: string[] }[] = [];
 
-  // Add transition-based links
-  for (const row of transitions) {
-    const source = nodeNames.indexOf(String(row.fromstatus));
-    const target = nodeNames.indexOf(String(row.tostatus));
-    const value = Number(row.value);
-    if (source >= 0 && target >= 0 && value > 0) {
-      links.push({ source, target, value });
+  // Add entry links: New → entry stage for all applications
+  for (const [stage, data] of entryMap) {
+    const source = nodeNames.indexOf(entryNode);
+    const target = nodeNames.indexOf(stage);
+    if (source >= 0 && target >= 0 && data.count > 0) {
+      links.push({ source, target, value: data.count, companies: data.companies });
     }
   }
 
-  // Add initial-placement links for applications that never moved
-  for (const row of unmoved) {
-    const target = nodeNames.indexOf(String(row.stagename));
-    const source = nodeNames.indexOf(initialNode);
-    const value = Number(row.value);
-    if (source >= 0 && target >= 0 && value > 0) {
-      links.push({ source, target, value });
+  // Add transition-based links between stages
+  for (const data of transitionMap.values()) {
+    const source = nodeNames.indexOf(data.from);
+    const target = nodeNames.indexOf(data.to);
+    if (source >= 0 && target >= 0 && data.count > 0) {
+      links.push({ source, target, value: data.count, companies: data.companies });
     }
   }
 
   return {
-    nodes: nodeNames.map((name) => ({ name })),
+    nodes: nodeNames.map((name) => ({
+      name,
+      companies: nodeCompanyMap.get(name) ?? []
+    })),
     links
   };
 }
