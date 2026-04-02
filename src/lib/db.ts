@@ -331,11 +331,60 @@ export async function createApplication(input: CreateApplicationInput): Promise<
   return application;
 }
 
+async function recordTransition(
+  applicationId: number,
+  currentStageName: string,
+  targetStageName: string,
+  targetSortOrder: number,
+  currentSortOrder: number
+): Promise<void> {
+  const isBackward = targetSortOrder < currentSortOrder;
+
+  if (isBackward) {
+    // Delete transitions where to_status points to a stage at or after the target
+    await sql`
+      DELETE FROM application_transitions
+      WHERE application_id = ${applicationId}
+        AND id IN (
+          SELECT t.id FROM application_transitions t
+          JOIN stages s ON s.name = t.to_status
+          WHERE t.application_id = ${applicationId}
+            AND s.sort_order >= ${targetSortOrder}
+        );
+    `;
+
+    // Get the last remaining transition's to_status to use as from_status
+    const lastRows = (await sql`
+      SELECT to_status FROM application_transitions
+      WHERE application_id = ${applicationId}
+      ORDER BY transitioned_at DESC
+      LIMIT 1;
+    `) as Record<string, unknown>[];
+
+    const fromStatus = lastRows.length > 0 ? String(lastRows[0].to_status) : null;
+
+    // Only add transition if there's a prior stage to transition from
+    // and it's different from the target
+    if (fromStatus && fromStatus !== targetStageName) {
+      await sql`
+        INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
+        VALUES (${applicationId}, ${fromStatus}, ${targetStageName}, NOW());
+      `;
+    }
+  } else {
+    // Forward move: simple append
+    await sql`
+      INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
+      VALUES (${applicationId}, ${currentStageName}, ${targetStageName}, NOW());
+    `;
+  }
+}
+
 export async function updateApplicationStage(id: number, toStageId: number): Promise<Application | null> {
   await ensureSchema();
 
   const currentRows = (await sql`
-    SELECT a.id, a.stage_id AS stageId, s.name AS stageName
+    SELECT a.id, a.stage_id AS stageId, s.name AS stageName, s.sort_order AS sortOrder
     FROM applications a
     JOIN stages s ON s.id = a.stage_id
     WHERE a.id = ${id}
@@ -347,7 +396,7 @@ export async function updateApplicationStage(id: number, toStageId: number): Pro
   }
 
   const targetRows = (await sql`
-    SELECT id, name
+    SELECT id, name, sort_order AS sortOrder
     FROM stages
     WHERE id = ${toStageId}
     LIMIT 1;
@@ -359,8 +408,10 @@ export async function updateApplicationStage(id: number, toStageId: number): Pro
 
   const currentStageId = Number(currentRows[0].stageid);
   const currentStageName = String(currentRows[0].stagename);
+  const currentSortOrder = Number(currentRows[0].sortorder);
   const targetStageId = Number(targetRows[0].id);
   const targetStageName = String(targetRows[0].name);
+  const targetSortOrder = Number(targetRows[0].sortorder);
 
   if (currentStageId !== targetStageId) {
     await sql`
@@ -369,10 +420,7 @@ export async function updateApplicationStage(id: number, toStageId: number): Pro
       WHERE id = ${id};
     `;
 
-    await sql`
-      INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
-      VALUES (${id}, ${currentStageName}, ${targetStageName}, NOW());
-    `;
+    await recordTransition(id, currentStageName, targetStageName, targetSortOrder, currentSortOrder);
   }
 
   return selectApplicationById(id);
@@ -408,7 +456,7 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
   await ensureSchema();
 
   const currentRows = (await sql`
-    SELECT a.id, a.stage_id AS stageId, s.name AS stageName
+    SELECT a.id, a.stage_id AS stageId, s.name AS stageName, s.sort_order AS sortOrder
     FROM applications a
     JOIN stages s ON s.id = a.stage_id
     WHERE a.id = ${id}
@@ -420,7 +468,7 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
   }
 
   const targetRows = (await sql`
-    SELECT id, name
+    SELECT id, name, sort_order AS sortOrder
     FROM stages
     WHERE id = ${input.stageId}
     LIMIT 1;
@@ -430,6 +478,13 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
     throw new Error("Target stage not found");
   }
 
+  const currentStageId = Number(currentRows[0].stageid);
+  const currentStageName = String(currentRows[0].stagename);
+  const currentSortOrder = Number(currentRows[0].sortorder);
+  const targetStageId = Number(targetRows[0].id);
+  const targetStageName = String(targetRows[0].name);
+  const targetSortOrder = Number(targetRows[0].sortorder);
+
   await sql`
     UPDATE applications
     SET
@@ -438,21 +493,13 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
       notes = ${input.notes?.trim() || null},
       interview_date = ${input.interviewDate ? input.interviewDate : null},
       source_url = ${input.sourceUrl?.trim() || null},
-      stage_id = ${Number(targetRows[0].id)},
+      stage_id = ${targetStageId},
       updated_at = NOW()
     WHERE id = ${id};
   `;
 
-  const currentStageName = String(currentRows[0].stagename);
-  const currentStageId = Number(currentRows[0].stageid);
-  const targetStageName = String(targetRows[0].name);
-  const targetStageId = Number(targetRows[0].id);
-
   if (currentStageId !== targetStageId) {
-    await sql`
-      INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
-      VALUES (${id}, ${currentStageName}, ${targetStageName}, NOW());
-    `;
+    await recordTransition(id, currentStageName, targetStageName, targetSortOrder, currentSortOrder);
   }
 
   return selectApplicationById(id);
