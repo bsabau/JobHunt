@@ -12,6 +12,7 @@ import { EditApplicationDialog } from "@/components/edit-application-dialog";
 interface KanbanBoardProps {
   initialApplications: Application[];
   initialStages: Stage[];
+  readOnly?: boolean;
 }
 
 type DragItem =
@@ -52,7 +53,7 @@ function CompanyLogo({ company, logoUrl, logoBgClass }: { company: string; logoU
   );
 }
 
-export function KanbanBoard({ initialApplications, initialStages }: KanbanBoardProps) {
+export function KanbanBoard({ initialApplications, initialStages, readOnly = false }: KanbanBoardProps) {
   const [applications, setApplications] = useState<Application[]>(initialApplications);
   const [stages, setStages] = useState<Stage[]>(initialStages);
   const [editingApplication, setEditingApplication] = useState<Application | null>(null);
@@ -222,14 +223,18 @@ export function KanbanBoard({ initialApplications, initialStages }: KanbanBoardP
           <Button variant="outline" asChild>
             <a href="/sankey">View Sankey</a>
           </Button>
-          <Button variant="outline" onClick={() => void addStage()}>
-            <Plus className="mr-1 h-4 w-4" />
-            Add Stage
-          </Button>
-          <AddApplicationDialog
-            stages={stages}
-            onCreated={(app) => setApplications((current) => [app, ...current])}
-          />
+          {!readOnly && (
+            <>
+              <Button variant="outline" onClick={() => void addStage()}>
+                <Plus className="mr-1 h-4 w-4" />
+                Add Stage
+              </Button>
+              <AddApplicationDialog
+                stages={stages}
+                onCreated={(app) => setApplications((current) => [app, ...current])}
+              />
+            </>
+          )}
         </div>
       </div>
 
@@ -258,11 +263,11 @@ export function KanbanBoard({ initialApplications, initialStages }: KanbanBoardP
               onDrop={() => void onDropToStage(stage.id)}
             >
               <div
-                className="mb-3 flex cursor-grab items-center justify-between gap-2 rounded-md border border-dashed border-border/50 px-2 py-1 active:cursor-grabbing"
-                draggable
-                onDragStart={() => onStageHeaderDragStart(stage.id)}
-                onDragEnd={onAnyDragEnd}
-                title="Drag to reorder stage"
+                className={`mb-3 flex items-center justify-between gap-2 rounded-md border border-dashed border-border/50 px-2 py-1 ${readOnly ? "" : "cursor-grab active:cursor-grabbing"}`}
+                draggable={!readOnly}
+                onDragStart={readOnly ? undefined : () => onStageHeaderDragStart(stage.id)}
+                onDragEnd={readOnly ? undefined : onAnyDragEnd}
+                title={readOnly ? undefined : "Drag to reorder stage"}
               >
                 <h3 className="truncate text-sm font-semibold tracking-wide text-muted-foreground">{stage.name}</h3>
                 <div className="flex items-center gap-2">
@@ -276,14 +281,14 @@ export function KanbanBoard({ initialApplications, initialStages }: KanbanBoardP
                 {(grouped[stage.id] ?? []).map((app) => (
                   <Card
                     key={app.id}
-                    draggable
-                    onDragStart={() => setDraggedItem({ type: "application", id: app.id })}
-                    onDragEnd={onAnyDragEnd}
-                    onDoubleClick={() => {
+                    draggable={!readOnly}
+                    onDragStart={readOnly ? undefined : () => setDraggedItem({ type: "application", id: app.id })}
+                    onDragEnd={readOnly ? undefined : onAnyDragEnd}
+                    onDoubleClick={readOnly ? undefined : () => {
                       setEditingApplication(app);
                       setEditOpen(true);
                     }}
-                    className="cursor-move border-border/70 bg-card/80 backdrop-blur"
+                    className={`${readOnly ? "cursor-default" : "cursor-move"} border-border/70 bg-card/80 backdrop-blur`}
                   >
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base">{app.company}</CardTitle>
@@ -325,32 +330,36 @@ export function KanbanBoard({ initialApplications, initialStages }: KanbanBoardP
         })}
       </div>
 
-      <div className="fixed bottom-4 left-4 z-40">
-        <div
-          className={`flex h-16 w-16 items-center justify-center rounded-xl border-2 border-dashed transition-colors ${
-            binHover ? "border-rose-300 bg-rose-500/20 text-rose-200" : "border-border/70 bg-card/70 text-muted-foreground"
-          }`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setBinHover(true);
-          }}
-          onDragLeave={() => setBinHover(false)}
-          onDrop={() => void onDropToBin()}
-          title="Drag application or stage here to delete"
-        >
-          <Trash2 className="h-7 w-7" />
-        </div>
-      </div>
-      <EditApplicationDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        application={editingApplication}
-        stages={stages}
-        onUpdated={(updated) => {
-          setApplications((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-          setEditingApplication(updated);
-        }}
-      />
+      {!readOnly && (
+        <>
+          <div className="fixed bottom-4 left-4 z-40">
+            <div
+              className={`flex h-16 w-16 items-center justify-center rounded-xl border-2 border-dashed transition-colors ${
+                binHover ? "border-rose-300 bg-rose-500/20 text-rose-200" : "border-border/70 bg-card/70 text-muted-foreground"
+              }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setBinHover(true);
+              }}
+              onDragLeave={() => setBinHover(false)}
+              onDrop={() => void onDropToBin()}
+              title="Drag application or stage here to delete"
+            >
+              <Trash2 className="h-7 w-7" />
+            </div>
+          </div>
+          <EditApplicationDialog
+            open={editOpen}
+            onOpenChange={setEditOpen}
+            application={editingApplication}
+            stages={stages}
+            onUpdated={(updated) => {
+              setApplications((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+              setEditingApplication(updated);
+            }}
+          />
+        </>
+      )}
     </section>
   );
 }

@@ -11,18 +11,29 @@ export async function middleware(request: NextRequest) {
   }
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
+  const session = token ? await verifySessionToken(token) : null;
 
-  if (token && (await verifySessionToken(token))) {
-    return NextResponse.next();
+  if (!session?.valid) {
+    if (request.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+    const loginUrl = new URL("/login", request.url);
+    return NextResponse.redirect(loginUrl);
   }
 
-  // Redirect to login page for page requests, 401 for API requests
-  if (request.nextUrl.pathname.startsWith("/api/")) {
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  // Block mutating API requests for guest users
+  if (
+    session.role === "guest" &&
+    request.nextUrl.pathname.startsWith("/api/") &&
+    request.method !== "GET"
+  ) {
+    return NextResponse.json({ message: "Guest access is read-only" }, { status: 403 });
   }
 
-  const loginUrl = new URL("/login", request.url);
-  return NextResponse.redirect(loginUrl);
+  // Pass role via request header so server components can read it
+  const response = NextResponse.next();
+  response.headers.set("x-user-role", session.role);
+  return response;
 }
 
 export const config = {
