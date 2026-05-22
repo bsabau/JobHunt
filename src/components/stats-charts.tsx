@@ -251,7 +251,7 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Funnel: Reached Stage or Beyond</CardTitle>
+                <CardTitle>Funnel: Stages Visited</CardTitle>
               </CardHeader>
               <CardContent className="h-[320px]">
                 <ResponsiveContainer width="100%" height="100%">
