@@ -75,7 +75,7 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
   const conversionData = useMemo(() => {
     const sorted = [...data.funnel].sort((a, b) => a.sortOrder - b.sortOrder);
     const pairMap = new Map<string, number>();
-    for (const p of data.stagePairs) {
+    for (const p of data.stagePairs ?? []) {
       pairMap.set(`${p.from}|${p.to}`, p.count);
     }
     const rows: { transition: string; rate: number; fill: string }[] = [];
