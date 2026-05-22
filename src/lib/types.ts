@@ -22,3 +22,17 @@ export interface SankeyPayload {
   nodes: { name: string; companies?: string[] }[];
   links: { source: number; target: number; value: number; companies?: string[] }[];
 }
+
+export interface StatsPayload {
+  totals: {
+    applications: number;
+    activeStages: number;
+    transitions: number;
+    avgDaysInPipeline: number;
+  };
+  stageCounts: { stage: string; count: number; sortOrder: number }[];
+  applicationsOverTime: { date: string; created: number; cumulative: number }[];
+  transitionsByDay: { date: string; count: number }[];
+  topCompanies: { company: string; count: number }[];
+  funnel: { stage: string; reached: number; sortOrder: number }[];
+}

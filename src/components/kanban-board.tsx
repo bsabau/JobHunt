@@ -221,6 +221,9 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
         <h2 className="text-xl font-semibold">Applications Board</h2>
         <div className="flex items-center gap-2">
           <Button variant="outline" asChild>
+            <a href="/stats">View Stats</a>
+          </Button>
+          <Button variant="outline" asChild>
             <a href="/sankey">View Sankey</a>
           </Button>
           {!readOnly && (

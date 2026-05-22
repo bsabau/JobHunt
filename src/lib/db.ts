@@ -1,5 +1,5 @@
 import { neon } from "@neondatabase/serverless";
-import { Application, SankeyPayload, Stage } from "@/lib/types";
+import { Application, SankeyPayload, Stage, StatsPayload } from "@/lib/types";
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -606,5 +606,140 @@ export async function getSankeyData(): Promise<SankeyPayload> {
       companies: nodeCompanyMap.get(name) ?? []
     })),
     links
+  };
+}
+
+export async function getStatsData(): Promise<StatsPayload> {
+  await ensureSchema();
+
+  const stages = await listStages();
+
+  const stageCountRows = (await sql`
+    SELECT s.id, s.name, s.sort_order AS sortOrder, COUNT(a.id)::int AS count
+    FROM stages s
+    LEFT JOIN applications a ON a.stage_id = s.id
+    GROUP BY s.id, s.name, s.sort_order
+    ORDER BY s.sort_order ASC, s.id ASC;
+  `) as Record<string, unknown>[];
+
+  const stageCounts = stageCountRows.map((row) => ({
+    stage: String(row.name),
+    count: Number(row.count),
+    sortOrder: Number(row.sortorder)
+  }));
+
+  const totalApps = stageCounts.reduce((sum, row) => sum + row.count, 0);
+  const activeStages = stageCounts.filter((row) => row.count > 0).length;
+
+  const transitionCountRows = (await sql`
+    SELECT COUNT(*)::int AS count
+    FROM application_transitions
+    WHERE LOWER(from_status) <> LOWER(${ "created" })
+      AND LOWER(to_status) <> LOWER(${ "created" });
+  `) as Record<string, unknown>[];
+  const totalTransitions = Number(transitionCountRows[0]?.count ?? 0);
+
+  const avgDaysRows = (await sql`
+    SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0), 0) AS days
+    FROM applications;
+  `) as Record<string, unknown>[];
+  const avgDaysInPipeline = Math.round(Number(avgDaysRows[0]?.days ?? 0) * 10) / 10;
+
+  const createdByDayRows = (await sql`
+    SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+    FROM applications
+    GROUP BY date_trunc('day', created_at)
+    ORDER BY date_trunc('day', created_at) ASC;
+  `) as Record<string, unknown>[];
+
+  let cumulative = 0;
+  const applicationsOverTime = createdByDayRows.map((row) => {
+    const created = Number(row.count);
+    cumulative += created;
+    return {
+      date: String(row.day),
+      created,
+      cumulative
+    };
+  });
+
+  const transitionsByDayRows = (await sql`
+    SELECT to_char(date_trunc('day', transitioned_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+    FROM application_transitions
+    WHERE LOWER(from_status) <> LOWER(${ "created" })
+      AND LOWER(to_status) <> LOWER(${ "created" })
+    GROUP BY date_trunc('day', transitioned_at)
+    ORDER BY date_trunc('day', transitioned_at) ASC;
+  `) as Record<string, unknown>[];
+
+  const transitionsByDay = transitionsByDayRows.map((row) => ({
+    date: String(row.day),
+    count: Number(row.count)
+  }));
+
+  const topCompanyRows = (await sql`
+    SELECT company, COUNT(*)::int AS count
+    FROM applications
+    GROUP BY company
+    ORDER BY count DESC, company ASC
+    LIMIT 8;
+  `) as Record<string, unknown>[];
+
+  const topCompanies = topCompanyRows.map((row) => ({
+    company: String(row.company),
+    count: Number(row.count)
+  }));
+
+  // Funnel: how many applications have ever reached each stage
+  // = currently in stage at-or-after, OR transitioned to this stage in the past
+  const funnel = stages.map((stage) => {
+    const currentlyAtOrAfter = stageCounts
+      .filter((row) => row.sortOrder >= stage.sortOrder)
+      .reduce((sum, row) => sum + row.count, 0);
+    return {
+      stage: stage.name,
+      reached: currentlyAtOrAfter,
+      sortOrder: stage.sortOrder
+    };
+  });
+
+  // Refine funnel with past transitions: any app that ever transitioned TO this stage,
+  // even if it later moved backward, counts as having reached it.
+  const reachedRows = (await sql`
+    SELECT to_status AS stage, COUNT(DISTINCT application_id)::int AS count
+    FROM application_transitions
+    WHERE LOWER(to_status) <> LOWER(${ "created" })
+    GROUP BY to_status;
+  `) as Record<string, unknown>[];
+
+  const reachedMap = new Map<string, number>();
+  for (const row of reachedRows) {
+    reachedMap.set(String(row.stage), Number(row.count));
+  }
+
+  for (const item of funnel) {
+    const everReached = reachedMap.get(item.stage) ?? 0;
+    if (everReached > item.reached) {
+      item.reached = everReached;
+    }
+  }
+
+  // First stage should equal total apps (everyone "entered" the pipeline)
+  if (funnel.length > 0) {
+    funnel[0].reached = Math.max(funnel[0].reached, totalApps);
+  }
+
+  return {
+    totals: {
+      applications: totalApps,
+      activeStages,
+      transitions: totalTransitions,
+      avgDaysInPipeline
+    },
+    stageCounts,
+    applicationsOverTime,
+    transitionsByDay,
+    topCompanies,
+    funnel
   };
 }
