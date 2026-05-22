@@ -658,8 +658,7 @@ export async function getStatsData(): Promise<StatsPayload> {
       LIMIT 8;
     ` as Promise<Record<string, unknown>[]>,
     sql`
-      SELECT stage, COUNT(DISTINCT application_id)::int AS count
-      FROM (
+      WITH visits AS (
         SELECT a.id AS application_id, COALESCE(
           (SELECT t.from_status FROM application_transitions t
            WHERE t.application_id = a.id
@@ -672,8 +671,18 @@ export async function getStatsData(): Promise<StatsPayload> {
         SELECT application_id, to_status AS stage
         FROM application_transitions
         WHERE LOWER(to_status) <> LOWER(${ "created" })
-      ) visits
-      GROUP BY stage;
+      ),
+      app_max AS (
+        SELECT v.application_id, MAX(s.sort_order) AS max_sort
+        FROM visits v
+        JOIN stages s ON s.name = v.stage
+        GROUP BY v.application_id
+      )
+      SELECT st.name AS stage,
+             COUNT(DISTINCT m.application_id)::int AS count
+      FROM stages st
+      LEFT JOIN app_max m ON m.max_sort >= st.sort_order
+      GROUP BY st.name;
     ` as Promise<Record<string, unknown>[]>,
   ]);
 

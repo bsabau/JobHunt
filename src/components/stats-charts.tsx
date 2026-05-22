@@ -11,8 +11,6 @@ import {
   Legend,
   Line,
   LineChart,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -74,10 +72,21 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
     [data.stageCounts]
   );
 
-  const distributionData = useMemo(
-    () => data.stageCounts.filter((row) => row.count > 0),
-    [data.stageCounts]
-  );
+  const conversionData = useMemo(() => {
+    const sorted = [...data.funnel].sort((a, b) => a.sortOrder - b.sortOrder);
+    const rows: { transition: string; rate: number; fill: string }[] = [];
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const curr = sorted[i];
+      const rate = prev.reached > 0 ? Math.round((curr.reached / prev.reached) * 1000) / 10 : 0;
+      rows.push({
+        transition: `${prev.stage} → ${curr.stage}`,
+        rate,
+        fill: colorFor(curr.stage),
+      });
+    }
+    return rows;
+  }, [data.funnel]);
 
   const timeSeriesData = useMemo(
     () => data.applicationsOverTime.map((row) => ({ ...row, label: formatDate(row.date) })),
@@ -146,31 +155,44 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
 
             <Card>
               <CardHeader>
-                <CardTitle>Current Stage Distribution</CardTitle>
+                <CardTitle>Stage-to-Stage Conversion</CardTitle>
               </CardHeader>
               <CardContent className="h-[320px]">
-                {distributionData.length > 0 ? (
+                {conversionData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Tooltip contentStyle={tooltipStyle} />
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Pie
-                        data={distributionData}
-                        dataKey="count"
-                        nameKey="stage"
-                        innerRadius={60}
-                        outerRadius={100}
-                        paddingAngle={2}
-                      >
-                        {distributionData.map((row, i) => (
-                          <Cell key={row.stage} fill={colorFor(row.stage, i)} />
+                    <BarChart
+                      data={conversionData}
+                      layout="vertical"
+                      margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
+                    >
+                      <CartesianGrid stroke="rgba(148,163,184,0.15)" horizontal={false} />
+                      <XAxis
+                        type="number"
+                        domain={[0, 100]}
+                        unit="%"
+                        tick={{ fontSize: 12, fill: "#94a3b8" }}
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="transition"
+                        width={140}
+                        tick={{ fontSize: 12, fill: "#94a3b8" }}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "rgba(148,163,184,0.08)" }}
+                        contentStyle={tooltipStyle}
+                        formatter={(value) => [`${value}%`, "Conversion"]}
+                      />
+                      <Bar dataKey="rate" radius={[0, 6, 6, 0]}>
+                        {conversionData.map((row) => (
+                          <Cell key={row.transition} fill={row.fill} />
                         ))}
-                      </Pie>
-                    </PieChart>
+                      </Bar>
+                    </BarChart>
                   </ResponsiveContainer>
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    No data.
+                    Need at least two stages to compute conversion.
                   </div>
                 )}
               </CardContent>
@@ -229,7 +251,7 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Funnel: How Far Apps Reached</CardTitle>
+                <CardTitle>Funnel: Reached Stage or Beyond</CardTitle>
               </CardHeader>
               <CardContent className="h-[320px]">
                 <ResponsiveContainer width="100%" height="100%">
