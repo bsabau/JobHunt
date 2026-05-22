@@ -508,15 +508,33 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
 export async function getSankeyData(): Promise<SankeyPayload> {
   await ensureSchema();
 
-  // Transition counts with company names
-  const transitionDetails = (await sql`
-    SELECT t.from_status AS fromStatus, t.to_status AS toStatus, a.company
-    FROM application_transitions t
-    JOIN applications a ON a.id = t.application_id
-    WHERE LOWER(t.from_status) <> LOWER(${ "created" }) AND LOWER(t.to_status) <> LOWER(${ "created" });
-  `) as Record<string, unknown>[];
+  const [stages, transitionDetails, entryDetails, nodeCompanies] = await Promise.all([
+    listStages(),
+    sql`
+      SELECT t.from_status AS fromStatus, t.to_status AS toStatus, a.company
+      FROM application_transitions t
+      JOIN applications a ON a.id = t.application_id
+      WHERE LOWER(t.from_status) <> LOWER(${ "created" }) AND LOWER(t.to_status) <> LOWER(${ "created" });
+    ` as Promise<Record<string, unknown>[]>,
+    sql`
+      SELECT
+        COALESCE(
+          (SELECT t.from_status FROM application_transitions t
+           WHERE t.application_id = a.id
+           ORDER BY t.transitioned_at ASC LIMIT 1),
+          s.name
+        ) AS entryStage,
+        a.company
+      FROM applications a
+      JOIN stages s ON s.id = a.stage_id;
+    ` as Promise<Record<string, unknown>[]>,
+    sql`
+      SELECT s.name AS stageName, a.company
+      FROM applications a
+      JOIN stages s ON s.id = a.stage_id;
+    ` as Promise<Record<string, unknown>[]>,
+  ]);
 
-  // Group transitions: key = "from|to", value = { count, companies }
   const transitionMap = new Map<string, { from: string; to: string; count: number; companies: string[] }>();
   for (const row of transitionDetails) {
     const from = String(row.fromstatus);
@@ -528,22 +546,7 @@ export async function getSankeyData(): Promise<SankeyPayload> {
     transitionMap.set(key, entry);
   }
 
-  const stages = await listStages();
   const currentStageNames = stages.map((stage) => stage.name);
-
-  // For each application, determine the entry stage and collect company names
-  const entryDetails = (await sql`
-    SELECT
-      COALESCE(
-        (SELECT t.from_status FROM application_transitions t
-         WHERE t.application_id = a.id
-         ORDER BY t.transitioned_at ASC LIMIT 1),
-        s.name
-      ) AS entryStage,
-      a.company
-    FROM applications a
-    JOIN stages s ON s.id = a.stage_id;
-  `) as Record<string, unknown>[];
 
   const entryMap = new Map<string, { count: number; companies: string[] }>();
   for (const row of entryDetails) {
@@ -553,13 +556,6 @@ export async function getSankeyData(): Promise<SankeyPayload> {
     entry.companies.push(String(row.company));
     entryMap.set(stage, entry);
   }
-
-  // Companies currently in each stage (for node tooltips)
-  const nodeCompanies = (await sql`
-    SELECT s.name AS stageName, a.company
-    FROM applications a
-    JOIN stages s ON s.id = a.stage_id;
-  `) as Record<string, unknown>[];
 
   const nodeCompanyMap = new Map<string, string[]>();
   for (const row of nodeCompanies) {
@@ -612,15 +608,62 @@ export async function getSankeyData(): Promise<SankeyPayload> {
 export async function getStatsData(): Promise<StatsPayload> {
   await ensureSchema();
 
-  const stages = await listStages();
-
-  const stageCountRows = (await sql`
-    SELECT s.id, s.name, s.sort_order AS sortOrder, COUNT(a.id)::int AS count
-    FROM stages s
-    LEFT JOIN applications a ON a.stage_id = s.id
-    GROUP BY s.id, s.name, s.sort_order
-    ORDER BY s.sort_order ASC, s.id ASC;
-  `) as Record<string, unknown>[];
+  const [
+    stages,
+    stageCountRows,
+    transitionCountRows,
+    avgDaysRows,
+    createdByDayRows,
+    transitionsByDayRows,
+    topCompanyRows,
+    reachedRows,
+  ] = await Promise.all([
+    listStages(),
+    sql`
+      SELECT s.id, s.name, s.sort_order AS sortOrder, COUNT(a.id)::int AS count
+      FROM stages s
+      LEFT JOIN applications a ON a.stage_id = s.id
+      GROUP BY s.id, s.name, s.sort_order
+      ORDER BY s.sort_order ASC, s.id ASC;
+    ` as Promise<Record<string, unknown>[]>,
+    sql`
+      SELECT COUNT(*)::int AS count
+      FROM application_transitions
+      WHERE LOWER(from_status) <> LOWER(${ "created" })
+        AND LOWER(to_status) <> LOWER(${ "created" });
+    ` as Promise<Record<string, unknown>[]>,
+    sql`
+      SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0), 0) AS days
+      FROM applications;
+    ` as Promise<Record<string, unknown>[]>,
+    sql`
+      SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+      FROM applications
+      GROUP BY date_trunc('day', created_at)
+      ORDER BY date_trunc('day', created_at) ASC;
+    ` as Promise<Record<string, unknown>[]>,
+    sql`
+      SELECT to_char(date_trunc('day', transitioned_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+      FROM application_transitions
+      WHERE LOWER(from_status) <> LOWER(${ "created" })
+        AND LOWER(to_status) <> LOWER(${ "created" })
+      GROUP BY date_trunc('day', transitioned_at)
+      ORDER BY date_trunc('day', transitioned_at) ASC;
+    ` as Promise<Record<string, unknown>[]>,
+    sql`
+      SELECT company, COUNT(*)::int AS count
+      FROM applications
+      GROUP BY company
+      ORDER BY count DESC, company ASC
+      LIMIT 8;
+    ` as Promise<Record<string, unknown>[]>,
+    sql`
+      SELECT to_status AS stage, COUNT(DISTINCT application_id)::int AS count
+      FROM application_transitions
+      WHERE LOWER(to_status) <> LOWER(${ "created" })
+      GROUP BY to_status;
+    ` as Promise<Record<string, unknown>[]>,
+  ]);
 
   const stageCounts = stageCountRows.map((row) => ({
     stage: String(row.name),
@@ -630,27 +673,8 @@ export async function getStatsData(): Promise<StatsPayload> {
 
   const totalApps = stageCounts.reduce((sum, row) => sum + row.count, 0);
   const activeStages = stageCounts.filter((row) => row.count > 0).length;
-
-  const transitionCountRows = (await sql`
-    SELECT COUNT(*)::int AS count
-    FROM application_transitions
-    WHERE LOWER(from_status) <> LOWER(${ "created" })
-      AND LOWER(to_status) <> LOWER(${ "created" });
-  `) as Record<string, unknown>[];
   const totalTransitions = Number(transitionCountRows[0]?.count ?? 0);
-
-  const avgDaysRows = (await sql`
-    SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0), 0) AS days
-    FROM applications;
-  `) as Record<string, unknown>[];
   const avgDaysInPipeline = Math.round(Number(avgDaysRows[0]?.days ?? 0) * 10) / 10;
-
-  const createdByDayRows = (await sql`
-    SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
-    FROM applications
-    GROUP BY date_trunc('day', created_at)
-    ORDER BY date_trunc('day', created_at) ASC;
-  `) as Record<string, unknown>[];
 
   let cumulative = 0;
   const applicationsOverTime = createdByDayRows.map((row) => {
@@ -663,35 +687,16 @@ export async function getStatsData(): Promise<StatsPayload> {
     };
   });
 
-  const transitionsByDayRows = (await sql`
-    SELECT to_char(date_trunc('day', transitioned_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
-    FROM application_transitions
-    WHERE LOWER(from_status) <> LOWER(${ "created" })
-      AND LOWER(to_status) <> LOWER(${ "created" })
-    GROUP BY date_trunc('day', transitioned_at)
-    ORDER BY date_trunc('day', transitioned_at) ASC;
-  `) as Record<string, unknown>[];
-
   const transitionsByDay = transitionsByDayRows.map((row) => ({
     date: String(row.day),
     count: Number(row.count)
   }));
-
-  const topCompanyRows = (await sql`
-    SELECT company, COUNT(*)::int AS count
-    FROM applications
-    GROUP BY company
-    ORDER BY count DESC, company ASC
-    LIMIT 8;
-  `) as Record<string, unknown>[];
 
   const topCompanies = topCompanyRows.map((row) => ({
     company: String(row.company),
     count: Number(row.count)
   }));
 
-  // Funnel: how many applications have ever reached each stage
-  // = currently in stage at-or-after, OR transitioned to this stage in the past
   const funnel = stages.map((stage) => {
     const currentlyAtOrAfter = stageCounts
       .filter((row) => row.sortOrder >= stage.sortOrder)
@@ -702,15 +707,6 @@ export async function getStatsData(): Promise<StatsPayload> {
       sortOrder: stage.sortOrder
     };
   });
-
-  // Refine funnel with past transitions: any app that ever transitioned TO this stage,
-  // even if it later moved backward, counts as having reached it.
-  const reachedRows = (await sql`
-    SELECT to_status AS stage, COUNT(DISTINCT application_id)::int AS count
-    FROM application_transitions
-    WHERE LOWER(to_status) <> LOWER(${ "created" })
-    GROUP BY to_status;
-  `) as Record<string, unknown>[];
 
   const reachedMap = new Map<string, number>();
   for (const row of reachedRows) {
