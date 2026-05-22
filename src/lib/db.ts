@@ -658,10 +658,22 @@ export async function getStatsData(): Promise<StatsPayload> {
       LIMIT 8;
     ` as Promise<Record<string, unknown>[]>,
     sql`
-      SELECT to_status AS stage, COUNT(DISTINCT application_id)::int AS count
-      FROM application_transitions
-      WHERE LOWER(to_status) <> LOWER(${ "created" })
-      GROUP BY to_status;
+      SELECT stage, COUNT(DISTINCT application_id)::int AS count
+      FROM (
+        SELECT a.id AS application_id, COALESCE(
+          (SELECT t.from_status FROM application_transitions t
+           WHERE t.application_id = a.id
+           ORDER BY t.transitioned_at ASC LIMIT 1),
+          s.name
+        ) AS stage
+        FROM applications a
+        JOIN stages s ON s.id = a.stage_id
+        UNION ALL
+        SELECT application_id, to_status AS stage
+        FROM application_transitions
+        WHERE LOWER(to_status) <> LOWER(${ "created" })
+      ) visits
+      GROUP BY stage;
     ` as Promise<Record<string, unknown>[]>,
   ]);
 
@@ -697,33 +709,16 @@ export async function getStatsData(): Promise<StatsPayload> {
     count: Number(row.count)
   }));
 
-  const funnel = stages.map((stage) => {
-    const currentlyAtOrAfter = stageCounts
-      .filter((row) => row.sortOrder >= stage.sortOrder)
-      .reduce((sum, row) => sum + row.count, 0);
-    return {
-      stage: stage.name,
-      reached: currentlyAtOrAfter,
-      sortOrder: stage.sortOrder
-    };
-  });
-
   const reachedMap = new Map<string, number>();
   for (const row of reachedRows) {
     reachedMap.set(String(row.stage), Number(row.count));
   }
 
-  for (const item of funnel) {
-    const everReached = reachedMap.get(item.stage) ?? 0;
-    if (everReached > item.reached) {
-      item.reached = everReached;
-    }
-  }
-
-  // First stage should equal total apps (everyone "entered" the pipeline)
-  if (funnel.length > 0) {
-    funnel[0].reached = Math.max(funnel[0].reached, totalApps);
-  }
+  const funnel = stages.map((stage) => ({
+    stage: stage.name,
+    reached: reachedMap.get(stage.name) ?? 0,
+    sortOrder: stage.sortOrder
+  }));
 
   return {
     totals: {
