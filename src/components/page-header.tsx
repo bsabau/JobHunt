@@ -29,7 +29,7 @@ export function PageHeader({ active, readOnly = false }: PageHeaderProps) {
       </div>
       <div className="flex items-center gap-2">
         {NAV_ITEMS.filter((item) => item.key !== active).map((item) => (
-          <Button key={item.key} variant="outline" asChild>
+          <Button key={item.key} variant="outline" asChild className="w-24 justify-center">
             <Link href={item.href}>{item.label}</Link>
           </Button>
         ))}
