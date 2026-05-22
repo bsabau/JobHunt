@@ -15,7 +15,7 @@ export default async function HomePage() {
   const readOnly = session?.role === "guest";
 
   return (
-    <main className="mx-auto min-h-screen max-w-[1200px] px-6 py-10">
+    <main className="mx-auto min-h-screen max-w-[1500px] px-6 py-10">
       <PageHeader active="stats" readOnly={readOnly} />
       <StatsCharts data={stats} />
     </main>

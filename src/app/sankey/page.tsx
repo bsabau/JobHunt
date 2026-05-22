@@ -15,7 +15,7 @@ export default async function SankeyPage() {
   const readOnly = session?.role === "guest";
 
   return (
-    <main className="mx-auto min-h-screen max-w-[1100px] px-6 py-10">
+    <main className="mx-auto min-h-screen max-w-[1500px] px-6 py-10">
       <PageHeader active="sankey" readOnly={readOnly} />
       <SankeyChart data={sankey} />
     </main>
