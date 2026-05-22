@@ -677,30 +677,12 @@ export async function getStatsData(): Promise<StatsPayload> {
       GROUP BY stage;
     ` as Promise<Record<string, unknown>[]>,
     sql`
-      WITH visits AS (
-        SELECT a.id AS application_id, COALESCE(
-          (SELECT t.from_status FROM application_transitions t
-           WHERE t.application_id = a.id
-           ORDER BY t.transitioned_at ASC LIMIT 1),
-          s.name
-        ) AS stage
-        FROM applications a
-        JOIN stages s ON s.id = a.stage_id
-        UNION ALL
-        SELECT application_id, to_status AS stage
-        FROM application_transitions
-        WHERE LOWER(to_status) <> LOWER(${ "created" })
-      ),
-      distinct_visits AS (
-        SELECT DISTINCT application_id, stage FROM visits
-      )
-      SELECT v1.stage AS from_stage, v2.stage AS to_stage,
-             COUNT(*)::int AS count
-      FROM distinct_visits v1
-      JOIN distinct_visits v2
-        ON v1.application_id = v2.application_id
-       AND v1.stage <> v2.stage
-      GROUP BY v1.stage, v2.stage;
+      SELECT from_status AS from_stage, to_status AS to_stage,
+             COUNT(DISTINCT application_id)::int AS count
+      FROM application_transitions
+      WHERE LOWER(from_status) <> LOWER(${ "created" })
+        AND LOWER(to_status) <> LOWER(${ "created" })
+      GROUP BY from_status, to_status;
     ` as Promise<Record<string, unknown>[]>,
   ]);
 

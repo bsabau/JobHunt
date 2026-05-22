@@ -73,23 +73,26 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
   );
 
   const conversionData = useMemo(() => {
-    const sorted = [...data.funnel].sort((a, b) => a.sortOrder - b.sortOrder);
-    const pairMap = new Map<string, number>();
-    for (const p of data.stagePairs ?? []) {
-      pairMap.set(`${p.from}|${p.to}`, p.count);
+    const reachedMap = new Map<string, number>();
+    const sortMap = new Map<string, number>();
+    for (const f of data.funnel) {
+      reachedMap.set(f.stage, f.reached);
+      sortMap.set(f.stage, f.sortOrder);
     }
-    const rows: { transition: string; rate: number; fill: string }[] = [];
-    for (let i = 1; i < sorted.length; i++) {
-      const prev = sorted[i - 1];
-      const curr = sorted[i];
-      const both = pairMap.get(`${prev.stage}|${curr.stage}`) ?? 0;
-      const rate = prev.reached > 0 ? Math.round((both / prev.reached) * 1000) / 10 : 0;
+    const rows: { transition: string; rate: number; fill: string; fromSort: number; toSort: number }[] = [];
+    for (const p of data.stagePairs ?? []) {
+      const fromReached = reachedMap.get(p.from) ?? 0;
+      if (fromReached === 0) continue;
+      const rate = Math.round((p.count / fromReached) * 1000) / 10;
       rows.push({
-        transition: `${prev.stage} → ${curr.stage}`,
+        transition: `${p.from} → ${p.to}`,
         rate,
-        fill: colorFor(curr.stage),
+        fill: colorFor(p.to),
+        fromSort: sortMap.get(p.from) ?? 0,
+        toSort: sortMap.get(p.to) ?? 0,
       });
     }
+    rows.sort((a, b) => a.fromSort - b.fromSort || a.toSort - b.toSort);
     return rows;
   }, [data.funnel, data.stagePairs]);
 
