@@ -617,6 +617,7 @@ export async function getStatsData(): Promise<StatsPayload> {
     transitionsByDayRows,
     topCompanyRows,
     reachedRows,
+    stagePairRows,
   ] = await Promise.all([
     listStages(),
     sql`
@@ -675,6 +676,32 @@ export async function getStatsData(): Promise<StatsPayload> {
       ) visits
       GROUP BY stage;
     ` as Promise<Record<string, unknown>[]>,
+    sql`
+      WITH visits AS (
+        SELECT a.id AS application_id, COALESCE(
+          (SELECT t.from_status FROM application_transitions t
+           WHERE t.application_id = a.id
+           ORDER BY t.transitioned_at ASC LIMIT 1),
+          s.name
+        ) AS stage
+        FROM applications a
+        JOIN stages s ON s.id = a.stage_id
+        UNION ALL
+        SELECT application_id, to_status AS stage
+        FROM application_transitions
+        WHERE LOWER(to_status) <> LOWER(${ "created" })
+      ),
+      distinct_visits AS (
+        SELECT DISTINCT application_id, stage FROM visits
+      )
+      SELECT v1.stage AS from_stage, v2.stage AS to_stage,
+             COUNT(*)::int AS count
+      FROM distinct_visits v1
+      JOIN distinct_visits v2
+        ON v1.application_id = v2.application_id
+       AND v1.stage <> v2.stage
+      GROUP BY v1.stage, v2.stage;
+    ` as Promise<Record<string, unknown>[]>,
   ]);
 
   const stageCounts = stageCountRows.map((row) => ({
@@ -720,6 +747,12 @@ export async function getStatsData(): Promise<StatsPayload> {
     sortOrder: stage.sortOrder
   }));
 
+  const stagePairs = stagePairRows.map((row) => ({
+    from: String(row.from_stage),
+    to: String(row.to_stage),
+    count: Number(row.count)
+  }));
+
   return {
     totals: {
       applications: totalApps,
@@ -731,6 +764,7 @@ export async function getStatsData(): Promise<StatsPayload> {
     applicationsOverTime,
     transitionsByDay,
     topCompanies,
-    funnel
+    funnel,
+    stagePairs
   };
 }

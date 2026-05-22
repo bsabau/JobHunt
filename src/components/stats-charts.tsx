@@ -74,11 +74,16 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
 
   const conversionData = useMemo(() => {
     const sorted = [...data.funnel].sort((a, b) => a.sortOrder - b.sortOrder);
+    const pairMap = new Map<string, number>();
+    for (const p of data.stagePairs) {
+      pairMap.set(`${p.from}|${p.to}`, p.count);
+    }
     const rows: { transition: string; rate: number; fill: string }[] = [];
     for (let i = 1; i < sorted.length; i++) {
       const prev = sorted[i - 1];
       const curr = sorted[i];
-      const rate = prev.reached > 0 ? Math.round((curr.reached / prev.reached) * 1000) / 10 : 0;
+      const both = pairMap.get(`${prev.stage}|${curr.stage}`) ?? 0;
+      const rate = prev.reached > 0 ? Math.round((both / prev.reached) * 1000) / 10 : 0;
       rows.push({
         transition: `${prev.stage} → ${curr.stage}`,
         rate,
@@ -86,7 +91,7 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
       });
     }
     return rows;
-  }, [data.funnel]);
+  }, [data.funnel, data.stagePairs]);
 
   const timeSeriesData = useMemo(
     () => data.applicationsOverTime.map((row) => ({ ...row, label: formatDate(row.date) })),

@@ -35,4 +35,5 @@ export interface StatsPayload {
   transitionsByDay: { date: string; count: number }[];
   topCompanies: { company: string; count: number }[];
   funnel: { stage: string; reached: number; sortOrder: number }[];
+  stagePairs: { from: string; to: string; count: number }[];
 }
