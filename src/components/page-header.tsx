@@ -8,9 +8,9 @@ interface PageHeaderProps {
 }
 
 const NAV_ITEMS = [
-  { key: "stats", href: "/stats", label: "Stats" },
+  { key: "stats", href: "/", label: "Stats" },
   { key: "sankey", href: "/sankey", label: "Sankey" },
-  { key: "board", href: "/", label: "Board" },
+  { key: "board", href: "/board", label: "Board" },
 ] as const;
 
 export function PageHeader({ active, readOnly = false }: PageHeaderProps) {

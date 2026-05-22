@@ -1,13 +1,13 @@
 import { cookies } from "next/headers";
-import { KanbanBoard } from "@/components/kanban-board";
+import { StatsCharts } from "@/components/stats-charts";
 import { PageHeader } from "@/components/page-header";
-import { listApplications, listStages } from "@/lib/db";
+import { getStatsData } from "@/lib/db";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [applications, stages] = await Promise.all([listApplications(), listStages()]);
+  const stats = await getStatsData();
 
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
@@ -15,9 +15,9 @@ export default async function HomePage() {
   const readOnly = session?.role === "guest";
 
   return (
-    <main className="mx-auto min-h-screen max-w-[1500px] px-6 py-10">
-      <PageHeader active="board" readOnly={readOnly} />
-      <KanbanBoard initialApplications={applications} initialStages={stages} readOnly={readOnly} />
+    <main className="mx-auto min-h-screen max-w-[1200px] px-6 py-10">
+      <PageHeader active="stats" readOnly={readOnly} />
+      <StatsCharts data={stats} />
     </main>
   );
 }
