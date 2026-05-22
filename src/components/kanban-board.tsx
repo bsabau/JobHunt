@@ -219,26 +219,18 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     <section className="space-y-6 pb-24">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-semibold">Applications Board</h2>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" asChild>
-            <a href="/stats">View Stats</a>
-          </Button>
-          <Button variant="outline" asChild>
-            <a href="/sankey">View Sankey</a>
-          </Button>
-          {!readOnly && (
-            <>
-              <Button variant="outline" onClick={() => void addStage()}>
-                <Plus className="mr-1 h-4 w-4" />
-                Add Stage
-              </Button>
-              <AddApplicationDialog
-                stages={stages}
-                onCreated={(app) => setApplications((current) => [app, ...current])}
-              />
-            </>
-          )}
-        </div>
+        {!readOnly && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => void addStage()}>
+              <Plus className="mr-1 h-4 w-4" />
+              Add Stage
+            </Button>
+            <AddApplicationDialog
+              stages={stages}
+              onCreated={(app) => setApplications((current) => [app, ...current])}
+            />
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(240px, 1fr))` }}>

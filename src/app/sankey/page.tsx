@@ -1,8 +1,6 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { SankeyChart } from "@/components/sankey-chart";
-import { LogoutButton } from "@/components/logout-button";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/page-header";
 import { getSankeyData } from "@/lib/db";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 
@@ -18,23 +16,7 @@ export default async function SankeyPage() {
 
   return (
     <main className="mx-auto min-h-screen max-w-[1100px] px-6 py-10">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.25em] text-sky-300/80">
-            Analytics{readOnly ? " · Guest (read-only)" : ""}
-          </p>
-          <h1 className="text-3xl font-bold">Application Flow</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" asChild>
-            <Link href="/stats">View Stats</Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/">Back to Board</Link>
-          </Button>
-          <LogoutButton />
-        </div>
-      </div>
+      <PageHeader active="sankey" readOnly={readOnly} />
       <SankeyChart data={sankey} />
     </main>
   );
