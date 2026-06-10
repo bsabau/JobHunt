@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { Application, Stage } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,20 +30,16 @@ function getDefaultStageId(stages: Stage[]): number {
 export function AddApplicationDialog({ stages, onCreated }: AddApplicationDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const defaultStageId = getDefaultStageId(stages);
   const [form, setForm] = useState({
     company: "",
     role: "",
     sourceUrl: "",
     notes: "",
     interviewDate: "",
-    stageId: getDefaultStageId(stages)
+    stageId: defaultStageId
   });
-
-  useEffect(() => {
-    if (!stages.find((stage) => stage.id === form.stageId)) {
-      setForm((current) => ({ ...current, stageId: getDefaultStageId(stages) }));
-    }
-  }, [stages, form.stageId]);
+  const selectedStageId = stages.some((stage) => stage.id === form.stageId) ? form.stageId : defaultStageId;
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -52,7 +48,7 @@ export function AddApplicationDialog({ stages, onCreated }: AddApplicationDialog
       const response = await fetch("/api/applications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form)
+        body: JSON.stringify({ ...form, stageId: selectedStageId })
       });
 
       if (!response.ok) {
@@ -63,7 +59,7 @@ export function AddApplicationDialog({ stages, onCreated }: AddApplicationDialog
       const created = (await response.json()) as Application;
       onCreated(created);
       setOpen(false);
-      setForm({ company: "", role: "", sourceUrl: "", notes: "", interviewDate: "", stageId: getDefaultStageId(stages) });
+      setForm({ company: "", role: "", sourceUrl: "", notes: "", interviewDate: "", stageId: defaultStageId });
     } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "Could not add application.");
@@ -125,7 +121,7 @@ export function AddApplicationDialog({ stages, onCreated }: AddApplicationDialog
           <div className="space-y-2">
             <Label>Initial stage</Label>
             <Select
-              value={String(form.stageId)}
+              value={String(selectedStageId)}
               onValueChange={(value) => setForm((current) => ({ ...current, stageId: Number(value) }))}
             >
               <SelectTrigger>

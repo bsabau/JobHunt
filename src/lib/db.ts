@@ -1,13 +1,24 @@
 import { neon } from "@neondatabase/serverless";
 import { Application, SankeyPayload, Stage, StatsPayload } from "@/lib/types";
 
-const databaseUrl = process.env.DATABASE_URL;
+type SqlClient = ReturnType<typeof neon>;
 
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL environment variable is required");
+let sqlClient: SqlClient | null = null;
+
+function getSql(): SqlClient {
+  const databaseUrl = process.env.DATABASE_URL;
+
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL environment variable is required");
+  }
+
+  sqlClient ??= neon(databaseUrl);
+  return sqlClient;
 }
 
-const sql = neon(databaseUrl);
+function sql(strings: TemplateStringsArray, ...values: unknown[]) {
+  return getSql()(strings, ...values);
+}
 
 let schemaReadyPromise: Promise<void> | null = null;
 

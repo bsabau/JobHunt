@@ -2,44 +2,48 @@
   "name": "jobhunt",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=24.16.0 <25"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "migrate:up": "node scripts/migrate-up.mjs",
     "migrate:create": "node scripts/migrate-create.mjs",
     "reset:db": "node scripts/reset-neon-db.mjs",
     "cleanup:created": "node scripts/cleanup-created-transitions.mjs"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^0.10.4",
-    "@radix-ui/react-dialog": "^1.1.14",
-    "@radix-ui/react-label": "^2.1.7",
-    "@radix-ui/react-select": "^2.2.5",
-    "@radix-ui/react-slot": "^1.2.3",
+    "@neondatabase/serverless": "^1.1.0",
+    "@radix-ui/react-dialog": "^1.1.16",
+    "@radix-ui/react-label": "^2.1.9",
+    "@radix-ui/react-select": "^2.3.0",
+    "@radix-ui/react-slot": "^1.2.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^0.511.0",
-    "next": "^16.1.6",
-    "next-themes": "^0.4.4",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "recharts": "^3.0.2",
-    "tailwind-merge": "^3.3.0"
+    "lucide-react": "^1.17.0",
+    "next": "^16.2.9",
+    "next-themes": "^0.4.6",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "recharts": "^3.8.1",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.8",
-    "@types/node": "^22.15.29",
-    "@types/react": "^19.1.6",
-    "@types/react-dom": "^19.1.5",
-    "eslint": "^9.39.3",
-    "eslint-config-next": "^16.1.6",
-    "tailwindcss": "^4.1.8",
-    "typescript": "^5.8.3"
+    "@tailwindcss/postcss": "^4.3.0",
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.9",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^6.0.3"
   },
   "overrides": {
     "minimatch": "^10.2.2",
+    "postcss": "^8.5.15",
     "eslint-plugin-import": {
       "minimatch": "^10.2.2"
     },

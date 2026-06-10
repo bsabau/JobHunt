@@ -1,3 +1,5 @@
 import next from "eslint-config-next";
 
-export default [...next];
+const config = [...next];
+
+export default config;

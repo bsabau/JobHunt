@@ -40,6 +40,7 @@ function CompanyLogo({ company, logoUrl, logoBgClass }: { company: string; logoU
 
   return (
     <div className={`h-10 w-10 rounded-md border border-border/60 ${logoBgClass} p-1`}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- Logo URLs are dynamic third-party favicon endpoints. */}
       <img
         src={logoUrl}
         alt={`${company} logo`}

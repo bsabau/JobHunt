@@ -28,7 +28,6 @@ interface HoverInfo {
   y: number;
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 function CustomNode(props: any) {
   const { x, y, width, height, payload } = props;
   const fill = nodeColor(payload?.name ?? "");
@@ -49,7 +48,6 @@ function CustomLink(props: any) {
     />
   );
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export function SankeyChart({ data }: { data: SankeyPayload }) {
   const [hover, setHover] = useState<HoverInfo | null>(null);
@@ -92,7 +90,6 @@ export function SankeyChart({ data }: { data: SankeyPayload }) {
   }, [data]);
 
   const handleMouseEnter = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (item: any, type: string, e: React.MouseEvent) => {
       if (type === "node") {
         const name = item?.payload?.name ?? item?.name ?? "?";
@@ -137,9 +134,7 @@ export function SankeyChart({ data }: { data: SankeyPayload }) {
                 nodePadding={28}
                 node={<CustomNode />}
                 link={<CustomLink />}
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onMouseEnter={handleMouseEnter as any}
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onMouseLeave={handleMouseLeave as any}
               />
             </ResponsiveContainer>
