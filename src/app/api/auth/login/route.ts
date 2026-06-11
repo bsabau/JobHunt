@@ -37,7 +37,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (isAuthConfigurationError(error)) {
-      return NextResponse.json({ message: "Authentication is not configured" }, { status: 500 });
+      console.error(error.message);
+      return NextResponse.json(
+        { message: "Authentication is not configured. Check AUTH_USER, AUTH_PASS, and AUTH_SECRET in Vercel." },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ message: "Login failed" }, { status: 500 });
