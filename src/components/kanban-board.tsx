@@ -326,9 +326,10 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                   {(grouped[stage.id] ?? []).map((app) => {
                     const stale = isApplicationStale(app);
                     const staleDays = stale ? daysSince(app.updatedAt) : 0;
+                    const notes = app.notes?.trim();
                     return (
+                    <div key={app.id} className="group/card relative">
                     <Card
-                      key={app.id}
                       draggable={!readOnly}
                       onDragStart={readOnly ? undefined : () => setDraggedItem({ type: "application", id: app.id })}
                       onDragEnd={readOnly ? undefined : onAnyDragEnd}
@@ -336,11 +337,18 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                         setEditingApplication(app);
                         setEditOpen(true);
                       }}
-                      title={app.notes && !readOnly ? "Double-click to view notes" : undefined}
-                      className={`${readOnly ? "cursor-default" : "cursor-move"} border-border/70 bg-card/80 backdrop-blur ${
+                      className={`relative overflow-hidden ${readOnly ? "cursor-default" : "cursor-move"} border-border/70 bg-card/80 backdrop-blur ${
                         stale ? "border-l-4 border-l-amber-400/80" : ""
                       }`}
                     >
+                      {notes ? (
+                        <div
+                          role="tooltip"
+                          className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-end bg-gradient-to-t from-background via-background/95 to-transparent p-3 pt-10 opacity-0 transition-opacity duration-150 group-hover/card:opacity-100"
+                        >
+                          <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{notes}</p>
+                        </div>
+                      ) : null}
                       <CardHeader className="pb-3">
                         <div className="flex items-start justify-between gap-2">
                           <CardTitle className="text-base">{app.company}</CardTitle>
@@ -373,6 +381,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                         ) : null}
                       </CardContent>
                     </Card>
+                    </div>
                     );
                   })}
                   {(grouped[stage.id] ?? []).length === 0 ? (
