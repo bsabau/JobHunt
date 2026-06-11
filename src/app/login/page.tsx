@@ -27,7 +27,8 @@ export default function LoginPage() {
       });
 
       if (!res.ok) {
-        setError("Invalid credentials");
+        const body = (await res.json().catch(() => null)) as { message?: string } | null;
+        setError(body?.message || "Invalid credentials");
         setLoading(false);
         return;
       }
