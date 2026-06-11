@@ -8,6 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AddApplicationDialog } from "@/components/add-application-dialog";
 import { EditApplicationDialog } from "@/components/edit-application-dialog";
+import {
+  trackApplicationDeleted,
+  trackApplicationMoved,
+  trackStageAdded,
+  trackStageDeleted,
+  trackStageReordered
+} from "@/lib/analytics";
 
 interface KanbanBoardProps {
   initialApplications: Application[];
@@ -74,6 +81,10 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   }, [applications, stages]);
 
   async function moveCard(id: number, stageId: number) {
+    const app = applications.find((item) => item.id === id);
+    const fromStage = app ? stages.find((stage) => stage.id === app.stageId) : undefined;
+    const toStage = stages.find((stage) => stage.id === stageId);
+
     const response = await fetch(`/api/applications/${id}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -87,6 +98,10 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
 
     const updated = (await response.json()) as Application;
     setApplications((current) => current.map((item) => (item.id === id ? updated : item)));
+
+    if (fromStage && toStage && fromStage.id !== toStage.id) {
+      trackApplicationMoved({ fromStageName: fromStage.name, toStageName: toStage.name });
+    }
   }
 
   async function deleteApplicationById(id: number) {
@@ -98,6 +113,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     }
 
     setApplications((current) => current.filter((item) => item.id !== id));
+    trackApplicationDeleted();
   }
 
   async function addStage() {
@@ -119,7 +135,9 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
       return;
     }
 
-    setStages((current) => [...current, body as Stage]);
+    const stage = body as Stage;
+    setStages((current) => [...current, stage]);
+    trackStageAdded({ stageName: stage.name });
   }
 
   async function deleteStageById(id: number) {
@@ -132,6 +150,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     }
 
     setStages((current) => current.filter((stage) => stage.id !== id));
+    trackStageDeleted();
   }
 
   async function reorderStage(draggedStageId: number, targetStageId: number) {
@@ -163,7 +182,10 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     if (!response.ok) {
       setStages(current);
       alert("Failed to reorder stages.");
+      return;
     }
+
+    trackStageReordered();
   }
 
   async function onDropToStage(targetStageId: number) {

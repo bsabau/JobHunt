@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { trackApplicationCreated } from "@/lib/analytics";
 
 interface AddApplicationDialogProps {
   stages: Stage[];
@@ -58,6 +59,12 @@ export function AddApplicationDialog({ stages, onCreated }: AddApplicationDialog
 
       const created = (await response.json()) as Application;
       onCreated(created);
+      trackApplicationCreated({
+        stageName: stages.find((stage) => stage.id === selectedStageId)?.name ?? "unknown",
+        hasSourceUrl: Boolean(form.sourceUrl.trim()),
+        hasInterviewDate: Boolean(form.interviewDate),
+        hasNotes: Boolean(form.notes.trim())
+      });
       setOpen(false);
       setForm({ company: "", role: "", sourceUrl: "", notes: "", interviewDate: "", stageId: defaultStageId });
     } catch (error) {

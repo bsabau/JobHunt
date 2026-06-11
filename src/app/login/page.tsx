@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { trackLogin } from "@/lib/analytics";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -29,9 +30,12 @@ export default function LoginPage() {
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { message?: string } | null;
         setError(body?.message || "Invalid credentials");
+        trackLogin(false);
         setLoading(false);
         return;
       }
+
+      trackLogin(true);
 
       router.push("/");
       router.refresh();

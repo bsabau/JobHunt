@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { trackApplicationUpdated } from "@/lib/analytics";
 
 interface EditApplicationDialogProps {
   open: boolean;
@@ -78,6 +79,11 @@ function EditApplicationForm({ application, stages, onOpenChange, onUpdated }: E
 
       const updated = (await response.json()) as Application;
       onUpdated(updated);
+      trackApplicationUpdated({
+        stageChanged: form.stageId !== application.stageId,
+        stageName: stages.find((stage) => stage.id === form.stageId)?.name ?? "unknown",
+        hasInterviewDate: Boolean(form.interviewDate)
+      });
       onOpenChange(false);
     } catch (error) {
       console.error(error);
