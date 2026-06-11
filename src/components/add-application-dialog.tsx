@@ -17,9 +17,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { trackApplicationCreated } from "@/lib/analytics";
+import { applicationsForCompany, confirmDuplicateCompany } from "@/lib/utils";
 
 interface AddApplicationDialogProps {
   stages: Stage[];
+  applications: Application[];
   onCreated: (application: Application) => void;
 }
 
@@ -28,7 +30,7 @@ function getDefaultStageId(stages: Stage[]): number {
   return applied?.id ?? stages[0]?.id ?? 0;
 }
 
-export function AddApplicationDialog({ stages, onCreated }: AddApplicationDialogProps) {
+export function AddApplicationDialog({ stages, applications, onCreated }: AddApplicationDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const defaultStageId = getDefaultStageId(stages);
@@ -44,6 +46,12 @@ export function AddApplicationDialog({ stages, onCreated }: AddApplicationDialog
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+
+    const duplicates = applicationsForCompany(form.company, applications);
+    if (!confirmDuplicateCompany(form.company, duplicates, "add")) {
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await fetch("/api/applications", {

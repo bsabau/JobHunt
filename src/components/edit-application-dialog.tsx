@@ -16,11 +16,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { trackApplicationUpdated } from "@/lib/analytics";
+import { applicationsForCompany, confirmDuplicateCompany } from "@/lib/utils";
 
 interface EditApplicationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   application: Application | null;
+  applications: Application[];
   stages: Stage[];
   onUpdated: (application: Application) => void;
 }
@@ -45,12 +47,13 @@ function normalizeDateForInput(value: string | null): string {
 
 interface EditApplicationFormProps {
   application: Application;
+  applications: Application[];
   stages: Stage[];
   onOpenChange: (open: boolean) => void;
   onUpdated: (application: Application) => void;
 }
 
-function EditApplicationForm({ application, stages, onOpenChange, onUpdated }: EditApplicationFormProps) {
+function EditApplicationForm({ application, applications, stages, onOpenChange, onUpdated }: EditApplicationFormProps) {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     company: application.company,
@@ -63,6 +66,11 @@ function EditApplicationForm({ application, stages, onOpenChange, onUpdated }: E
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const duplicates = applicationsForCompany(form.company, applications, application.id);
+    if (!confirmDuplicateCompany(form.company, duplicates, "save")) {
+      return;
+    }
 
     setLoading(true);
     try {
@@ -166,7 +174,14 @@ function EditApplicationForm({ application, stages, onOpenChange, onUpdated }: E
   );
 }
 
-export function EditApplicationDialog({ open, onOpenChange, application, stages, onUpdated }: EditApplicationDialogProps) {
+export function EditApplicationDialog({
+  open,
+  onOpenChange,
+  application,
+  applications,
+  stages,
+  onUpdated
+}: EditApplicationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -178,6 +193,7 @@ export function EditApplicationDialog({ open, onOpenChange, application, stages,
           <EditApplicationForm
             key={application.id}
             application={application}
+            applications={applications}
             stages={stages}
             onOpenChange={onOpenChange}
             onUpdated={onUpdated}
