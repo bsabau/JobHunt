@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, Plus, Trash2 } from "lucide-react";
 import { STAGE_TONES, daysSince, daysUntil, isApplicationStale } from "@/lib/constants";
 import { Application, Stage } from "@/lib/types";
@@ -58,6 +58,144 @@ function CompanyLogo({ company, logoUrl, logoBgClass }: { company: string; logoU
         onError={() => setFailed(true)}
       />
     </div>
+  );
+}
+
+function formatInterviewDate(date: string) {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (dateOnly) {
+    const [, year, month, day] = dateOnly;
+    return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(
+      new Date(Number(year), Number(month) - 1, Number(day))
+    );
+  }
+
+  return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date(date));
+}
+
+function formatInterviewLabel(date: string) {
+  const formatted = formatInterviewDate(date);
+  const until = daysUntil(date);
+  if (until === 0) {
+    return `${formatted} · Today`;
+  }
+  if (until === 1) {
+    return `${formatted} · Tomorrow`;
+  }
+  if (until > 1) {
+    return `${formatted} · In ${until} days`;
+  }
+  return formatted;
+}
+
+interface KanbanApplicationCardProps {
+  app: Application;
+  stale: boolean;
+  staleDays: number;
+  logoBgClass: string;
+  readOnly: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onEdit: () => void;
+}
+
+function KanbanApplicationCard({
+  app,
+  stale,
+  staleDays,
+  logoBgClass,
+  readOnly,
+  onDragStart,
+  onDragEnd,
+  onEdit
+}: KanbanApplicationCardProps) {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const hideTimerRef = useRef<number | null>(null);
+  const [notesVisible, setNotesVisible] = useState(false);
+  const [notesPos, setNotesPos] = useState({ top: 0, left: 0 });
+  const notes = app.notes?.trim();
+
+  function showNotesTooltip() {
+    if (!notes || !anchorRef.current) {
+      return;
+    }
+    if (hideTimerRef.current !== null) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    const rect = anchorRef.current.getBoundingClientRect();
+    setNotesPos({
+      top: rect.top + rect.height / 2,
+      left: rect.right + 10
+    });
+    setNotesVisible(true);
+  }
+
+  function hideNotesTooltip() {
+    hideTimerRef.current = window.setTimeout(() => {
+      setNotesVisible(false);
+      hideTimerRef.current = null;
+    }, 80);
+  }
+
+  return (
+    <>
+      <div ref={anchorRef} onMouseEnter={showNotesTooltip} onMouseLeave={hideNotesTooltip}>
+        <Card
+          draggable={!readOnly}
+          onDragStart={readOnly ? undefined : onDragStart}
+          onDragEnd={readOnly ? undefined : onDragEnd}
+          onDoubleClick={readOnly ? undefined : onEdit}
+          className={`${readOnly ? "cursor-default" : "cursor-move"} border-border/70 bg-card/80 backdrop-blur ${
+            stale ? "border-l-4 border-l-amber-400/80" : ""
+          }`}
+        >
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-2">
+              <CardTitle className="text-base">{app.company}</CardTitle>
+              {stale ? (
+                <span className="shrink-0 rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
+                  Stale · {staleDays}d
+                </span>
+              ) : null}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center gap-3">
+              <CompanyLogo company={app.company} logoUrl={app.logoUrl} logoBgClass={logoBgClass} />
+              <p className="text-sm text-muted-foreground">{app.role}</p>
+            </div>
+            {app.sourceUrl ? (
+              <a
+                className="text-xs font-medium text-sky-400 hover:text-sky-300"
+                href={app.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Job post
+              </a>
+            ) : null}
+            {app.interviewDate ? (
+              <div className="rounded-md border border-border/60 bg-background/70 p-2">
+                <p className="text-xs text-amber-300">Interview: {formatInterviewLabel(app.interviewDate)}</p>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </div>
+      {notesVisible && notes ? (
+        <div
+          role="tooltip"
+          onMouseEnter={showNotesTooltip}
+          onMouseLeave={hideNotesTooltip}
+          className="fixed z-[100] w-64 max-w-[min(16rem,calc(100vw-1rem))] -translate-y-1/2 rounded-lg border border-indigo-400/50 bg-indigo-950 px-3 py-2.5 shadow-xl"
+          style={{ top: notesPos.top, left: notesPos.left }}
+        >
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-indigo-300">Notes</p>
+          <p className="whitespace-pre-wrap text-xs leading-relaxed text-indigo-50">{notes}</p>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -216,33 +354,6 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     setBinHover(false);
   }
 
-  function formatInterviewDate(date: string) {
-    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-    if (dateOnly) {
-      const [, year, month, day] = dateOnly;
-      return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(
-        new Date(Number(year), Number(month) - 1, Number(day))
-      );
-    }
-
-    return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date(date));
-  }
-
-  function formatInterviewLabel(date: string) {
-    const formatted = formatInterviewDate(date);
-    const until = daysUntil(date);
-    if (until === 0) {
-      return `${formatted} · Today`;
-    }
-    if (until === 1) {
-      return `${formatted} · Tomorrow`;
-    }
-    if (until > 1) {
-      return `${formatted} · In ${until} days`;
-    }
-    return formatted;
-  }
-
   async function onDropToBin() {
     if (!draggedItem) {
       return;
@@ -273,6 +384,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
             </Button>
             <AddApplicationDialog
               stages={stages}
+              applications={applications}
               onCreated={(app) => setApplications((current) => [app, ...current])}
             />
           </div>
@@ -326,62 +438,21 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                   {(grouped[stage.id] ?? []).map((app) => {
                     const stale = isApplicationStale(app);
                     const staleDays = stale ? daysSince(app.updatedAt) : 0;
-                    const notes = app.notes?.trim();
                     return (
-                    <div key={app.id} className="group/card relative">
-                    <Card
-                      draggable={!readOnly}
-                      onDragStart={readOnly ? undefined : () => setDraggedItem({ type: "application", id: app.id })}
-                      onDragEnd={readOnly ? undefined : onAnyDragEnd}
-                      onDoubleClick={readOnly ? undefined : () => {
-                        setEditingApplication(app);
-                        setEditOpen(true);
-                      }}
-                      className={`relative overflow-hidden ${readOnly ? "cursor-default" : "cursor-move"} border-border/70 bg-card/80 backdrop-blur ${
-                        stale ? "border-l-4 border-l-amber-400/80" : ""
-                      }`}
-                    >
-                      {notes ? (
-                        <div
-                          role="tooltip"
-                          className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-end bg-gradient-to-t from-background via-background/95 to-transparent p-3 pt-10 opacity-0 transition-opacity duration-150 group-hover/card:opacity-100"
-                        >
-                          <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{notes}</p>
-                        </div>
-                      ) : null}
-                      <CardHeader className="pb-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <CardTitle className="text-base">{app.company}</CardTitle>
-                          {stale ? (
-                            <span className="shrink-0 rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
-                              Stale · {staleDays}d
-                            </span>
-                          ) : null}
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div className="flex items-center gap-3">
-                          <CompanyLogo company={app.company} logoUrl={app.logoUrl} logoBgClass={tone.logoBg} />
-                          <p className="text-sm text-muted-foreground">{app.role}</p>
-                        </div>
-                        {app.sourceUrl ? (
-                          <a
-                            className="text-xs font-medium text-sky-400 hover:text-sky-300"
-                            href={app.sourceUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Job post
-                          </a>
-                        ) : null}
-                        {app.interviewDate ? (
-                          <div className="rounded-md border border-border/60 bg-background/70 p-2">
-                            <p className="text-xs text-amber-300">Interview: {formatInterviewLabel(app.interviewDate)}</p>
-                          </div>
-                        ) : null}
-                      </CardContent>
-                    </Card>
-                    </div>
+                      <KanbanApplicationCard
+                        key={app.id}
+                        app={app}
+                        stale={stale}
+                        staleDays={staleDays}
+                        logoBgClass={tone.logoBg}
+                        readOnly={readOnly}
+                        onDragStart={() => setDraggedItem({ type: "application", id: app.id })}
+                        onDragEnd={onAnyDragEnd}
+                        onEdit={() => {
+                          setEditingApplication(app);
+                          setEditOpen(true);
+                        }}
+                      />
                     );
                   })}
                   {(grouped[stage.id] ?? []).length === 0 ? (
@@ -418,6 +489,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
             open={editOpen}
             onOpenChange={setEditOpen}
             application={editingApplication}
+            applications={applications}
             stages={stages}
             onUpdated={(updated) => {
               setApplications((current) => current.map((item) => (item.id === updated.id ? updated : item)));
