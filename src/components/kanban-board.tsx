@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ArrowLeftRight, Plus, Trash2 } from "lucide-react";
-import { STAGE_TONES } from "@/lib/constants";
+import { STAGE_TONES, daysSince, daysUntil, isApplicationStale } from "@/lib/constants";
 import { Application, Stage } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -228,6 +228,21 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date(date));
   }
 
+  function formatInterviewLabel(date: string) {
+    const formatted = formatInterviewDate(date);
+    const until = daysUntil(date);
+    if (until === 0) {
+      return `${formatted} · Today`;
+    }
+    if (until === 1) {
+      return `${formatted} · Tomorrow`;
+    }
+    if (until > 1) {
+      return `${formatted} · In ${until} days`;
+    }
+    return formatted;
+  }
+
   async function onDropToBin() {
     if (!draggedItem) {
       return;
@@ -308,7 +323,10 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                   </div>
                 </div>
                 <div className="space-y-3">
-                  {(grouped[stage.id] ?? []).map((app) => (
+                  {(grouped[stage.id] ?? []).map((app) => {
+                    const stale = isApplicationStale(app);
+                    const staleDays = stale ? daysSince(app.updatedAt) : 0;
+                    return (
                     <Card
                       key={app.id}
                       draggable={!readOnly}
@@ -318,10 +336,20 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                         setEditingApplication(app);
                         setEditOpen(true);
                       }}
-                      className={`${readOnly ? "cursor-default" : "cursor-move"} border-border/70 bg-card/80 backdrop-blur`}
+                      title={app.notes && !readOnly ? "Double-click to view notes" : undefined}
+                      className={`${readOnly ? "cursor-default" : "cursor-move"} border-border/70 bg-card/80 backdrop-blur ${
+                        stale ? "border-l-4 border-l-amber-400/80" : ""
+                      }`}
                     >
                       <CardHeader className="pb-3">
-                        <CardTitle className="text-base">{app.company}</CardTitle>
+                        <div className="flex items-start justify-between gap-2">
+                          <CardTitle className="text-base">{app.company}</CardTitle>
+                          {stale ? (
+                            <span className="shrink-0 rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
+                              Stale · {staleDays}d
+                            </span>
+                          ) : null}
+                        </div>
                       </CardHeader>
                       <CardContent className="space-y-3">
                         <div className="flex items-center gap-3">
@@ -338,17 +366,15 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                             Job post
                           </a>
                         ) : null}
-                        {app.notes || app.interviewDate ? (
-                          <div className="space-y-1 rounded-md border border-border/60 bg-background/70 p-2">
-                            {app.interviewDate ? (
-                              <p className="text-xs text-amber-300">Interview: {formatInterviewDate(app.interviewDate)}</p>
-                            ) : null}
-                            {app.notes ? <p className="text-xs text-muted-foreground">{app.notes}</p> : null}
+                        {app.interviewDate ? (
+                          <div className="rounded-md border border-border/60 bg-background/70 p-2">
+                            <p className="text-xs text-amber-300">Interview: {formatInterviewLabel(app.interviewDate)}</p>
                           </div>
                         ) : null}
                       </CardContent>
                     </Card>
-                  ))}
+                    );
+                  })}
                   {(grouped[stage.id] ?? []).length === 0 ? (
                     <div className="rounded-md border border-dashed border-border/70 p-3 text-center text-xs text-muted-foreground">
                       Drop applications or stages here

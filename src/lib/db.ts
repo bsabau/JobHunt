@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import type { NeonQueryFunctionInTransaction } from "@neondatabase/serverless";
+import { STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { Application, SankeyPayload, Stage, StatsPayload } from "@/lib/types";
 
 type SqlClient = ReturnType<typeof neon>;
@@ -648,11 +649,15 @@ export async function getStatsData(): Promise<StatsPayload> {
     stageCountRows,
     transitionCountRows,
     avgDaysRows,
+    avgCurrentStageRows,
+    avgInterviewRows,
     createdByDayRows,
     transitionsByDayRows,
     topCompanyRows,
     reachedRows,
     stagePairRows,
+    upcomingInterviewRows,
+    staleApplicationRows,
   ] = await Promise.all([
     listStages(),
     sql`
@@ -671,6 +676,26 @@ export async function getStatsData(): Promise<StatsPayload> {
     sql`
       SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0), 0) AS days
       FROM applications;
+    ` as Promise<Record<string, unknown>[]>,
+    sql`
+      SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - a.updated_at)) / 86400.0), 0) AS days
+      FROM applications a
+      JOIN stages s ON s.id = a.stage_id
+      WHERE LOWER(s.name) <> 'rejected';
+    ` as Promise<Record<string, unknown>[]>,
+    sql`
+      SELECT
+        COALESCE(AVG(
+          EXTRACT(EPOCH FROM (first_interview.transitioned_at - a.created_at)) / 86400.0
+        ), 0) AS days,
+        COUNT(*)::int AS count
+      FROM applications a
+      JOIN LATERAL (
+        SELECT MIN(t.transitioned_at) AS transitioned_at
+        FROM application_transitions t
+        WHERE t.application_id = a.id
+          AND LOWER(t.to_status) = 'interview'
+      ) first_interview ON true;
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
@@ -719,6 +744,25 @@ export async function getStatsData(): Promise<StatsPayload> {
         AND LOWER(to_status) <> LOWER(${ "created" })
       GROUP BY from_status, to_status;
     ` as Promise<Record<string, unknown>[]>,
+    sql`
+      SELECT a.company, a.role,
+             to_char(a.interview_date, 'YYYY-MM-DD') AS interview_date,
+             s.name AS stage_name
+      FROM applications a
+      JOIN stages s ON s.id = a.stage_id
+      WHERE a.interview_date >= CURRENT_DATE
+      ORDER BY a.interview_date ASC
+      LIMIT 10;
+    ` as Promise<Record<string, unknown>[]>,
+    sql`
+      SELECT a.company, a.role, s.name AS stage_name,
+             FLOOR(EXTRACT(EPOCH FROM (NOW() - a.updated_at)) / 86400.0)::int AS days_since_update
+      FROM applications a
+      JOIN stages s ON s.id = a.stage_id
+      WHERE LOWER(s.name) NOT IN ('wishlist', 'offer', 'rejected')
+        AND EXTRACT(EPOCH FROM (NOW() - a.updated_at)) / 86400.0 >= ${STALE_THRESHOLD_DAYS}
+      ORDER BY a.updated_at ASC;
+    ` as Promise<Record<string, unknown>[]>,
   ]);
 
   const stageCounts = stageCountRows.map((row) => ({
@@ -730,7 +774,13 @@ export async function getStatsData(): Promise<StatsPayload> {
   const totalApps = stageCounts.reduce((sum, row) => sum + row.count, 0);
   const activeStages = stageCounts.filter((row) => row.count > 0).length;
   const totalTransitions = Number(transitionCountRows[0]?.count ?? 0);
-  const avgDaysInPipeline = Math.round(Number(avgDaysRows[0]?.days ?? 0) * 10) / 10;
+  const avgDaysSinceCreated = Math.round(Number(avgDaysRows[0]?.days ?? 0) * 10) / 10;
+  const avgDaysInCurrentStage = Math.round(Number(avgCurrentStageRows[0]?.days ?? 0) * 10) / 10;
+  const interviewReachedCount = Number(avgInterviewRows[0]?.count ?? 0);
+  const avgDaysToInterview =
+    interviewReachedCount > 0
+      ? Math.round(Number(avgInterviewRows[0]?.days ?? 0) * 10) / 10
+      : null;
 
   let cumulative = 0;
   const applicationsOverTime = createdByDayRows.map((row) => {
@@ -770,18 +820,38 @@ export async function getStatsData(): Promise<StatsPayload> {
     count: Number(row.count)
   }));
 
+  const upcomingInterviews = upcomingInterviewRows.map((row) => ({
+    company: String(row.company),
+    role: String(row.role),
+    interviewDate: String(row.interview_date),
+    stageName: String(row.stage_name)
+  }));
+
+  const staleApplications = staleApplicationRows.map((row) => ({
+    company: String(row.company),
+    role: String(row.role),
+    stageName: String(row.stage_name),
+    daysSinceUpdate: Number(row.days_since_update)
+  }));
+
   return {
     totals: {
       applications: totalApps,
       activeStages,
       transitions: totalTransitions,
-      avgDaysInPipeline
+      avgDaysSinceCreated,
+      avgDaysInCurrentStage,
+      avgDaysToInterview,
+      interviewReachedCount,
+      staleCount: staleApplications.length
     },
     stageCounts,
     applicationsOverTime,
     transitionsByDay,
     topCompanies,
     funnel,
-    stagePairs
+    stagePairs,
+    upcomingInterviews,
+    staleApplications
   };
 }

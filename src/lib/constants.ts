@@ -1,4 +1,43 @@
+import { Application } from "@/lib/types";
+
 export const DEFAULT_STAGE_NAMES = ["Wishlist", "Applied", "Interview", "Offer", "Rejected"];
+
+export const STALE_THRESHOLD_DAYS = 14;
+
+const STALE_EXCLUDED_STAGES = new Set(["wishlist", "offer", "rejected"]);
+
+export function isStaleEligibleStage(stageName: string): boolean {
+  return !STALE_EXCLUDED_STAGES.has(stageName.trim().toLowerCase());
+}
+
+export function daysSince(isoDate: string): number {
+  const then = new Date(isoDate).getTime();
+  if (Number.isNaN(then)) {
+    return 0;
+  }
+  return Math.floor((Date.now() - then) / 86_400_000);
+}
+
+export function isApplicationStale(app: Application): boolean {
+  if (!isStaleEligibleStage(app.stageName)) {
+    return false;
+  }
+  return daysSince(app.updatedAt) >= STALE_THRESHOLD_DAYS;
+}
+
+export function daysUntil(dateStr: string): number {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  const target = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(dateStr);
+  if (Number.isNaN(target.getTime())) {
+    return 0;
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
 
 export const STAGE_TONES = [
   { column: "bg-slate-500/20 border-slate-400/30", logoBg: "bg-slate-500/20" },
