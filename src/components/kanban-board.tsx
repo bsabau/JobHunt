@@ -242,9 +242,9 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
         )}
       </div>
 
-      <div className="overflow-x-auto pb-3">
+      <div className="overflow-x-auto overscroll-x-contain pb-3">
         <div
-          className="mx-auto grid w-max gap-4"
+          className="inline-grid gap-4"
           style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(240px, 280px))` }}
         >
           {stages.map((stage, index) => {
