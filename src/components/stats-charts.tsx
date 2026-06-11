@@ -114,18 +114,69 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
     [data.funnel]
   );
 
+  const dropOffData = useMemo(() => {
+    const pipeline = [...data.funnel]
+      .filter((row) => row.stage.trim().toLowerCase() !== "rejected")
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+
+    const rows: {
+      transition: string;
+      dropOffPct: number;
+      dropped: number;
+      reachedFrom: number;
+      fill: string;
+    }[] = [];
+
+    for (let i = 0; i < pipeline.length - 1; i++) {
+      const from = pipeline[i];
+      const to = pipeline[i + 1];
+      if (from.reached <= 0 || to.reached > from.reached) {
+        continue;
+      }
+      const dropped = from.reached - to.reached;
+      const dropOffPct = Math.round((dropped / from.reached) * 1000) / 10;
+      rows.push({
+        transition: `${from.stage} → ${to.stage}`,
+        dropOffPct,
+        dropped,
+        reachedFrom: from.reached,
+        fill: colorFor(to.stage, i + 1)
+      });
+    }
+
+    return rows;
+  }, [data.funnel]);
+
   const hasApps = data.totals.applications > 0;
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
         <SummaryTile label="Total Applications" value={data.totals.applications} />
-        <SummaryTile label="Active Stages" value={data.totals.activeStages} hint="Stages with at least one app" />
         <SummaryTile label="Stage Transitions" value={data.totals.transitions} />
         <SummaryTile
-          label="Avg Days in Pipeline"
-          value={data.totals.avgDaysInPipeline}
+          label="Avg Days Since Created"
+          value={data.totals.avgDaysSinceCreated}
           hint="Across all applications"
+        />
+        <SummaryTile
+          label="Avg Days in Current Stage"
+          value={data.totals.avgDaysInCurrentStage}
+          hint="Active apps, excluding Rejected"
+        />
+        <SummaryTile
+          label="Avg Days to Interview"
+          value={data.totals.avgDaysToInterview ?? "—"}
+          hint={
+            data.totals.interviewReachedCount > 0
+              ? `Based on ${data.totals.interviewReachedCount} app${data.totals.interviewReachedCount === 1 ? "" : "s"}`
+              : "No apps reached Interview yet"
+          }
+        />
+        <SummaryTile
+          label="Stale Applications"
+          value={data.totals.staleCount}
+          hint="14+ days in Applied or middle stages"
         />
       </div>
 
@@ -139,6 +190,66 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
 
       {hasApps && (
         <>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Upcoming Interviews</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {data.upcomingInterviews.length > 0 ? (
+                  <ul className="space-y-3">
+                    {data.upcomingInterviews.map((row) => (
+                      <li
+                        key={`${row.company}-${row.interviewDate}`}
+                        className="flex items-start justify-between gap-3 rounded-md border border-border/60 bg-background/50 px-3 py-2"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{row.company}</p>
+                          <p className="text-xs text-muted-foreground">{row.role}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-medium text-amber-300">{formatDate(row.interviewDate)}</p>
+                          <p className="text-xs text-muted-foreground">{row.stageName}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="py-6 text-center text-sm text-muted-foreground">No upcoming interviews scheduled.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Stale Applications</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {data.staleApplications.length > 0 ? (
+                  <ul className="space-y-3">
+                    {data.staleApplications.map((row) => (
+                      <li
+                        key={`${row.company}-${row.stageName}`}
+                        className="flex items-start justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{row.company}</p>
+                          <p className="text-xs text-muted-foreground">{row.role}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-medium text-amber-300">Stale · {row.daysSinceUpdate}d</p>
+                          <p className="text-xs text-muted-foreground">{row.stageName}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="py-6 text-center text-sm text-muted-foreground">No stale applications right now.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
@@ -206,6 +317,54 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Pipeline Drop-off</CardTitle>
+            </CardHeader>
+            <CardContent className="h-[320px]">
+              {dropOffData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={dropOffData}
+                    layout="vertical"
+                    margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
+                  >
+                    <CartesianGrid stroke="rgba(148,163,184,0.15)" horizontal={false} />
+                    <XAxis
+                      type="number"
+                      domain={[0, 100]}
+                      unit="%"
+                      tick={{ fontSize: 12, fill: "#94a3b8" }}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="transition"
+                      width={140}
+                      tick={{ fontSize: 12, fill: "#94a3b8" }}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "rgba(148,163,184,0.08)" }}
+                      contentStyle={tooltipStyle}
+                      formatter={(value, _name, item) => {
+                        const row = item.payload as (typeof dropOffData)[number];
+                        return [`${value}% (${row.dropped} of ${row.reachedFrom} did not advance)`, "Drop-off"];
+                      }}
+                    />
+                    <Bar dataKey="dropOffPct" radius={[0, 6, 6, 0]}>
+                      {dropOffData.map((row) => (
+                        <Cell key={row.transition} fill={row.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  Need at least two pipeline stages to compute drop-off.
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

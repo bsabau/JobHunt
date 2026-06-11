@@ -28,7 +28,11 @@ export interface StatsPayload {
     applications: number;
     activeStages: number;
     transitions: number;
-    avgDaysInPipeline: number;
+    avgDaysSinceCreated: number;
+    avgDaysInCurrentStage: number;
+    avgDaysToInterview: number | null;
+    interviewReachedCount: number;
+    staleCount: number;
   };
   stageCounts: { stage: string; count: number; sortOrder: number }[];
   applicationsOverTime: { date: string; created: number; cumulative: number }[];
@@ -36,4 +40,6 @@ export interface StatsPayload {
   topCompanies: { company: string; count: number }[];
   funnel: { stage: string; reached: number; sortOrder: number }[];
   stagePairs: { from: string; to: string; count: number }[];
+  upcomingInterviews: { company: string; role: string; interviewDate: string; stageName: string }[];
+  staleApplications: { company: string; role: string; stageName: string; daysSinceUpdate: number }[];
 }
