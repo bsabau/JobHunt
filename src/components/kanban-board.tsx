@@ -195,6 +195,14 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   }
 
   function formatInterviewDate(date: string) {
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+    if (dateOnly) {
+      const [, year, month, day] = dateOnly;
+      return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(
+        new Date(Number(year), Number(month) - 1, Number(day))
+      );
+    }
+
     return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date(date));
   }
 
@@ -234,96 +242,101 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
         )}
       </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(240px, 1fr))` }}>
-        {stages.map((stage, index) => {
-          const tone = toneFor(index);
-          return (
-            <div
-              key={stage.id}
-              className={`rounded-xl border p-3 transition-all ${tone.column} ${
-                draggedItem?.type === "stage" && stageDropTargetId === stage.id
-                  ? "ring-2 ring-sky-300/80 ring-offset-2 ring-offset-background"
-                  : ""
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                if (draggedItem?.type === "stage") {
-                  setStageDropTargetId(stage.id);
-                }
-              }}
-              onDragLeave={() => {
-                if (draggedItem?.type === "stage" && stageDropTargetId === stage.id) {
-                  setStageDropTargetId(null);
-                }
-              }}
-              onDrop={() => void onDropToStage(stage.id)}
-            >
+      <div className="overflow-x-auto pb-3">
+        <div
+          className="mx-auto grid w-max gap-4"
+          style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(240px, 280px))` }}
+        >
+          {stages.map((stage, index) => {
+            const tone = toneFor(index);
+            return (
               <div
-                className={`mb-3 flex items-center justify-between gap-2 rounded-md border border-dashed border-border/50 px-2 py-1 ${readOnly ? "" : "cursor-grab active:cursor-grabbing"}`}
-                draggable={!readOnly}
-                onDragStart={readOnly ? undefined : () => onStageHeaderDragStart(stage.id)}
-                onDragEnd={readOnly ? undefined : onAnyDragEnd}
-                title={readOnly ? undefined : "Drag to reorder stage"}
+                key={stage.id}
+                className={`rounded-xl border p-3 transition-all ${tone.column} ${
+                  draggedItem?.type === "stage" && stageDropTargetId === stage.id
+                    ? "ring-2 ring-sky-300/80 ring-offset-2 ring-offset-background"
+                    : ""
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (draggedItem?.type === "stage") {
+                    setStageDropTargetId(stage.id);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (draggedItem?.type === "stage" && stageDropTargetId === stage.id) {
+                    setStageDropTargetId(null);
+                  }
+                }}
+                onDrop={() => void onDropToStage(stage.id)}
               >
-                <h3 className="truncate text-sm font-semibold tracking-wide text-muted-foreground">{stage.name}</h3>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full border border-border/60 px-2 py-0.5 text-xs text-muted-foreground">
-                    {grouped[stage.id]?.length ?? 0}
-                  </span>
-                  <ArrowLeftRight className="h-4 w-4 text-muted-foreground" />
+                <div
+                  className={`mb-3 flex items-center justify-between gap-2 rounded-md border border-dashed border-border/50 px-2 py-1 ${readOnly ? "" : "cursor-grab active:cursor-grabbing"}`}
+                  draggable={!readOnly}
+                  onDragStart={readOnly ? undefined : () => onStageHeaderDragStart(stage.id)}
+                  onDragEnd={readOnly ? undefined : onAnyDragEnd}
+                  title={readOnly ? undefined : "Drag to reorder stage"}
+                >
+                  <h3 className="truncate text-sm font-semibold tracking-wide text-muted-foreground">{stage.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-border/60 px-2 py-0.5 text-xs text-muted-foreground">
+                      {grouped[stage.id]?.length ?? 0}
+                    </span>
+                    <ArrowLeftRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {(grouped[stage.id] ?? []).map((app) => (
+                    <Card
+                      key={app.id}
+                      draggable={!readOnly}
+                      onDragStart={readOnly ? undefined : () => setDraggedItem({ type: "application", id: app.id })}
+                      onDragEnd={readOnly ? undefined : onAnyDragEnd}
+                      onDoubleClick={readOnly ? undefined : () => {
+                        setEditingApplication(app);
+                        setEditOpen(true);
+                      }}
+                      className={`${readOnly ? "cursor-default" : "cursor-move"} border-border/70 bg-card/80 backdrop-blur`}
+                    >
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">{app.company}</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="flex items-center gap-3">
+                          <CompanyLogo company={app.company} logoUrl={app.logoUrl} logoBgClass={tone.logoBg} />
+                          <p className="text-sm text-muted-foreground">{app.role}</p>
+                        </div>
+                        {app.sourceUrl ? (
+                          <a
+                            className="text-xs font-medium text-sky-400 hover:text-sky-300"
+                            href={app.sourceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Job post
+                          </a>
+                        ) : null}
+                        {app.notes || app.interviewDate ? (
+                          <div className="space-y-1 rounded-md border border-border/60 bg-background/70 p-2">
+                            {app.interviewDate ? (
+                              <p className="text-xs text-amber-300">Interview: {formatInterviewDate(app.interviewDate)}</p>
+                            ) : null}
+                            {app.notes ? <p className="text-xs text-muted-foreground">{app.notes}</p> : null}
+                          </div>
+                        ) : null}
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {(grouped[stage.id] ?? []).length === 0 ? (
+                    <div className="rounded-md border border-dashed border-border/70 p-3 text-center text-xs text-muted-foreground">
+                      Drop applications or stages here
+                    </div>
+                  ) : null}
                 </div>
               </div>
-              <div className="space-y-3">
-                {(grouped[stage.id] ?? []).map((app) => (
-                  <Card
-                    key={app.id}
-                    draggable={!readOnly}
-                    onDragStart={readOnly ? undefined : () => setDraggedItem({ type: "application", id: app.id })}
-                    onDragEnd={readOnly ? undefined : onAnyDragEnd}
-                    onDoubleClick={readOnly ? undefined : () => {
-                      setEditingApplication(app);
-                      setEditOpen(true);
-                    }}
-                    className={`${readOnly ? "cursor-default" : "cursor-move"} border-border/70 bg-card/80 backdrop-blur`}
-                  >
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base">{app.company}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <CompanyLogo company={app.company} logoUrl={app.logoUrl} logoBgClass={tone.logoBg} />
-                        <p className="text-sm text-muted-foreground">{app.role}</p>
-                      </div>
-                      {app.sourceUrl ? (
-                        <a
-                          className="text-xs font-medium text-sky-400 hover:text-sky-300"
-                          href={app.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Job post
-                        </a>
-                      ) : null}
-                      {app.notes || app.interviewDate ? (
-                        <div className="space-y-1 rounded-md border border-border/60 bg-background/70 p-2">
-                          {app.interviewDate ? (
-                            <p className="text-xs text-amber-300">Interview: {formatInterviewDate(app.interviewDate)}</p>
-                          ) : null}
-                          {app.notes ? <p className="text-xs text-muted-foreground">{app.notes}</p> : null}
-                        </div>
-                      ) : null}
-                    </CardContent>
-                  </Card>
-                ))}
-                {(grouped[stage.id] ?? []).length === 0 ? (
-                  <div className="rounded-md border border-dashed border-border/70 p-3 text-center text-xs text-muted-foreground">
-                    Drop applications or stages here
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {!readOnly && (

@@ -3,8 +3,29 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
 export type Role = "user" | "guest";
 
+export class AuthConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthConfigurationError";
+  }
+}
+
+export function isAuthConfigurationError(error: unknown): error is AuthConfigurationError {
+  return error instanceof AuthConfigurationError;
+}
+
+function requireEnv(name: "AUTH_USER" | "AUTH_PASS" | "AUTH_SECRET"): string {
+  const value = process.env[name];
+
+  if (!value || value.trim().length === 0) {
+    throw new AuthConfigurationError(`${name} environment variable is required`);
+  }
+
+  return value;
+}
+
 function getSecret(): string {
-  return process.env.AUTH_PASS ?? "";
+  return requireEnv("AUTH_SECRET");
 }
 
 async function hmac(message: string): Promise<string> {
@@ -46,7 +67,11 @@ export async function verifySessionToken(token: string): Promise<{ valid: boolea
 
 export function validateCredentials(user: string, pass: string): Role | null {
   if (user === "guest" && pass === "guest") return "guest";
-  if (user === process.env.AUTH_USER && pass === process.env.AUTH_PASS) return "user";
+
+  const configuredUser = requireEnv("AUTH_USER");
+  const configuredPass = requireEnv("AUTH_PASS");
+
+  if (user === configuredUser && pass === configuredPass) return "user";
   return null;
 }
 

@@ -27,9 +27,12 @@ Create `.env.local` (or use `.env.example`) and set:
 
 ```bash
 DATABASE_URL="postgresql://..."
+AUTH_USER="your-username"
+AUTH_PASS="your-password"
+AUTH_SECRET="generate-a-long-random-session-signing-secret"
 ```
 
-For Vercel deployment, add the same `DATABASE_URL` value in Project Settings -> Environment Variables.
+For Vercel deployment, add the same values in Project Settings -> Environment Variables.
 
 ## Database migrations
 

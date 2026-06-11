@@ -13,7 +13,8 @@
     "migrate:up": "node scripts/migrate-up.mjs",
     "migrate:create": "node scripts/migrate-create.mjs",
     "reset:db": "node scripts/reset-neon-db.mjs",
-    "cleanup:created": "node scripts/cleanup-created-transitions.mjs"
+    "cleanup:created": "node scripts/cleanup-created-transitions.mjs",
+    "verify:auth": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-auth.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

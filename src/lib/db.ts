@@ -1,7 +1,10 @@
 import { neon } from "@neondatabase/serverless";
+import type { NeonQueryFunctionInTransaction } from "@neondatabase/serverless";
 import { Application, SankeyPayload, Stage, StatsPayload } from "@/lib/types";
 
 type SqlClient = ReturnType<typeof neon>;
+type TransactionSql = NeonQueryFunctionInTransaction<boolean, boolean>;
+type TransactionQuery = ReturnType<TransactionSql>;
 
 let sqlClient: SqlClient | null = null;
 
@@ -18,6 +21,10 @@ function getSql(): SqlClient {
 
 function sql(strings: TemplateStringsArray, ...values: unknown[]) {
   return getSql()(strings, ...values);
+}
+
+function transaction(queries: (tx: TransactionSql) => TransactionQuery[]) {
+  return getSql().transaction((tx) => queries(tx));
 }
 
 let schemaReadyPromise: Promise<void> | null = null;
@@ -197,19 +204,25 @@ export async function reorderStages(stageIds: number[]): Promise<Stage[]> {
   }
 
   const existingSet = new Set(existing.map((stage) => stage.id));
+  const payloadSet = new Set(stageIds);
+
+  if (payloadSet.size !== stageIds.length) {
+    throw new Error("Reorder payload must not contain duplicate stages");
+  }
+
   for (const id of stageIds) {
     if (!existingSet.has(id)) {
       throw new Error("Unknown stage in reorder payload");
     }
   }
 
-  for (const [index, id] of stageIds.entries()) {
-    await sql`
+  await transaction((tx) =>
+    stageIds.map((id, index) => tx`
       UPDATE stages
       SET sort_order = ${index}
       WHERE id = ${id};
-    `;
-  }
+    `)
+  );
 
   return listStages();
 }
@@ -342,53 +355,49 @@ export async function createApplication(input: CreateApplicationInput): Promise<
   return application;
 }
 
-async function recordTransition(
+function recordTransition(
+  tx: TransactionSql,
   applicationId: number,
   currentStageName: string,
   targetStageName: string,
   targetSortOrder: number,
   currentSortOrder: number
-): Promise<void> {
+): TransactionQuery {
   const isBackward = targetSortOrder < currentSortOrder;
 
   if (isBackward) {
-    // Delete transitions where to_status points to a stage at or after the target
-    await sql`
-      DELETE FROM application_transitions
-      WHERE application_id = ${applicationId}
-        AND id IN (
-          SELECT t.id FROM application_transitions t
-          JOIN stages s ON s.name = t.to_status
-          WHERE t.application_id = ${applicationId}
-            AND s.sort_order >= ${targetSortOrder}
-        );
-    `;
-
-    // Get the last remaining transition's to_status to use as from_status
-    const lastRows = (await sql`
-      SELECT to_status FROM application_transitions
-      WHERE application_id = ${applicationId}
-      ORDER BY transitioned_at DESC
-      LIMIT 1;
-    `) as Record<string, unknown>[];
-
-    const fromStatus = lastRows.length > 0 ? String(lastRows[0].to_status) : null;
-
-    // Only add transition if there's a prior stage to transition from
-    // and it's different from the target
-    if (fromStatus && fromStatus !== targetStageName) {
-      await sql`
-        INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
-        VALUES (${applicationId}, ${fromStatus}, ${targetStageName}, NOW());
-      `;
-    }
-  } else {
-    // Forward move: simple append
-    await sql`
+    return tx`
+      WITH candidate_from AS (
+        SELECT t.to_status
+        FROM application_transitions t
+        JOIN stages s ON s.name = t.to_status
+        WHERE t.application_id = ${applicationId}
+          AND s.sort_order < ${targetSortOrder}
+        ORDER BY t.transitioned_at DESC
+        LIMIT 1
+      ),
+      deleted AS (
+        DELETE FROM application_transitions
+        WHERE application_id = ${applicationId}
+          AND id IN (
+            SELECT t.id FROM application_transitions t
+            JOIN stages s ON s.name = t.to_status
+            WHERE t.application_id = ${applicationId}
+              AND s.sort_order >= ${targetSortOrder}
+          )
+        RETURNING id
+      )
       INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
-      VALUES (${applicationId}, ${currentStageName}, ${targetStageName}, NOW());
+      SELECT ${applicationId}, to_status, ${targetStageName}, NOW()
+      FROM candidate_from
+      WHERE to_status <> ${targetStageName};
     `;
   }
+
+  return tx`
+    INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
+    VALUES (${applicationId}, ${currentStageName}, ${targetStageName}, NOW());
+  `;
 }
 
 export async function updateApplicationStage(id: number, toStageId: number): Promise<Application | null> {
@@ -425,13 +434,14 @@ export async function updateApplicationStage(id: number, toStageId: number): Pro
   const targetSortOrder = Number(targetRows[0].sortorder);
 
   if (currentStageId !== targetStageId) {
-    await sql`
-      UPDATE applications
-      SET stage_id = ${targetStageId}, updated_at = NOW()
-      WHERE id = ${id};
-    `;
-
-    await recordTransition(id, currentStageName, targetStageName, targetSortOrder, currentSortOrder);
+    await transaction((tx) => [
+      tx`
+        UPDATE applications
+        SET stage_id = ${targetStageId}, updated_at = NOW()
+        WHERE id = ${id};
+      `,
+      recordTransition(tx, id, currentStageName, targetStageName, targetSortOrder, currentSortOrder)
+    ]);
   }
 
   return selectApplicationById(id);
@@ -496,21 +506,35 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
   const targetStageName = String(targetRows[0].name);
   const targetSortOrder = Number(targetRows[0].sortorder);
 
-  await sql`
-    UPDATE applications
-    SET
-      company = ${input.company.trim()},
-      role = ${input.role.trim()},
-      notes = ${input.notes?.trim() || null},
-      interview_date = ${input.interviewDate ? input.interviewDate : null},
-      source_url = ${input.sourceUrl?.trim() || null},
-      stage_id = ${targetStageId},
-      updated_at = NOW()
-    WHERE id = ${id};
-  `;
-
   if (currentStageId !== targetStageId) {
-    await recordTransition(id, currentStageName, targetStageName, targetSortOrder, currentSortOrder);
+    await transaction((tx) => [
+      tx`
+        UPDATE applications
+        SET
+          company = ${input.company.trim()},
+          role = ${input.role.trim()},
+          notes = ${input.notes?.trim() || null},
+          interview_date = ${input.interviewDate ? input.interviewDate : null},
+          source_url = ${input.sourceUrl?.trim() || null},
+          stage_id = ${targetStageId},
+          updated_at = NOW()
+        WHERE id = ${id};
+      `,
+      recordTransition(tx, id, currentStageName, targetStageName, targetSortOrder, currentSortOrder)
+    ]);
+  } else {
+    await sql`
+      UPDATE applications
+      SET
+        company = ${input.company.trim()},
+        role = ${input.role.trim()},
+        notes = ${input.notes?.trim() || null},
+        interview_date = ${input.interviewDate ? input.interviewDate : null},
+        source_url = ${input.sourceUrl?.trim() || null},
+        stage_id = ${targetStageId},
+        updated_at = NOW()
+      WHERE id = ${id};
+    `;
   }
 
   return selectApplicationById(id);

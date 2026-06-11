@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteApplication, updateApplication } from "@/lib/db";
+import {
+  isApiValidationError,
+  optionalDateOnly,
+  optionalHttpUrl,
+  optionalString,
+  positiveInteger,
+  readJsonObject,
+  requiredString,
+  validationErrorResponse
+} from "@/lib/api-validation";
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -7,24 +17,17 @@ interface Params {
 
 export async function PATCH(request: NextRequest, { params }: Params) {
   const { id } = await params;
-  const payload = await request.json();
-
-  if (!payload.company || !payload.role) {
-    return NextResponse.json({ message: "company and role are required" }, { status: 400 });
-  }
-
-  if (!payload.stageId || Number.isNaN(Number(payload.stageId))) {
-    return NextResponse.json({ message: "Valid stageId is required" }, { status: 400 });
-  }
 
   try {
-    const updated = await updateApplication(Number(id), {
-      company: String(payload.company),
-      role: String(payload.role),
-      notes: payload.notes ? String(payload.notes) : undefined,
-      interviewDate: payload.interviewDate ? String(payload.interviewDate) : null,
-      sourceUrl: payload.sourceUrl ? String(payload.sourceUrl) : undefined,
-      stageId: Number(payload.stageId)
+    const applicationId = positiveInteger(id, "id");
+    const payload = await readJsonObject(request);
+    const updated = await updateApplication(applicationId, {
+      company: requiredString(payload, "company"),
+      role: requiredString(payload, "role"),
+      notes: optionalString(payload, "notes"),
+      interviewDate: optionalDateOnly(payload, "interviewDate"),
+      sourceUrl: optionalHttpUrl(payload, "sourceUrl"),
+      stageId: positiveInteger(payload.stageId, "stageId")
     });
 
     if (!updated) {
@@ -33,6 +36,10 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (isApiValidationError(error)) {
+      return validationErrorResponse(error);
+    }
+
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Failed to update application" },
       { status: 400 }
@@ -42,7 +49,18 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
 export async function DELETE(_: Request, { params }: Params) {
   const { id } = await params;
-  const deleted = await deleteApplication(Number(id));
+
+  let applicationId: number;
+  try {
+    applicationId = positiveInteger(id, "id");
+  } catch (error) {
+    if (isApiValidationError(error)) {
+      return validationErrorResponse(error);
+    }
+    throw error;
+  }
+
+  const deleted = await deleteApplication(applicationId);
 
   if (!deleted) {
     return NextResponse.json({ message: "Application not found" }, { status: 404 });

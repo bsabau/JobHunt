@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteStage } from "@/lib/db";
+import { isApiValidationError, positiveInteger, validationErrorResponse } from "@/lib/api-validation";
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -7,7 +8,18 @@ interface Params {
 
 export async function DELETE(_: Request, { params }: Params) {
   const { id } = await params;
-  const result = await deleteStage(Number(id));
+  let stageId: number;
+
+  try {
+    stageId = positiveInteger(id, "id");
+  } catch (error) {
+    if (isApiValidationError(error)) {
+      return validationErrorResponse(error);
+    }
+    throw error;
+  }
+
+  const result = await deleteStage(stageId);
 
   if (!result.deleted) {
     const status = result.reason === "Stage not found" ? 404 : 400;

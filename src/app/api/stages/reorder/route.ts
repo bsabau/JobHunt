@@ -1,17 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { reorderStages } from "@/lib/db";
+import {
+  ApiValidationError,
+  isApiValidationError,
+  positiveInteger,
+  readJsonObject,
+  validationErrorResponse
+} from "@/lib/api-validation";
 
 export async function PATCH(request: NextRequest) {
-  const body = await request.json();
-
-  if (!Array.isArray(body.stageIds)) {
-    return NextResponse.json({ message: "stageIds array is required" }, { status: 400 });
-  }
-
   try {
-    const updated = await reorderStages(body.stageIds.map((value: unknown) => Number(value)));
+    const body = await readJsonObject(request);
+    if (!Array.isArray(body.stageIds)) {
+      throw new ApiValidationError("stageIds array is required");
+    }
+
+    const updated = await reorderStages(body.stageIds.map((value) => positiveInteger(value, "stageId")));
     return NextResponse.json(updated);
   } catch (error) {
+    if (isApiValidationError(error)) {
+      return validationErrorResponse(error);
+    }
+
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Failed to reorder stages" },
       { status: 400 }
