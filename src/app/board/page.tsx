@@ -15,7 +15,7 @@ export default async function BoardPage() {
   const readOnly = session?.role === "guest";
 
   return (
-    <main className="mx-auto min-h-screen max-w-[1500px] px-6 py-10">
+    <main className="min-h-screen px-6 py-10">
       <PageHeader active="board" readOnly={readOnly} />
       <KanbanBoard initialApplications={applications} initialStages={stages} readOnly={readOnly} />
     </main>
