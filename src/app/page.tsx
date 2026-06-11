@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { StatsCharts } from "@/components/stats-charts";
 import { PageHeader } from "@/components/page-header";
 import { getStatsData } from "@/lib/db";
-import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
+import { safeVerifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ export default async function HomePage() {
 
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
-  const session = token ? await verifySessionToken(token) : null;
+  const session = token ? await safeVerifySessionToken(token) : null;
   const readOnly = session?.role === "guest";
 
   return (

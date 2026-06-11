@@ -65,6 +65,19 @@ export async function verifySessionToken(token: string): Promise<{ valid: boolea
   return { valid: true, role };
 }
 
+export async function safeVerifySessionToken(token: string): Promise<{ valid: boolean; role: Role }> {
+  try {
+    return await verifySessionToken(token);
+  } catch (error) {
+    if (isAuthConfigurationError(error)) {
+      console.error(error.message);
+      return { valid: false, role: "user" };
+    }
+
+    throw error;
+  }
+}
+
 export function validateCredentials(user: string, pass: string): Role | null {
   if (user === "guest" && pass === "guest") return "guest";
 

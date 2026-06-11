@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
+import { safeVerifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 
 export async function proxy(request: NextRequest) {
   // Allow login page and login API without auth
@@ -11,14 +11,18 @@ export async function proxy(request: NextRequest) {
   }
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
-  const session = token ? await verifySessionToken(token) : null;
+  const session = token ? await safeVerifySessionToken(token) : null;
 
   if (!session?.valid) {
     if (request.nextUrl.pathname.startsWith("/api/")) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+      const response = NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+      response.cookies.delete(SESSION_COOKIE);
+      return response;
     }
     const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+    const response = NextResponse.redirect(loginUrl);
+    response.cookies.delete(SESSION_COOKIE);
+    return response;
   }
 
   // Block mutating API requests for guest users
