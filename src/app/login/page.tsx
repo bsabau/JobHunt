@@ -41,6 +41,7 @@ export default function LoginPage() {
       router.refresh();
     } catch {
       setError("Something went wrong");
+      trackLogin(false);
       setLoading(false);
     }
   }
