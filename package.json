@@ -45,7 +45,7 @@
   },
   "overrides": {
     "minimatch": "^10.2.2",
-    "postcss": "^8.5.15",
+    "postcss": "^8.5.28",
     "eslint-plugin-import": {
       "minimatch": "^10.2.2"
     },
