@@ -1,18 +1,15 @@
-import { cookies } from "next/headers";
 import { StatsCharts } from "@/components/stats-charts";
 import { PageHeader } from "@/components/page-header";
 import { getStatsData } from "@/lib/db";
-import { safeVerifySessionToken, SESSION_COOKIE } from "@/lib/auth";
+import { requirePageSession } from "@/lib/page-auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const stats = await getStatsData();
+  const session = await requirePageSession();
+  const readOnly = session.role === "guest";
 
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE)?.value;
-  const session = token ? await safeVerifySessionToken(token) : null;
-  const readOnly = session?.role === "guest";
+  const stats = await getStatsData();
 
   return (
     <main className="mx-auto min-h-screen max-w-[1500px] px-6 py-10">

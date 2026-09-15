@@ -1,3 +1,6 @@
+import { cookies } from "next/headers";
+import { ForbiddenError, UnauthorizedError } from "@/lib/api-errors";
+
 const SESSION_COOKIE = "session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
@@ -97,6 +100,29 @@ export async function safeVerifySessionToken(token: string): Promise<{ valid: bo
 
     throw error;
   }
+}
+
+export interface Session {
+  role: Role;
+}
+
+// Second line of defense behind the proxy: every route handler and page calls
+// this before touching the database. Throws a typed 401 when there is no valid
+// session, and a typed 403 when a guest attempts a write.
+export async function requireSession(options: { write?: boolean } = {}): Promise<Session> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  const session = token ? await safeVerifySessionToken(token) : null;
+
+  if (!session?.valid) {
+    throw new UnauthorizedError("Authentication required");
+  }
+
+  if (options.write && session.role === "guest") {
+    throw new ForbiddenError("Guest access is read-only");
+  }
+
+  return { role: session.role };
 }
 
 export function validateCredentials(user: string, pass: string): Role | null {

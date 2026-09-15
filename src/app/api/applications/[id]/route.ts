@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteApplication, updateApplication } from "@/lib/db";
 import { errorResponse } from "@/lib/api-errors";
+import { requireSession } from "@/lib/auth";
 import {
   TEXT_LIMITS,
   optionalDateOnly,
@@ -20,6 +21,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   const { id } = await params;
 
   try {
+    await requireSession({ write: true });
     const applicationId = positiveInteger(id, "id");
     const payload = await readJsonObject(request);
     const updated = await updateApplication(applicationId, {
@@ -46,6 +48,7 @@ export async function DELETE(_: Request, { params }: Params) {
   const { id } = await params;
 
   try {
+    await requireSession({ write: true });
     const applicationId = positiveInteger(id, "id");
     const deleted = await deleteApplication(applicationId);
 

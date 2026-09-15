@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { deleteStage } from "@/lib/db";
 import { errorResponse } from "@/lib/api-errors";
+import { requireSession } from "@/lib/auth";
 import { positiveInteger } from "@/lib/api-validation";
 
 interface Params {
@@ -11,6 +12,7 @@ export async function DELETE(_: Request, { params }: Params) {
   const { id } = await params;
 
   try {
+    await requireSession({ write: true });
     const stageId = positiveInteger(id, "id");
     const result = await deleteStage(stageId);
 

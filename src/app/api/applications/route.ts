@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createApplication, listApplications, listStages } from "@/lib/db";
 import { findCompanyLogo } from "@/lib/logo";
 import { errorResponse } from "@/lib/api-errors";
+import { requireSession } from "@/lib/auth";
 import {
   TEXT_LIMITS,
   optionalDateOnly,
@@ -13,12 +14,18 @@ import {
 } from "@/lib/api-validation";
 
 export async function GET() {
-  const [applications, stages] = await Promise.all([listApplications(), listStages()]);
-  return NextResponse.json({ applications, stages });
+  try {
+    await requireSession();
+    const [applications, stages] = await Promise.all([listApplications(), listStages()]);
+    return NextResponse.json({ applications, stages });
+  } catch (error) {
+    return errorResponse(error, "Failed to load applications");
+  }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    await requireSession({ write: true });
     const payload = await readJsonObject(request);
     const company = requiredString(payload, "company", { maxLength: TEXT_LIMITS.company });
     const role = requiredString(payload, "role", { maxLength: TEXT_LIMITS.role });
