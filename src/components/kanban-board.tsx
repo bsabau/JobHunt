@@ -20,6 +20,7 @@ interface KanbanBoardProps {
   initialApplications: Application[];
   initialStages: Stage[];
   readOnly?: boolean;
+  timeZone: string;
 }
 
 type DragItem =
@@ -74,9 +75,9 @@ function formatInterviewDate(date: string) {
   return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date(date));
 }
 
-function formatInterviewLabel(date: string) {
+function formatInterviewLabel(date: string, timeZone: string) {
   const formatted = formatInterviewDate(date);
-  const until = daysUntil(date);
+  const until = daysUntil(date, timeZone);
   if (until === 0) {
     return `${formatted} · Today`;
   }
@@ -96,6 +97,7 @@ interface KanbanApplicationCardProps {
   logoBgClass: string;
   readOnly: boolean;
   pending: boolean;
+  timeZone: string;
   onDragStart: () => void;
   onDragEnd: () => void;
   onEdit: () => void;
@@ -108,6 +110,7 @@ function KanbanApplicationCard({
   logoBgClass,
   readOnly,
   pending,
+  timeZone,
   onDragStart,
   onDragEnd,
   onEdit
@@ -182,7 +185,7 @@ function KanbanApplicationCard({
             ) : null}
             {app.interviewDate ? (
               <div className="rounded-md border border-border/60 bg-background/70 p-2">
-                <p className="text-xs text-amber-300">Interview: {formatInterviewLabel(app.interviewDate)}</p>
+                <p className="text-xs text-amber-300">Interview: {formatInterviewLabel(app.interviewDate, timeZone)}</p>
               </div>
             ) : null}
           </CardContent>
@@ -204,7 +207,7 @@ function KanbanApplicationCard({
   );
 }
 
-export function KanbanBoard({ initialApplications, initialStages, readOnly = false }: KanbanBoardProps) {
+export function KanbanBoard({ initialApplications, initialStages, readOnly = false, timeZone }: KanbanBoardProps) {
   const [applications, setApplications] = useState<Application[]>(initialApplications);
   const [stages, setStages] = useState<Stage[]>(initialStages);
   const [editingApplication, setEditingApplication] = useState<Application | null>(null);
@@ -520,6 +523,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                         logoBgClass={tone.logoBg}
                         readOnly={readOnly}
                         pending={pendingMoveIds.includes(app.id)}
+                        timeZone={timeZone}
                         onDragStart={() => setDraggedItem({ type: "application", id: app.id })}
                         onDragEnd={onAnyDragEnd}
                         onEdit={() => {

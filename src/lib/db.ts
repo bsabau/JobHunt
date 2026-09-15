@@ -2,6 +2,7 @@ import { neon } from "@neondatabase/serverless";
 import type { NeonQueryFunctionInTransaction } from "@neondatabase/serverless";
 import { STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { ConflictError, InvalidInputError } from "@/lib/api-errors";
+import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
 import { Application, SankeyPayload, Stage, StatsPayload } from "@/lib/types";
 
 function hasPgCode(error: unknown, code: string): boolean {
@@ -765,8 +766,10 @@ export async function getSankeyData(): Promise<SankeyPayload> {
   };
 }
 
-export async function getStatsData(): Promise<StatsPayload> {
+export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promise<StatsPayload> {
   await ensureSchema();
+
+  const zone = normalizeTimeZone(timeZone);
 
   const [
     stages,
@@ -832,18 +835,18 @@ export async function getStatsData(): Promise<StatsPayload> {
       ) first_interview ON true;
     ` as Promise<Record<string, unknown>[]>,
     sql`
-      SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+      SELECT to_char((created_at AT TIME ZONE ${zone})::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
       FROM applications
-      GROUP BY date_trunc('day', created_at)
-      ORDER BY date_trunc('day', created_at) ASC;
+      GROUP BY (created_at AT TIME ZONE ${zone})::date
+      ORDER BY (created_at AT TIME ZONE ${zone})::date ASC;
     ` as Promise<Record<string, unknown>[]>,
     sql`
-      SELECT to_char(date_trunc('day', transitioned_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+      SELECT to_char((transitioned_at AT TIME ZONE ${zone})::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
       FROM application_transitions
       WHERE LOWER(from_status) <> LOWER(${LEGACY_CREATED_STAGE})
         AND LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE})
-      GROUP BY date_trunc('day', transitioned_at)
-      ORDER BY date_trunc('day', transitioned_at) ASC;
+      GROUP BY (transitioned_at AT TIME ZONE ${zone})::date
+      ORDER BY (transitioned_at AT TIME ZONE ${zone})::date ASC;
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT company, COUNT(*)::int AS count
@@ -884,7 +887,7 @@ export async function getStatsData(): Promise<StatsPayload> {
              s.name AS stage_name
       FROM applications a
       JOIN stages s ON s.id = a.stage_id
-      WHERE a.interview_date >= CURRENT_DATE - 1
+      WHERE a.interview_date >= (CURRENT_TIMESTAMP AT TIME ZONE ${zone})::date - 1
       ORDER BY a.interview_date ASC
       LIMIT 10;
     ` as Promise<Record<string, unknown>[]>,

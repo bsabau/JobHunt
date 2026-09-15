@@ -1,4 +1,5 @@
 import { Application, StageKind } from "@/lib/types";
+import { daysBetweenDateOnly, todayInTimeZone } from "@/lib/timezone";
 
 export const DEFAULT_STAGE_NAMES = ["Wishlist", "Applied", "Interview", "Offer", "Rejected"];
 
@@ -31,18 +32,29 @@ export function isApplicationStale(app: Application): boolean {
   return daysSince(stageEnteredAt(app)) >= STALE_THRESHOLD_DAYS;
 }
 
-export function daysUntil(dateStr: string): number {
+export function daysUntil(dateStr: string, timeZone?: string): number {
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
-  const target = dateOnly
-    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
-    : new Date(dateStr);
-  if (Number.isNaN(target.getTime())) {
-    return 0;
+  if (!dateOnly) {
+    const target = new Date(dateStr);
+    if (Number.isNaN(target.getTime())) {
+      return 0;
+    }
+    target.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((target.getTime() - today.getTime()) / 86_400_000);
   }
+
+  const targetDate = `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}`;
+  const today = timeZone ? todayInTimeZone(timeZone) : localTodayDateOnly();
+  return daysBetweenDateOnly(today, targetDate);
+}
+
+function localTodayDateOnly(): string {
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  target.setHours(0, 0, 0, 0);
-  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${today.getFullYear()}-${month}-${day}`;
 }
 
 export const STAGE_TONES = [

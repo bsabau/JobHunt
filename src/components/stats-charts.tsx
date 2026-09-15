@@ -17,6 +17,7 @@ import {
   YAxis,
 } from "recharts";
 import { StatsPayload } from "@/lib/types";
+import { daysUntil } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const STAGE_COLORS: Record<string, string> = {
@@ -46,10 +47,8 @@ function formatDate(value: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function isTodayOrFuture(value: string): boolean {
-  const today = new Date();
-  const todayValue = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  return value >= todayValue;
+function isTodayOrFuture(value: string, timeZone: string): boolean {
+  return daysUntil(value, timeZone) >= 0;
 }
 
 interface SummaryTileProps {
@@ -77,10 +76,10 @@ const tooltipStyle = {
   fontSize: 12,
 };
 
-export function StatsCharts({ data }: { data: StatsPayload }) {
+export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: string }) {
   const upcomingInterviews = useMemo(
-    () => data.upcomingInterviews.filter((row) => isTodayOrFuture(row.interviewDate)),
-    [data.upcomingInterviews]
+    () => data.upcomingInterviews.filter((row) => isTodayOrFuture(row.interviewDate, timeZone)),
+    [data.upcomingInterviews, timeZone]
   );
   const stageData = useMemo(
     () => data.stageCounts.map((row) => ({ ...row, fill: colorFor(row.stage) })),
