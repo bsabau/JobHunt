@@ -2,16 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "logo.clearbit.com"
-      },
-      {
-        protocol: "https",
-        hostname: "images.crunchbase.com"
-      }
-    ]
+    // Logos are rendered with a regular <img>; keep Next's vulnerable image
+    // optimizer out of the request path until dependencies are patched.
+    unoptimized: true
   }
 };
 

@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteApplication, updateApplication } from "@/lib/db";
+import { errorResponse } from "@/lib/api-errors";
 import {
-  isApiValidationError,
+  TEXT_LIMITS,
   optionalDateOnly,
   optionalHttpUrl,
   optionalString,
   positiveInteger,
   readJsonObject,
-  requiredString,
-  validationErrorResponse
+  requiredString
 } from "@/lib/api-validation";
 
 interface Params {
@@ -22,9 +22,9 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const applicationId = positiveInteger(id, "id");
     const payload = await readJsonObject(request);
     const updated = await updateApplication(applicationId, {
-      company: requiredString(payload, "company"),
-      role: requiredString(payload, "role"),
-      notes: optionalString(payload, "notes"),
+      company: requiredString(payload, "company", { maxLength: TEXT_LIMITS.company }),
+      role: requiredString(payload, "role", { maxLength: TEXT_LIMITS.role }),
+      notes: optionalString(payload, "notes", { maxLength: TEXT_LIMITS.notes }),
       interviewDate: optionalDateOnly(payload, "interviewDate"),
       sourceUrl: optionalHttpUrl(payload, "sourceUrl"),
       stageId: positiveInteger(payload.stageId, "stageId")
@@ -36,35 +36,23 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
     return NextResponse.json(updated);
   } catch (error) {
-    if (isApiValidationError(error)) {
-      return validationErrorResponse(error);
-    }
-
-    return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Failed to update application" },
-      { status: 400 }
-    );
+    return errorResponse(error, "Failed to update application");
   }
 }
 
 export async function DELETE(_: Request, { params }: Params) {
   const { id } = await params;
 
-  let applicationId: number;
   try {
-    applicationId = positiveInteger(id, "id");
-  } catch (error) {
-    if (isApiValidationError(error)) {
-      return validationErrorResponse(error);
+    const applicationId = positiveInteger(id, "id");
+    const deleted = await deleteApplication(applicationId);
+
+    if (!deleted) {
+      return NextResponse.json({ message: "Application not found" }, { status: 404 });
     }
-    throw error;
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return errorResponse(error, "Failed to delete application");
   }
-
-  const deleted = await deleteApplication(applicationId);
-
-  if (!deleted) {
-    return NextResponse.json({ message: "Application not found" }, { status: 404 });
-  }
-
-  return NextResponse.json({ success: true });
 }

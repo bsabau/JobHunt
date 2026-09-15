@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { safeVerifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 
 export async function proxy(request: NextRequest) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    const origin = request.headers.get("origin");
+    const fetchSite = request.headers.get("sec-fetch-site");
+    if ((origin && origin !== request.nextUrl.origin) || (fetchSite && !["same-origin", "none"].includes(fetchSite))) {
+      return NextResponse.json({ message: "Cross-site requests are not allowed" }, { status: 403 });
+    }
+  }
+
   // Allow login page and login API without auth
   if (
     request.nextUrl.pathname === "/login" ||
@@ -34,10 +42,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.json({ message: "Guest access is read-only" }, { status: 403 });
   }
 
-  // Pass role via request header so server components can read it
-  const response = NextResponse.next();
-  response.headers.set("x-user-role", session.role);
-  return response;
+  // Forward the verified role to server components. Strip any incoming value
+  // first so a client cannot spoof the header.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete("x-user-role");
+  requestHeaders.set("x-user-role", session.role);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export const config = {

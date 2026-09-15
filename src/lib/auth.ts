@@ -14,7 +14,7 @@ export function isAuthConfigurationError(error: unknown): error is AuthConfigura
   return error instanceof AuthConfigurationError;
 }
 
-function requireEnv(name: "AUTH_USER" | "AUTH_PASS" | "AUTH_SECRET"): string {
+function requireEnv(name: "AUTH_USER" | "AUTH_PASS" | "AUTH_SECRET" | "AUTH_GUEST_PASS"): string {
   const value = process.env[name];
 
   if (!value || value.trim().length === 0) {
@@ -43,26 +43,47 @@ async function hmac(message: string): Promise<string> {
     .join("");
 }
 
+// A hash of the configured credentials is embedded in the token so that
+// rotating AUTH_USER/AUTH_PASS invalidates every previously issued session.
+async function credentialVersion(): Promise<string> {
+  const encoder = new TextEncoder();
+  const material = `${process.env.AUTH_USER ?? ""}:${process.env.AUTH_PASS ?? ""}`;
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(material));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function isRole(value: string): value is Role {
+  return value === "user" || value === "guest";
+}
+
 export async function createSessionToken(role: Role = "user"): Promise<string> {
   const expires = Date.now() + SESSION_MAX_AGE * 1000;
-  const payload = `${role}:${expires}`;
+  const version = await credentialVersion();
+  const payload = `${role}:${expires}:${version}`;
   const sig = await hmac(payload);
   return `${payload}:${sig}`;
 }
 
 export async function verifySessionToken(token: string): Promise<{ valid: boolean; role: Role }> {
   const parts = token.split(":");
-  if (parts.length !== 3) return { valid: false, role: "user" };
+  if (parts.length !== 4) return { valid: false, role: "user" };
 
-  const [roleOrLabel, expiresStr, sig] = parts;
-  const payload = `${roleOrLabel}:${expiresStr}`;
+  const [roleOrLabel, expiresStr, version, sig] = parts;
+  if (!isRole(roleOrLabel)) return { valid: false, role: "user" };
+
+  const payload = `${roleOrLabel}:${expiresStr}:${version}`;
   const expectedSig = await hmac(payload);
 
   if (sig !== expectedSig) return { valid: false, role: "user" };
-  if (Date.now() > Number(expiresStr)) return { valid: false, role: "user" };
 
-  const role: Role = roleOrLabel === "guest" ? "guest" : "user";
-  return { valid: true, role };
+  const expires = Number(expiresStr);
+  if (!Number.isFinite(expires) || Date.now() > expires) return { valid: false, role: "user" };
+
+  if (version !== (await credentialVersion())) return { valid: false, role: "user" };
+
+  return { valid: true, role: roleOrLabel };
 }
 
 export async function safeVerifySessionToken(token: string): Promise<{ valid: boolean; role: Role }> {
@@ -79,7 +100,11 @@ export async function safeVerifySessionToken(token: string): Promise<{ valid: bo
 }
 
 export function validateCredentials(user: string, pass: string): Role | null {
-  if (user === "guest" && pass === "guest") return "guest";
+  if (process.env.AUTH_GUEST_ENABLED === "true" && user === "guest") {
+    const guestPass = requireEnv("AUTH_GUEST_PASS");
+    if (pass === guestPass) return "guest";
+    return null;
+  }
 
   const configuredUser = requireEnv("AUTH_USER");
   const configuredPass = requireEnv("AUTH_PASS");

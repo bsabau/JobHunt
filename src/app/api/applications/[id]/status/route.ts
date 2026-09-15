@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateApplicationStage } from "@/lib/db";
-import {
-  isApiValidationError,
-  positiveInteger,
-  readJsonObject,
-  validationErrorResponse
-} from "@/lib/api-validation";
+import { errorResponse } from "@/lib/api-errors";
+import { positiveInteger, readJsonObject } from "@/lib/api-validation";
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -25,13 +21,6 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
     return NextResponse.json(updated);
   } catch (error) {
-    if (isApiValidationError(error)) {
-      return validationErrorResponse(error);
-    }
-
-    return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Failed to update application" },
-      { status: 400 }
-    );
+    return errorResponse(error, "Failed to update application");
   }
 }

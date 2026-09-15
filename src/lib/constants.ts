@@ -18,11 +18,15 @@ export function daysSince(isoDate: string): number {
   return Math.floor((Date.now() - then) / 86_400_000);
 }
 
+export function stageEnteredAt(app: Application): string {
+  return app.stageEnteredAt ?? app.updatedAt;
+}
+
 export function isApplicationStale(app: Application): boolean {
   if (!isStaleEligibleStage(app.stageName)) {
     return false;
   }
-  return daysSince(app.updatedAt) >= STALE_THRESHOLD_DAYS;
+  return daysSince(stageEnteredAt(app)) >= STALE_THRESHOLD_DAYS;
 }
 
 export function daysUntil(dateStr: string): number {

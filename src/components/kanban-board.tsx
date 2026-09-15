@@ -54,6 +54,7 @@ function CompanyLogo({ company, logoUrl, logoBgClass }: { company: string; logoU
         width={32}
         height={32}
         loading="lazy"
+        referrerPolicy="no-referrer"
         className="h-full w-full object-contain"
         onError={() => setFailed(true)}
       />
@@ -220,7 +221,12 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
 
   async function moveCard(id: number, stageId: number) {
     const app = applications.find((item) => item.id === id);
-    const fromStage = app ? stages.find((stage) => stage.id === app.stageId) : undefined;
+
+    if (!app || app.stageId === stageId) {
+      return;
+    }
+
+    const fromStage = stages.find((stage) => stage.id === app.stageId);
     const toStage = stages.find((stage) => stage.id === stageId);
 
     const response = await fetch(`/api/applications/${id}/status`, {
@@ -318,7 +324,24 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     });
 
     if (!response.ok) {
-      setStages(current);
+      setStages((latest) => {
+        const byId = new Map(latest.map((stage) => [stage.id, stage]));
+        const restored = current
+          .map((stage, index) => {
+            const latestStage = byId.get(stage.id);
+            return latestStage ? { ...latestStage, sortOrder: index } : null;
+          })
+          .filter((stage): stage is Stage => stage !== null);
+
+        const restoredIds = new Set(restored.map((stage) => stage.id));
+        for (const stage of latest) {
+          if (!restoredIds.has(stage.id)) {
+            restored.push(stage);
+          }
+        }
+
+        return restored;
+      });
       alert("Failed to reorder stages.");
       return;
     }
@@ -360,10 +383,22 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     }
 
     if (draggedItem.type === "application") {
+      const app = applications.find((item) => item.id === draggedItem.id);
+      const label = app ? `"${app.company} - ${app.role}"` : "this application";
+      if (!window.confirm(`Delete ${label}? This cannot be undone.`)) {
+        onAnyDragEnd();
+        return;
+      }
       await deleteApplicationById(draggedItem.id);
     }
 
     if (draggedItem.type === "stage") {
+      const stage = stages.find((item) => item.id === draggedItem.id);
+      const label = stage ? `stage "${stage.name}"` : "this stage";
+      if (!window.confirm(`Delete ${label}? This cannot be undone.`)) {
+        onAnyDragEnd();
+        return;
+      }
       await deleteStageById(draggedItem.id);
     }
 
@@ -437,7 +472,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                 <div className="space-y-3">
                   {(grouped[stage.id] ?? []).map((app) => {
                     const stale = isApplicationStale(app);
-                    const staleDays = stale ? daysSince(app.updatedAt) : 0;
+                    const staleDays = stale ? daysSince(app.stageEnteredAt ?? app.updatedAt) : 0;
                     return (
                       <KanbanApplicationCard
                         key={app.id}

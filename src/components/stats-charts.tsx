@@ -37,8 +37,19 @@ function colorFor(name: string, fallbackIndex = 0): string {
 }
 
 function formatDate(value: string): string {
-  const d = new Date(value);
+  // A date-only PostgreSQL value must be formatted as a calendar date. Parsing
+  // it with Date treats it as UTC midnight and shifts it for western timezones.
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const d = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(value);
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function isTodayOrFuture(value: string): boolean {
+  const today = new Date();
+  const todayValue = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  return value >= todayValue;
 }
 
 interface SummaryTileProps {
@@ -67,6 +78,10 @@ const tooltipStyle = {
 };
 
 export function StatsCharts({ data }: { data: StatsPayload }) {
+  const upcomingInterviews = useMemo(
+    () => data.upcomingInterviews.filter((row) => isTodayOrFuture(row.interviewDate)),
+    [data.upcomingInterviews]
+  );
   const stageData = useMemo(
     () => data.stageCounts.map((row) => ({ ...row, fill: colorFor(row.stage) })),
     [data.stageCounts]
@@ -196,9 +211,9 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
                 <CardTitle>Upcoming Interviews</CardTitle>
               </CardHeader>
               <CardContent>
-                {data.upcomingInterviews.length > 0 ? (
+                {upcomingInterviews.length > 0 ? (
                   <ul className="space-y-3">
-                    {data.upcomingInterviews.map((row) => (
+                    {upcomingInterviews.map((row) => (
                       <li
                         key={`${row.company}-${row.interviewDate}`}
                         className="flex items-start justify-between gap-3 rounded-md border border-border/60 bg-background/50 px-3 py-2"

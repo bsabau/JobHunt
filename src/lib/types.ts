@@ -16,6 +16,7 @@ export interface Application {
   stageName: string;
   createdAt: string;
   updatedAt: string;
+  stageEnteredAt?: string;
 }
 
 export interface SankeyPayload {

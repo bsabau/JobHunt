@@ -72,8 +72,6 @@ export function SankeyChart({ data }: { data: SankeyPayload }) {
         value > 0;
 
       if (!isValid) continue;
-      if (source > target) continue;
-
       const key = `${source}-${target}`;
       const existing = aggregated.get(key) ?? { value: 0, companies: [] };
       existing.value += value;
