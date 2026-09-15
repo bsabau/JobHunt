@@ -14,7 +14,10 @@ const MAX_TRACKED_IPS = 5_000;
 
 // Best-effort, per-instance brute-force throttle. It resets on cold start and
 // does not coordinate across regions/instances; a platform-level rate limit
-// (e.g. Vercel Firewall) is the durable fix.
+// (e.g. Vercel Firewall) is the durable fix. `x-forwarded-for` is only a
+// trustworthy key where the platform sets it (Vercel does); on other hosts the
+// header is client-controlled and the counter is trivially bypassed, so it
+// must never be the only control.
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 
 function clientIp(request: NextRequest): string {
@@ -98,11 +101,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (isAuthConfigurationError(error)) {
-      console.error(error.message);
-      return NextResponse.json(
-        { message: "Authentication is not configured. Check AUTH_USER, AUTH_PASS, and AUTH_SECRET in Vercel." },
-        { status: 500 }
-      );
+      // Log the configuration problem server-side but do not reveal it to the
+      // caller: an unauthenticated probe should not be able to tell a
+      // misconfigured deployment from bad credentials.
+      console.error("Login failed due to auth configuration:", error.message);
+      return NextResponse.json({ message: "Invalid credentials" }, { status: 401 });
     }
 
     return NextResponse.json({ message: "Login failed" }, { status: 500 });

@@ -15,9 +15,13 @@ import {
 
 export async function GET() {
   try {
-    await requireSession();
+    const session = await requireSession();
     const [applications, stages] = await Promise.all([listApplications(), listStages()]);
-    return NextResponse.json({ applications, stages });
+    // Notes can hold salary expectations and recruiter contacts; guests get a
+    // redacted DTO rather than the owner's free text.
+    const visibleApplications =
+      session.role === "guest" ? applications.map((application) => ({ ...application, notes: null })) : applications;
+    return NextResponse.json({ applications: visibleApplications, stages });
   } catch (error) {
     return errorResponse(error, "Failed to load applications");
   }

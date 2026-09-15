@@ -202,7 +202,15 @@ export async function validateCredentials(user: string, pass: string): Promise<R
   const configuredUser = requireEnv("AUTH_USER");
   const configuredPass = requireEnv("AUTH_PASS");
 
-  if (user === configuredUser && (await constantTimeEqual(pass, configuredPass))) return "user";
+  // Both fields are compared with constant-time digests. Evaluating the two
+  // promises before combining them keeps the work identical whether the
+  // username or the password is the mismatching field.
+  const [userMatches, passMatches] = await Promise.all([
+    constantTimeEqual(user, configuredUser),
+    constantTimeEqual(pass, configuredPass)
+  ]);
+
+  if (userMatches && passMatches) return "user";
   return null;
 }
 

@@ -44,7 +44,9 @@ function formatDate(value: string): string {
   const d = match
     ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
     : new Date(value);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  // An explicit locale keeps SSR and the browser in agreement (a default
+  // locale would produce a hydration mismatch).
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function isTodayOrFuture(value: string, timeZone: string): boolean {

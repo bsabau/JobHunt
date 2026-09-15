@@ -12,12 +12,16 @@ export default async function BoardPage() {
 
   const timeZone = await resolveRequestTimeZone();
   const [applications, stages] = await Promise.all([listApplications(), listStages()]);
+  // Notes are owner-only; never ship them into the guest board payload.
+  const visibleApplications = readOnly
+    ? applications.map((application) => ({ ...application, notes: null }))
+    : applications;
 
   return (
     <main className="min-h-screen px-6 py-10">
       <PageHeader active="board" readOnly={readOnly} />
       <KanbanBoard
-        initialApplications={applications}
+        initialApplications={visibleApplications}
         initialStages={stages}
         readOnly={readOnly}
         timeZone={timeZone}
