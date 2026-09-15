@@ -33,6 +33,11 @@ function transaction(queries: (tx: TransactionSql) => TransactionQuery[]) {
   return getSql().transaction((tx) => queries(tx));
 }
 
+// "created" is a synthetic marker on legacy entry-transition rows and "New"
+// labels the Sankey entry node, so neither may be used to name a real stage.
+const LEGACY_CREATED_STAGE = "created";
+const RESERVED_STAGE_NAMES = new Set([LEGACY_CREATED_STAGE, "new"]);
+
 let schemaReadyPromise: Promise<void> | null = null;
 
 function toIsoString(value: unknown): string {
@@ -195,6 +200,13 @@ export async function addStage(name: string): Promise<Stage> {
     throw new InvalidInputError("Stage name is required");
   }
 
+  // "New" labels the Sankey entry node and "created" is reserved by legacy
+  // transition rows, so a real stage using either name would be merged or
+  // filtered out of the analytics.
+  if (RESERVED_STAGE_NAMES.has(trimmed.toLowerCase())) {
+    throw new InvalidInputError(`"${trimmed}" is a reserved stage name`);
+  }
+
   let inserted: Record<string, unknown>[];
 
   try {
@@ -221,32 +233,37 @@ export async function addStage(name: string): Promise<Stage> {
 export async function reorderStages(stageIds: number[]): Promise<Stage[]> {
   await ensureSchema();
 
-  const existing = await listStages();
+  if (stageIds.length > 0) {
+    // Validation and renumbering share one statement so a concurrent stage
+    // insert/delete cannot slip between the two. `guard` only lets the UPDATE
+    // run when the payload is exactly the current set of stages (count matches,
+    // no duplicates, no unknown ids); otherwise zero rows change and we report
+    // the conflict below.
+    const updated = (await sql`
+      WITH payload AS (
+        SELECT id, ord
+        FROM unnest(${stageIds}::int[]) WITH ORDINALITY AS t(id, ord)
+      ),
+      guard AS (
+        SELECT
+          (SELECT COUNT(*) FROM stages) = (SELECT COUNT(*) FROM payload)
+          AND (SELECT COUNT(*) FROM payload) = (SELECT COUNT(DISTINCT id) FROM payload)
+          AND NOT EXISTS (
+            SELECT 1 FROM payload p
+            WHERE NOT EXISTS (SELECT 1 FROM stages s WHERE s.id = p.id)
+          ) AS ok
+      )
+      UPDATE stages s
+      SET sort_order = (payload.ord - 1)::int
+      FROM payload, guard
+      WHERE guard.ok AND s.id = payload.id
+      RETURNING s.id;
+    `) as Record<string, unknown>[];
 
-  if (stageIds.length !== existing.length) {
-    throw new InvalidInputError("Reorder payload must include all stages");
-  }
-
-  const existingSet = new Set(existing.map((stage) => stage.id));
-  const payloadSet = new Set(stageIds);
-
-  if (payloadSet.size !== stageIds.length) {
-    throw new InvalidInputError("Reorder payload must not contain duplicate stages");
-  }
-
-  for (const id of stageIds) {
-    if (!existingSet.has(id)) {
-      throw new InvalidInputError("Unknown stage in reorder payload");
+    if (updated.length !== stageIds.length) {
+      throw new InvalidInputError("Reorder payload must include every stage exactly once");
     }
   }
-
-  await transaction((tx) =>
-    stageIds.map((id, index) => tx`
-      UPDATE stages
-      SET sort_order = ${index}
-      WHERE id = ${id};
-    `)
-  );
 
   return listStages();
 }
@@ -611,7 +628,7 @@ export async function getSankeyData(): Promise<SankeyPayload> {
       SELECT t.from_status AS fromStatus, t.to_status AS toStatus, a.company
       FROM application_transitions t
       JOIN applications a ON a.id = t.application_id
-      WHERE LOWER(t.from_status) <> LOWER(${ "created" }) AND LOWER(t.to_status) <> LOWER(${ "created" });
+      WHERE LOWER(t.from_status) <> LOWER(${LEGACY_CREATED_STAGE}) AND LOWER(t.to_status) <> LOWER(${LEGACY_CREATED_STAGE});
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT
@@ -644,6 +661,7 @@ export async function getSankeyData(): Promise<SankeyPayload> {
   }
 
   const currentStageNames = stages.map((stage) => stage.name);
+  const entryNodeName = "New";
 
   const entryMap = new Map<string, { count: number; companies: string[] }>();
   for (const row of entryDetails) {
@@ -654,50 +672,80 @@ export async function getSankeyData(): Promise<SankeyPayload> {
     entryMap.set(stage, entry);
   }
 
-  const nodeCompanyMap = new Map<string, string[]>();
+  const currentCompanies = new Map<string, string[]>();
   for (const row of nodeCompanies) {
     const stage = String(row.stagename);
-    const list = nodeCompanyMap.get(stage) ?? [];
+    const list = currentCompanies.get(stage) ?? [];
     list.push(String(row.company));
-    nodeCompanyMap.set(stage, list);
+    currentCompanies.set(stage, list);
   }
 
-  const transitionStageNames = Array.from(transitionMap.values()).flatMap((t) => [t.from, t.to]);
-
-  const entryNode = "New";
-
-  const nodeNames = Array.from(new Set([
-    entryNode,
+  // The entry node is index 0; every real stage follows. Keeping the entry node
+  // out of this name-keyed list (and using an index offset instead) means a
+  // stage literally named "New" becomes its own node instead of merging with
+  // the entry node and having its entry links dropped as self-loops.
+  const stageNames = Array.from(new Set([
     ...currentStageNames,
-    ...transitionStageNames,
+    ...Array.from(transitionMap.values()).flatMap((t) => [t.from, t.to]),
     ...Array.from(entryMap.keys())
   ]));
+
+  const stageIndex = new Map(stageNames.map((name, index) => [name, index + 1]));
+
+  // A node's hover should list every company that flowed through it, not only
+  // the ones currently parked there.
+  const nodeCompanySets = new Map<string, Set<string>>();
+  const addCompanies = (key: string, companies: string[] | undefined) => {
+    if (!companies || companies.length === 0) {
+      return;
+    }
+    const set = nodeCompanySets.get(key) ?? new Set<string>();
+    for (const company of companies) {
+      set.add(company);
+    }
+    nodeCompanySets.set(key, set);
+  };
+
+  for (const [stage, companies] of currentCompanies) {
+    addCompanies(stage, companies);
+  }
+  for (const [stage, data] of entryMap) {
+    addCompanies(stage, data.companies);
+  }
+  for (const data of transitionMap.values()) {
+    addCompanies(data.from, data.companies);
+    addCompanies(data.to, data.companies);
+  }
+
+  const entryCompanies = Array.from(new Set(Array.from(entryMap.values()).flatMap((data) => data.companies)));
 
   const links: { source: number; target: number; value: number; companies: string[] }[] = [];
 
   // Add entry links: New → entry stage for all applications
   for (const [stage, data] of entryMap) {
-    const source = nodeNames.indexOf(entryNode);
-    const target = nodeNames.indexOf(stage);
-    if (source >= 0 && target >= 0 && data.count > 0) {
-      links.push({ source, target, value: data.count, companies: data.companies });
+    const target = stageIndex.get(stage);
+    if (target !== undefined && data.count > 0) {
+      links.push({ source: 0, target, value: data.count, companies: data.companies });
     }
   }
 
   // Add transition-based links between stages
   for (const data of transitionMap.values()) {
-    const source = nodeNames.indexOf(data.from);
-    const target = nodeNames.indexOf(data.to);
-    if (source >= 0 && target >= 0 && data.count > 0) {
+    const source = stageIndex.get(data.from);
+    const target = stageIndex.get(data.to);
+    if (source !== undefined && target !== undefined && data.count > 0) {
       links.push({ source, target, value: data.count, companies: data.companies });
     }
   }
 
   return {
-    nodes: nodeNames.map((name) => ({
-      name,
-      companies: nodeCompanyMap.get(name) ?? []
-    })),
+    nodes: [
+      { name: entryNodeName, companies: entryCompanies },
+      ...stageNames.map((name) => ({
+        name,
+        companies: Array.from(nodeCompanySets.get(name) ?? [])
+      }))
+    ],
     links
   };
 }
@@ -731,8 +779,8 @@ export async function getStatsData(): Promise<StatsPayload> {
     sql`
       SELECT COUNT(*)::int AS count
       FROM application_transitions
-      WHERE LOWER(from_status) <> LOWER(${ "created" })
-        AND LOWER(to_status) <> LOWER(${ "created" });
+      WHERE LOWER(from_status) <> LOWER(${LEGACY_CREATED_STAGE})
+        AND LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE});
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0), 0) AS days
@@ -774,8 +822,8 @@ export async function getStatsData(): Promise<StatsPayload> {
     sql`
       SELECT to_char(date_trunc('day', transitioned_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
       FROM application_transitions
-      WHERE LOWER(from_status) <> LOWER(${ "created" })
-        AND LOWER(to_status) <> LOWER(${ "created" })
+      WHERE LOWER(from_status) <> LOWER(${LEGACY_CREATED_STAGE})
+        AND LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE})
       GROUP BY date_trunc('day', transitioned_at)
       ORDER BY date_trunc('day', transitioned_at) ASC;
     ` as Promise<Record<string, unknown>[]>,
@@ -800,7 +848,7 @@ export async function getStatsData(): Promise<StatsPayload> {
         UNION ALL
         SELECT application_id, to_status AS stage
         FROM application_transitions
-        WHERE LOWER(to_status) <> LOWER(${ "created" })
+        WHERE LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE})
       ) visits
       GROUP BY stage;
     ` as Promise<Record<string, unknown>[]>,
@@ -808,8 +856,8 @@ export async function getStatsData(): Promise<StatsPayload> {
       SELECT from_status AS from_stage, to_status AS to_stage,
              COUNT(DISTINCT application_id)::int AS count
       FROM application_transitions
-      WHERE LOWER(from_status) <> LOWER(${ "created" })
-        AND LOWER(to_status) <> LOWER(${ "created" })
+      WHERE LOWER(from_status) <> LOWER(${LEGACY_CREATED_STAGE})
+        AND LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE})
       GROUP BY from_status, to_status;
     ` as Promise<Record<string, unknown>[]>,
     sql`

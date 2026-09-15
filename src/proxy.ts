@@ -42,12 +42,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.json({ message: "Guest access is read-only" }, { status: 403 });
   }
 
-  // Forward the verified role to server components. Strip any incoming value
-  // first so a client cannot spoof the header.
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.delete("x-user-role");
-  requestHeaders.set("x-user-role", session.role);
-  return NextResponse.next({ request: { headers: requestHeaders } });
+  return NextResponse.next();
 }
 
 export const config = {
