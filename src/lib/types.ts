@@ -26,6 +26,9 @@ export interface Application {
 export interface SankeyPayload {
   nodes: { name: string; companies?: string[] }[];
   links: { source: number; target: number; value: number; companies?: string[] }[];
+  // Number of backward links dropped so the graph stays acyclic. Older stored
+  // history can still contain them after a reorder or a legacy rewind.
+  hiddenBackward?: number;
 }
 
 export interface StatsPayload {

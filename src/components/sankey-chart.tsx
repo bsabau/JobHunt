@@ -61,6 +61,10 @@ export function SankeyChart({ data }: { data: SankeyPayload }) {
       const target = Number(link.target);
       const value = Number(link.value);
 
+      // `source < target` is the last line of defense against a cyclic graph:
+      // Recharts' Sankey depth walk recurses without a visited set, so a single
+      // backward link (from stale history) would throw a RangeError and blank
+      // the page. The server also drops those links and reports the count.
       const isValid =
         Number.isInteger(source) &&
         Number.isInteger(target) &&
@@ -68,7 +72,7 @@ export function SankeyChart({ data }: { data: SankeyPayload }) {
         target >= 0 &&
         source < nodeCount &&
         target < nodeCount &&
-        source !== target &&
+        source < target &&
         value > 0;
 
       if (!isValid) continue;
@@ -117,6 +121,7 @@ export function SankeyChart({ data }: { data: SankeyPayload }) {
   const handleMouseLeave = useCallback(() => setHover(null), []);
 
   const hasLinks = sanitized.links.length > 0;
+  const hiddenBackward = data.hiddenBackward ?? 0;
 
   return (
     <Card>
@@ -124,6 +129,11 @@ export function SankeyChart({ data }: { data: SankeyPayload }) {
         <CardTitle>Application Pipeline Sankey</CardTitle>
       </CardHeader>
       <CardContent className="relative h-[420px]">
+        {hiddenBackward > 0 && (
+          <p className="absolute right-0 top-0 text-xs text-muted-foreground">
+            {hiddenBackward} backward {hiddenBackward === 1 ? "transition" : "transitions"} hidden to keep the flow acyclic.
+          </p>
+        )}
         {hasLinks ? (
           <>
             <ResponsiveContainer width="100%" height="100%">

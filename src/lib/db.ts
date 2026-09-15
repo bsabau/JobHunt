@@ -3,6 +3,7 @@ import type { NeonQueryFunctionInTransaction } from "@neondatabase/serverless";
 import { STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { ConflictError, InvalidInputError } from "@/lib/api-errors";
 import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
+import { buildSankeyPayload } from "@/lib/sankey";
 import { Application, SankeyPayload, Stage, StatsPayload } from "@/lib/types";
 
 function hasPgCode(error: unknown, code: string): boolean {
@@ -464,18 +465,54 @@ function stageMoveQuery(
         AND a.stage_id = COALESCE(${expectedStageId}, a.stage_id)
       RETURNING a.id
     ),
-    candidate_from AS (
-      -- The earliest removed edge's source is the last kept node before the
-      -- rewound tail; including the edge into the target means a revisit
-      -- reconnects from the node that preceded that first visit. It also
-      -- preserves the creation stage when no earlier edge exists.
-      SELECT t.from_status AS status
+    is_rewind AS (
+      SELECT 1
+      FROM current_app c, target tg
+      WHERE tg.sort_order < c.sort_order
+    ),
+    entry_stage AS (
+      SELECT COALESCE(
+        (SELECT t.from_status
+         FROM application_transitions t
+         WHERE t.application_id = ${applicationId}
+         ORDER BY t.transitioned_at ASC, t.id ASC
+         LIMIT 1),
+        (SELECT stage_name FROM current_app)
+      ) AS name
+    ),
+    clear_history AS (
+      -- Moving before the stage the application entered in clears the path.
+      SELECT (
+        EXISTS (SELECT 1 FROM is_rewind)
+        AND (SELECT e.sort_order FROM stages e WHERE e.name = (SELECT name FROM entry_stage)) IS NOT NULL
+        AND (SELECT sort_order FROM target)
+              < (SELECT e.sort_order FROM stages e WHERE e.name = (SELECT name FROM entry_stage))
+      ) AS should_clear
+    ),
+    rewind_boundary AS (
+      -- First edge on the ordered path that reaches or passes the target.
+      SELECT t.id, t.from_status, t.to_status, t.transitioned_at
       FROM application_transitions t
       JOIN stages s ON s.name = t.to_status
-      WHERE t.application_id = ${applicationId}
+      WHERE EXISTS (SELECT 1 FROM is_rewind)
+        AND t.application_id = ${applicationId}
         AND s.sort_order >= (SELECT sort_order FROM target)
       ORDER BY t.transitioned_at ASC, t.id ASC
       LIMIT 1
+    ),
+    rewind_from AS (
+      -- The edge immediately before the boundary (the last kept node), else the
+      -- entry stage. Referenced by (timestamp, id) so it tracks the pure
+      -- rewindTransitionPath() helper exactly.
+      SELECT COALESCE(
+        (SELECT t.to_status
+         FROM application_transitions t
+         WHERE t.application_id = ${applicationId}
+           AND (t.transitioned_at, t.id) < (SELECT b.transitioned_at, b.id FROM rewind_boundary b)
+         ORDER BY t.transitioned_at DESC, t.id DESC
+         LIMIT 1),
+        (SELECT name FROM entry_stage)
+      ) AS status
     ),
     forward_insert AS (
       INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
@@ -486,25 +523,33 @@ function stageMoveQuery(
       RETURNING id
     ),
     backward_delete AS (
+      -- Keep everything before the boundary. If the boundary already lands on
+      -- the target, keep it too so its original timestamp survives; otherwise
+      -- it is replaced by the reconnect edge below.
       DELETE FROM application_transitions t
       WHERE t.application_id = ${applicationId}
         AND EXISTS (SELECT 1 FROM moved)
-        AND EXISTS (SELECT 1 FROM current_app c, target tg WHERE tg.sort_order < c.sort_order)
-        AND t.to_status IN (
-          SELECT s.name FROM stages s WHERE s.sort_order >= (SELECT sort_order FROM target)
+        AND (
+          (SELECT should_clear FROM clear_history)
+          OR EXISTS (
+            SELECT 1
+            FROM rewind_boundary b
+            WHERE (t.transitioned_at, t.id) > (b.transitioned_at, b.id)
+               OR (t.id = b.id AND b.to_status <> (SELECT name FROM target))
+          )
         )
       RETURNING id
     ),
     backward_insert AS (
       INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
-      SELECT
-        ${applicationId},
-        COALESCE((SELECT status FROM candidate_from), c.stage_name),
-        tg.name,
-        NOW()
-      FROM moved m, current_app c, target tg
-      WHERE tg.sort_order < c.sort_order
-        AND COALESCE((SELECT status FROM candidate_from), c.stage_name) <> tg.name
+      SELECT ${applicationId}, (SELECT status FROM rewind_from), tg.name, NOW()
+      FROM moved m, target tg
+      WHERE EXISTS (SELECT 1 FROM is_rewind)
+        AND NOT (SELECT should_clear FROM clear_history)
+        AND NOT EXISTS (
+          SELECT 1 FROM rewind_boundary b WHERE b.to_status = tg.name
+        )
+        AND (SELECT status FROM rewind_from) <> tg.name
       RETURNING id
     )
     SELECT
@@ -665,105 +710,22 @@ export async function getSankeyData(): Promise<SankeyPayload> {
     ` as Promise<Record<string, unknown>[]>,
   ]);
 
-  const transitionMap = new Map<string, { from: string; to: string; count: number; companies: string[] }>();
-  for (const row of transitionDetails) {
-    const from = String(row.fromstatus);
-    const to = String(row.tostatus);
-    const key = `${from}|${to}`;
-    const entry = transitionMap.get(key) ?? { from, to, count: 0, companies: [] };
-    entry.count += 1;
-    entry.companies.push(String(row.company));
-    transitionMap.set(key, entry);
-  }
-
-  const currentStageNames = stages.map((stage) => stage.name);
-  const entryNodeName = "New";
-
-  const entryMap = new Map<string, { count: number; companies: string[] }>();
-  for (const row of entryDetails) {
-    const stage = String(row.entrystage);
-    const entry = entryMap.get(stage) ?? { count: 0, companies: [] };
-    entry.count += 1;
-    entry.companies.push(String(row.company));
-    entryMap.set(stage, entry);
-  }
-
-  const currentCompanies = new Map<string, string[]>();
-  for (const row of nodeCompanies) {
-    const stage = String(row.stagename);
-    const list = currentCompanies.get(stage) ?? [];
-    list.push(String(row.company));
-    currentCompanies.set(stage, list);
-  }
-
-  // The entry node is index 0; every real stage follows. Keeping the entry node
-  // out of this name-keyed list (and using an index offset instead) means a
-  // stage literally named "New" becomes its own node instead of merging with
-  // the entry node and having its entry links dropped as self-loops.
-  const stageNames = Array.from(new Set([
-    ...currentStageNames,
-    ...Array.from(transitionMap.values()).flatMap((t) => [t.from, t.to]),
-    ...Array.from(entryMap.keys())
-  ]));
-
-  const stageIndex = new Map(stageNames.map((name, index) => [name, index + 1]));
-
-  // A node's hover should list every company that flowed through it, not only
-  // the ones currently parked there.
-  const nodeCompanySets = new Map<string, Set<string>>();
-  const addCompanies = (key: string, companies: string[] | undefined) => {
-    if (!companies || companies.length === 0) {
-      return;
-    }
-    const set = nodeCompanySets.get(key) ?? new Set<string>();
-    for (const company of companies) {
-      set.add(company);
-    }
-    nodeCompanySets.set(key, set);
-  };
-
-  for (const [stage, companies] of currentCompanies) {
-    addCompanies(stage, companies);
-  }
-  for (const [stage, data] of entryMap) {
-    addCompanies(stage, data.companies);
-  }
-  for (const data of transitionMap.values()) {
-    addCompanies(data.from, data.companies);
-    addCompanies(data.to, data.companies);
-  }
-
-  const entryCompanies = Array.from(new Set(Array.from(entryMap.values()).flatMap((data) => data.companies)));
-
-  const links: { source: number; target: number; value: number; companies: string[] }[] = [];
-
-  // Add entry links: New → entry stage for all applications
-  for (const [stage, data] of entryMap) {
-    const target = stageIndex.get(stage);
-    if (target !== undefined && data.count > 0) {
-      links.push({ source: 0, target, value: data.count, companies: data.companies });
-    }
-  }
-
-  // Add transition-based links between stages
-  for (const data of transitionMap.values()) {
-    const source = stageIndex.get(data.from);
-    const target = stageIndex.get(data.to);
-    if (source !== undefined && target !== undefined && data.count > 0) {
-      links.push({ source, target, value: data.count, companies: data.companies });
-    }
-  }
-
-  return {
-    nodes: [
-      { name: entryNodeName, companies: entryCompanies },
-      ...stageNames.map((name) => ({
-        name,
-        companies: Array.from(nodeCompanySets.get(name) ?? [])
-      }))
-    ],
-    links
-  };
+  return buildSankeyPayload({
+    stages: stages.map((stage) => ({ name: stage.name, sortOrder: stage.sortOrder })),
+    transitions: transitionDetails.map((row) => ({
+      fromStatus: String(row.fromstatus),
+      toStatus: String(row.tostatus),
+      company: String(row.company)
+    })),
+    entries: entryDetails.map((row) => ({
+      entryStage: String(row.entrystage),
+      company: String(row.company)
+    })),
+    current: nodeCompanies.map((row) => ({
+      stageName: String(row.stagename),
+      company: String(row.company)
+    }))
+  });
 }
 
 export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promise<StatsPayload> {

@@ -15,7 +15,9 @@
     "reset:db": "node scripts/reset-neon-db.mjs",
     "cleanup:created": "node scripts/cleanup-created-transitions.mjs",
     "verify:auth": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-auth.mjs",
-    "verify:timezone": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-timezone.mjs"
+    "verify:timezone": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-timezone.mjs",
+    "verify:sankey": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-sankey.mjs",
+    "verify:transitions": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-transitions.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
