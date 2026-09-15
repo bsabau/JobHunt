@@ -78,8 +78,12 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
       const response = await fetch(`/api/applications/${application.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form)
+        body: JSON.stringify({ ...form, expectedStageId: application.stageId })
       });
+
+      if (response.status === 409) {
+        throw new Error("This application was moved elsewhere, please reload.");
+      }
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { message?: string } | null;

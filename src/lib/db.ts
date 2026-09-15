@@ -398,78 +398,120 @@ export async function createApplication(input: CreateApplicationInput): Promise<
   return application;
 }
 
-function recordTransition(
-  tx: TransactionSql,
-  applicationId: number,
-  currentStageName: string,
-  targetStageName: string,
-  targetSortOrder: number,
-  currentSortOrder: number
-): TransactionQuery {
-  const isBackward = targetSortOrder < currentSortOrder;
+type SqlFragment = ReturnType<typeof sql>;
 
-  if (isBackward) {
-    return tx`
-      WITH candidate_from AS (
-        -- The earliest removed edge's source is the last kept node before the
-        -- rewound tail; including the edge into the target means a revisit
-        -- reconnects from the node that preceded that first visit. It also
-        -- preserves the creation stage when no earlier edge exists.
-        SELECT t.from_status AS status
-        FROM application_transitions t
-        JOIN stages s ON s.name = t.to_status
-        WHERE t.application_id = ${applicationId}
-          AND s.sort_order >= ${targetSortOrder}
-        ORDER BY t.transitioned_at ASC, t.id ASC
-        LIMIT 1
-      ),
-      deleted AS (
-        DELETE FROM application_transitions
-        WHERE application_id = ${applicationId}
-          AND id IN (
-            SELECT t.id FROM application_transitions t
-            JOIN stages s ON s.name = t.to_status
-            WHERE t.application_id = ${applicationId}
-              AND s.sort_order >= ${targetSortOrder}
-          )
-        RETURNING id
-      )
+// Atomically guards a stage change against the caller's expected stage and
+// records the matching transition in one statement. Because the UPDATE and the
+// transition INSERT/DELETE live in the same data-modifying CTE chain, Postgres
+// uses a single snapshot and the transition is only derived from (and written
+// with) a row that actually still sat in `expectedStageId`. `expectedStageId`
+// null disables the guard for callers that cannot supply one.
+function stageMoveQuery(
+  updateSet: SqlFragment,
+  applicationId: number,
+  expectedStageId: number | null,
+  toStageId: number
+): SqlFragment {
+  return sql`
+    WITH target AS (
+      SELECT id, name, sort_order
+      FROM stages
+      WHERE id = ${toStageId}
+    ),
+    current_app AS (
+      SELECT a.stage_id AS stage_id, s.name AS stage_name, s.sort_order AS sort_order
+      FROM applications a
+      JOIN stages s ON s.id = a.stage_id
+      WHERE a.id = ${applicationId}
+    ),
+    moved AS (
+      UPDATE applications a
+      SET ${updateSet}
+      WHERE a.id = ${applicationId}
+        AND a.stage_id = COALESCE(${expectedStageId}, a.stage_id)
+      RETURNING a.id
+    ),
+    candidate_from AS (
+      -- The earliest removed edge's source is the last kept node before the
+      -- rewound tail; including the edge into the target means a revisit
+      -- reconnects from the node that preceded that first visit. It also
+      -- preserves the creation stage when no earlier edge exists.
+      SELECT t.from_status AS status
+      FROM application_transitions t
+      JOIN stages s ON s.name = t.to_status
+      WHERE t.application_id = ${applicationId}
+        AND s.sort_order >= (SELECT sort_order FROM target)
+      ORDER BY t.transitioned_at ASC, t.id ASC
+      LIMIT 1
+    ),
+    forward_insert AS (
+      INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
+      SELECT ${applicationId}, c.stage_name, tg.name, NOW()
+      FROM moved m, current_app c, target tg
+      WHERE tg.sort_order >= c.sort_order
+        AND tg.name <> c.stage_name
+      RETURNING id
+    ),
+    backward_delete AS (
+      DELETE FROM application_transitions t
+      WHERE t.application_id = ${applicationId}
+        AND EXISTS (SELECT 1 FROM moved)
+        AND EXISTS (SELECT 1 FROM current_app c, target tg WHERE tg.sort_order < c.sort_order)
+        AND t.to_status IN (
+          SELECT s.name FROM stages s WHERE s.sort_order >= (SELECT sort_order FROM target)
+        )
+      RETURNING id
+    ),
+    backward_insert AS (
       INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
       SELECT
         ${applicationId},
-        COALESCE((SELECT status FROM candidate_from), ${currentStageName}),
-        ${targetStageName},
+        COALESCE((SELECT status FROM candidate_from), c.stage_name),
+        tg.name,
         NOW()
-      -- The delete always removes the target's stale inbound edge, so exactly
-      -- one reconnect row is inserted. Skip only when the target is the
-      -- creation stage, where a self-loop would be meaningless.
-      WHERE COALESCE((SELECT status FROM candidate_from), ${currentStageName}) <> ${targetStageName};
-    `;
-  }
-
-  return tx`
-    INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
-    VALUES (${applicationId}, ${currentStageName}, ${targetStageName}, NOW());
+      FROM moved m, current_app c, target tg
+      WHERE tg.sort_order < c.sort_order
+        AND COALESCE((SELECT status FROM candidate_from), c.stage_name) <> tg.name
+      RETURNING id
+    )
+    SELECT
+      (SELECT COUNT(*)::int FROM current_app) AS found,
+      (SELECT COUNT(*)::int FROM moved) AS updated;
   `;
 }
 
-export async function updateApplicationStage(id: number, toStageId: number): Promise<Application | null> {
-  await ensureSchema();
+type StageMoveOutcome = "ok" | "missing" | "conflict";
 
-  const currentRows = (await sql`
-    SELECT a.id, a.stage_id AS stageId, s.name AS stageName, s.sort_order AS sortOrder
-    FROM applications a
-    JOIN stages s ON s.id = a.stage_id
-    WHERE a.id = ${id}
-    LIMIT 1;
-  `) as Record<string, unknown>[];
+async function applyStageMove(
+  updateSet: SqlFragment,
+  applicationId: number,
+  expectedStageId: number | null,
+  toStageId: number
+): Promise<StageMoveOutcome> {
+  const rows = (await stageMoveQuery(updateSet, applicationId, expectedStageId, toStageId)) as Record<string, unknown>[];
+  const found = Number(rows[0]?.found ?? 0);
+  const updated = Number(rows[0]?.updated ?? 0);
 
-  if (currentRows.length === 0) {
-    return null;
+  if (found === 0) {
+    return "missing";
   }
 
+  if (updated === 0) {
+    return "conflict";
+  }
+
+  return "ok";
+}
+
+export async function updateApplicationStage(
+  id: number,
+  toStageId: number,
+  expectedStageId?: number
+): Promise<Application | null> {
+  await ensureSchema();
+
   const targetRows = (await sql`
-    SELECT id, name, sort_order AS sortOrder
+    SELECT 1
     FROM stages
     WHERE id = ${toStageId}
     LIMIT 1;
@@ -479,22 +521,19 @@ export async function updateApplicationStage(id: number, toStageId: number): Pro
     throw new InvalidInputError("Target stage not found");
   }
 
-  const currentStageId = Number(currentRows[0].stageid);
-  const currentStageName = String(currentRows[0].stagename);
-  const currentSortOrder = Number(currentRows[0].sortorder);
-  const targetStageId = Number(targetRows[0].id);
-  const targetStageName = String(targetRows[0].name);
-  const targetSortOrder = Number(targetRows[0].sortorder);
+  const outcome = await applyStageMove(
+    sql`stage_id = ${toStageId}, updated_at = NOW()`,
+    id,
+    expectedStageId ?? null,
+    toStageId
+  );
 
-  if (currentStageId !== targetStageId) {
-    await transaction((tx) => [
-      tx`
-        UPDATE applications
-        SET stage_id = ${targetStageId}, updated_at = NOW()
-        WHERE id = ${id};
-      `,
-      recordTransition(tx, id, currentStageName, targetStageName, targetSortOrder, currentSortOrder)
-    ]);
+  if (outcome === "missing") {
+    return null;
+  }
+
+  if (outcome === "conflict") {
+    throw new ConflictError("This application was moved elsewhere. Reload and try again.");
   }
 
   return selectApplicationById(id);
@@ -520,25 +559,14 @@ interface UpdateApplicationInput {
   interviewDate?: string | null;
   sourceUrl?: string;
   stageId: number;
+  expectedStageId?: number;
 }
 
 export async function updateApplication(id: number, input: UpdateApplicationInput): Promise<Application | null> {
   await ensureSchema();
 
-  const currentRows = (await sql`
-    SELECT a.id, a.stage_id AS stageId, s.name AS stageName, s.sort_order AS sortOrder
-    FROM applications a
-    JOIN stages s ON s.id = a.stage_id
-    WHERE a.id = ${id}
-    LIMIT 1;
-  `) as Record<string, unknown>[];
-
-  if (currentRows.length === 0) {
-    return null;
-  }
-
   const targetRows = (await sql`
-    SELECT id, name, sort_order AS sortOrder
+    SELECT 1
     FROM stages
     WHERE id = ${input.stageId}
     LIMIT 1;
@@ -548,42 +576,27 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
     throw new InvalidInputError("Target stage not found");
   }
 
-  const currentStageId = Number(currentRows[0].stageid);
-  const currentStageName = String(currentRows[0].stagename);
-  const currentSortOrder = Number(currentRows[0].sortorder);
-  const targetStageId = Number(targetRows[0].id);
-  const targetStageName = String(targetRows[0].name);
-  const targetSortOrder = Number(targetRows[0].sortorder);
+  const outcome = await applyStageMove(
+    sql`
+      company = ${input.company.trim()},
+      role = ${input.role.trim()},
+      notes = ${input.notes?.trim() || null},
+      interview_date = ${input.interviewDate ? input.interviewDate : null},
+      source_url = ${input.sourceUrl?.trim() || null},
+      stage_id = ${input.stageId},
+      updated_at = NOW()
+    `,
+    id,
+    input.expectedStageId ?? null,
+    input.stageId
+  );
 
-  if (currentStageId !== targetStageId) {
-    await transaction((tx) => [
-      tx`
-        UPDATE applications
-        SET
-          company = ${input.company.trim()},
-          role = ${input.role.trim()},
-          notes = ${input.notes?.trim() || null},
-          interview_date = ${input.interviewDate ? input.interviewDate : null},
-          source_url = ${input.sourceUrl?.trim() || null},
-          stage_id = ${targetStageId},
-          updated_at = NOW()
-        WHERE id = ${id};
-      `,
-      recordTransition(tx, id, currentStageName, targetStageName, targetSortOrder, currentSortOrder)
-    ]);
-  } else {
-    await sql`
-      UPDATE applications
-      SET
-        company = ${input.company.trim()},
-        role = ${input.role.trim()},
-        notes = ${input.notes?.trim() || null},
-        interview_date = ${input.interviewDate ? input.interviewDate : null},
-        source_url = ${input.sourceUrl?.trim() || null},
-        stage_id = ${targetStageId},
-        updated_at = NOW()
-      WHERE id = ${id};
-    `;
+  if (outcome === "missing") {
+    return null;
+  }
+
+  if (outcome === "conflict") {
+    throw new ConflictError("This application was moved elsewhere. Reload and try again.");
   }
 
   return selectApplicationById(id);

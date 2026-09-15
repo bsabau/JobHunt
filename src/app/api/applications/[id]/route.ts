@@ -5,6 +5,7 @@ import {
   TEXT_LIMITS,
   optionalDateOnly,
   optionalHttpUrl,
+  optionalPositiveInteger,
   optionalString,
   positiveInteger,
   readJsonObject,
@@ -27,7 +28,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       notes: optionalString(payload, "notes", { maxLength: TEXT_LIMITS.notes }),
       interviewDate: optionalDateOnly(payload, "interviewDate"),
       sourceUrl: optionalHttpUrl(payload, "sourceUrl"),
-      stageId: positiveInteger(payload.stageId, "stageId")
+      stageId: positiveInteger(payload.stageId, "stageId"),
+      expectedStageId: optionalPositiveInteger(payload, "expectedStageId")
     });
 
     if (!updated) {

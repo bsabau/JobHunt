@@ -95,6 +95,7 @@ interface KanbanApplicationCardProps {
   staleDays: number;
   logoBgClass: string;
   readOnly: boolean;
+  pending: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
   onEdit: () => void;
@@ -106,6 +107,7 @@ function KanbanApplicationCard({
   staleDays,
   logoBgClass,
   readOnly,
+  pending,
   onDragStart,
   onDragEnd,
   onEdit
@@ -143,11 +145,13 @@ function KanbanApplicationCard({
     <>
       <div ref={anchorRef} onMouseEnter={showNotesTooltip} onMouseLeave={hideNotesTooltip}>
         <Card
-          draggable={!readOnly}
-          onDragStart={readOnly ? undefined : onDragStart}
-          onDragEnd={readOnly ? undefined : onDragEnd}
+          draggable={!readOnly && !pending}
+          onDragStart={readOnly || pending ? undefined : onDragStart}
+          onDragEnd={readOnly || pending ? undefined : onDragEnd}
           onDoubleClick={readOnly ? undefined : onEdit}
-          className={`${readOnly ? "cursor-default" : "cursor-move"} border-border/70 bg-card/80 backdrop-blur ${
+          className={`${
+            readOnly ? "cursor-default" : pending ? "cursor-wait opacity-60" : "cursor-move"
+          } border-border/70 bg-card/80 backdrop-blur ${
             stale ? "border-l-4 border-l-amber-400/80" : ""
           }`}
         >
@@ -208,6 +212,8 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   const [draggedItem, setDraggedItem] = useState<DragItem>(null);
   const [stageDropTargetId, setStageDropTargetId] = useState<number | null>(null);
   const [binHover, setBinHover] = useState(false);
+  const [pendingMoveIds, setPendingMoveIds] = useState<number[]>([]);
+  const pendingMoveIdsRef = useRef<Set<number>>(new Set());
 
   const grouped = useMemo(() => {
     return stages.reduce(
@@ -219,7 +225,24 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     );
   }, [applications, stages]);
 
+  async function refreshBoard() {
+    const response = await fetch("/api/applications");
+
+    if (!response.ok) {
+      return;
+    }
+
+    const body = (await response.json()) as { applications: Application[]; stages: Stage[] };
+    setApplications(body.applications);
+    setStages(body.stages);
+  }
+
   async function moveCard(id: number, stageId: number) {
+    // Ignore a second drop while this card's previous move is still in flight.
+    if (pendingMoveIdsRef.current.has(id)) {
+      return;
+    }
+
     const app = applications.find((item) => item.id === id);
 
     if (!app || app.stageId === stageId) {
@@ -228,23 +251,38 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
 
     const fromStage = stages.find((stage) => stage.id === app.stageId);
     const toStage = stages.find((stage) => stage.id === stageId);
+    const expectedStageId = app.stageId;
 
-    const response = await fetch(`/api/applications/${id}/status`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stageId })
-    });
+    pendingMoveIdsRef.current.add(id);
+    setPendingMoveIds((current) => [...current, id]);
 
-    if (!response.ok) {
-      alert("Failed to move application.");
-      return;
-    }
+    try {
+      const response = await fetch(`/api/applications/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stageId, expectedStageId })
+      });
 
-    const updated = (await response.json()) as Application;
-    setApplications((current) => current.map((item) => (item.id === id ? updated : item)));
+      if (response.status === 409) {
+        await refreshBoard();
+        alert("This application was moved elsewhere. The board has been refreshed.");
+        return;
+      }
 
-    if (fromStage && toStage && fromStage.id !== toStage.id) {
-      trackApplicationMoved({ fromStageName: fromStage.name, toStageName: toStage.name });
+      if (!response.ok) {
+        alert("Failed to move application.");
+        return;
+      }
+
+      const updated = (await response.json()) as Application;
+      setApplications((current) => current.map((item) => (item.id === id ? updated : item)));
+
+      if (fromStage && toStage && fromStage.id !== toStage.id) {
+        trackApplicationMoved({ fromStageName: fromStage.name, toStageName: toStage.name });
+      }
+    } finally {
+      pendingMoveIdsRef.current.delete(id);
+      setPendingMoveIds((current) => current.filter((pendingId) => pendingId !== id));
     }
   }
 
@@ -481,6 +519,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                         staleDays={staleDays}
                         logoBgClass={tone.logoBg}
                         readOnly={readOnly}
+                        pending={pendingMoveIds.includes(app.id)}
                         onDragStart={() => setDraggedItem({ type: "application", id: app.id })}
                         onDragEnd={onAnyDragEnd}
                         onEdit={() => {

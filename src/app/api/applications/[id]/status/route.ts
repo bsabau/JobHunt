@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateApplicationStage } from "@/lib/db";
 import { errorResponse } from "@/lib/api-errors";
-import { positiveInteger, readJsonObject } from "@/lib/api-validation";
+import { optionalPositiveInteger, positiveInteger, readJsonObject } from "@/lib/api-validation";
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -13,7 +13,11 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   try {
     const applicationId = positiveInteger(id, "id");
     const body = await readJsonObject(request);
-    const updated = await updateApplicationStage(applicationId, positiveInteger(body.stageId, "stageId"));
+    const updated = await updateApplicationStage(
+      applicationId,
+      positiveInteger(body.stageId, "stageId"),
+      optionalPositiveInteger(body, "expectedStageId")
+    );
 
     if (!updated) {
       return NextResponse.json({ message: "Application not found" }, { status: 404 });
