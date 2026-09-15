@@ -1,13 +1,15 @@
-import { Application } from "@/lib/types";
+import { Application, StageKind } from "@/lib/types";
 
 export const DEFAULT_STAGE_NAMES = ["Wishlist", "Applied", "Interview", "Offer", "Rejected"];
 
 export const STALE_THRESHOLD_DAYS = 14;
 
-const STALE_EXCLUDED_STAGES = new Set(["wishlist", "offer", "rejected"]);
+// Staleness is a pipeline concept: pre-application (Wishlist) and resolved
+// stages (Offer/Rejected) are not "going stale", whatever they are named.
+const STALE_EXCLUDED_KINDS = new Set<StageKind>(["intake", "offer", "rejected"]);
 
-export function isStaleEligibleStage(stageName: string): boolean {
-  return !STALE_EXCLUDED_STAGES.has(stageName.trim().toLowerCase());
+export function isStaleEligibleStage(kind: StageKind): boolean {
+  return !STALE_EXCLUDED_KINDS.has(kind);
 }
 
 export function daysSince(isoDate: string): number {
@@ -23,7 +25,7 @@ export function stageEnteredAt(app: Application): string {
 }
 
 export function isApplicationStale(app: Application): boolean {
-  if (!isStaleEligibleStage(app.stageName)) {
+  if (!isStaleEligibleStage(app.stageKind)) {
     return false;
   }
   return daysSince(stageEnteredAt(app)) >= STALE_THRESHOLD_DAYS;

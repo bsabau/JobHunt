@@ -27,8 +27,8 @@ interface AddApplicationDialogProps {
 }
 
 function getDefaultStageId(stages: Stage[]): number {
-  const applied = stages.find((stage) => stage.name.trim().toLowerCase() === "applied");
-  return applied?.id ?? stages[0]?.id ?? 0;
+  const active = stages.find((stage) => stage.kind === "active");
+  return active?.id ?? stages[0]?.id ?? 0;
 }
 
 export function AddApplicationDialog({ stages, applications, onCreated }: AddApplicationDialogProps) {

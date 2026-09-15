@@ -23,13 +23,20 @@ function loadDatabaseUrl() {
 
 const databaseUrl = loadDatabaseUrl();
 const sql = neon(databaseUrl);
-const defaults = ["Wishlist", "Applied", "Interview", "Offer", "Rejected"];
+const defaults = [
+  ["Wishlist", "intake"],
+  ["Applied", "active"],
+  ["Interview", "interview"],
+  ["Offer", "offer"],
+  ["Rejected", "rejected"]
+];
 
 await sql`
   CREATE TABLE IF NOT EXISTS stages (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
-    sort_order INTEGER NOT NULL
+    sort_order INTEGER NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'active'
   );
 `;
 
@@ -60,8 +67,8 @@ await sql`
 
 await sql`TRUNCATE TABLE application_transitions, applications, stages RESTART IDENTITY CASCADE;`;
 
-for (const [idx, name] of defaults.entries()) {
-  await sql`INSERT INTO stages (name, sort_order) VALUES (${name}, ${idx});`;
+for (const [idx, [name, kind]] of defaults.entries()) {
+  await sql`INSERT INTO stages (name, sort_order, kind) VALUES (${name}, ${idx}, ${kind});`;
 }
 
 console.log("Database reset complete with default stages.");

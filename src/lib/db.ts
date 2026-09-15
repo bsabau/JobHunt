@@ -61,6 +61,7 @@ function mapApplication(row: Record<string, unknown>): Application {
     logoUrl: row.logourl ? String(row.logourl) : null,
     stageId: Number(row.stageid),
     stageName: String(row.stagename),
+    stageKind: String(row.stagekind ?? "active") as Application["stageKind"],
     createdAt: toIsoString(row.createdat),
     updatedAt: toIsoString(row.updatedat),
     stageEnteredAt: toIsoString(row.stageenteredat ?? row.createdat)
@@ -86,12 +87,22 @@ async function ensureSchema(): Promise<void> {
             SELECT 1
             FROM information_schema.tables
             WHERE table_schema = 'public' AND table_name = 'application_transitions'
-          ) AS has_application_transitions;
+          ) AS has_application_transitions,
+          EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'stages' AND column_name = 'kind'
+          ) AS has_stage_kind;
       `) as Record<string, unknown>[];
 
       const row = checks[0];
-      if (!row.has_stages || !row.has_applications || !row.has_application_transitions) {
-        throw new Error("Database schema is missing. Run `npm run migrate:up`.");
+      if (
+        !row.has_stages ||
+        !row.has_applications ||
+        !row.has_application_transitions ||
+        !row.has_stage_kind
+      ) {
+        throw new Error("Database schema is missing or outdated. Run `npm run migrate:up`.");
       }
     })();
   }
@@ -128,7 +139,7 @@ async function getDefaultCreateStage(): Promise<{ id: number; name: string }> {
   const appliedRows = (await sql`
     SELECT id, name
     FROM stages
-    WHERE LOWER(name) = LOWER(${ "Applied" })
+    WHERE kind = 'active'
     ORDER BY sort_order ASC, id ASC
     LIMIT 1;
   `) as Record<string, unknown>[];
@@ -154,6 +165,7 @@ async function selectApplicationById(id: number): Promise<Application | null> {
       a.logo_url AS logoUrl,
       a.stage_id AS stageId,
       s.name AS stageName,
+      s.kind AS stageKind,
       a.created_at AS createdAt,
       a.updated_at AS updatedAt,
       COALESCE(
@@ -180,7 +192,7 @@ export async function listStages(): Promise<Stage[]> {
   await ensureSchema();
 
   const rows = (await sql`
-    SELECT id, name, sort_order AS sortOrder
+    SELECT id, name, sort_order AS sortOrder, kind
     FROM stages
     ORDER BY sort_order ASC, id ASC;
   `) as Record<string, unknown>[];
@@ -188,7 +200,8 @@ export async function listStages(): Promise<Stage[]> {
   return rows.map((row) => ({
     id: Number(row.id),
     name: String(row.name),
-    sortOrder: Number(row.sortorder)
+    sortOrder: Number(row.sortorder),
+    kind: String(row.kind ?? "active") as Stage["kind"]
   }));
 }
 
@@ -214,7 +227,7 @@ export async function addStage(name: string): Promise<Stage> {
       INSERT INTO stages (name, sort_order)
       SELECT ${trimmed}, COALESCE(MAX(sort_order), -1) + 1
       FROM stages
-      RETURNING id, name, sort_order AS sortOrder;
+      RETURNING id, name, sort_order AS sortOrder, kind;
     `) as Record<string, unknown>[];
   } catch (error) {
     if (hasPgCode(error, "23505")) {
@@ -226,7 +239,8 @@ export async function addStage(name: string): Promise<Stage> {
   return {
     id: Number(inserted[0].id),
     name: String(inserted[0].name),
-    sortOrder: Number(inserted[0].sortorder)
+    sortOrder: Number(inserted[0].sortorder),
+    kind: (inserted[0].kind ?? "active") as Stage["kind"]
   };
 }
 
@@ -330,6 +344,7 @@ export async function listApplications(): Promise<Application[]> {
       a.logo_url AS logoUrl,
       a.stage_id AS stageId,
       s.name AS stageName,
+      s.kind AS stageKind,
       a.created_at AS createdAt,
       a.updated_at AS updatedAt,
       COALESCE(
@@ -797,7 +812,7 @@ export async function getStatsData(): Promise<StatsPayload> {
         ORDER BY t.transitioned_at DESC, t.id DESC
         LIMIT 1
       ) stage_entry ON true
-      WHERE LOWER(s.name) <> 'rejected';
+      WHERE s.kind <> 'rejected';
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT
@@ -810,7 +825,10 @@ export async function getStatsData(): Promise<StatsPayload> {
         SELECT MIN(t.transitioned_at) AS transitioned_at
         FROM application_transitions t
         WHERE t.application_id = a.id
-          AND LOWER(t.to_status) = 'interview'
+          AND EXISTS (
+            SELECT 1 FROM stages interview_stage
+            WHERE interview_stage.name = t.to_status AND interview_stage.kind = 'interview'
+          )
       ) first_interview ON true;
     ` as Promise<Record<string, unknown>[]>,
     sql`
@@ -882,7 +900,7 @@ export async function getStatsData(): Promise<StatsPayload> {
         ORDER BY t.transitioned_at DESC, t.id DESC
         LIMIT 1
       ) stage_entry ON true
-      WHERE LOWER(s.name) NOT IN ('wishlist', 'offer', 'rejected')
+      WHERE s.kind NOT IN ('intake', 'offer', 'rejected')
         AND EXTRACT(EPOCH FROM (NOW() - COALESCE(stage_entry.entered_at, a.created_at))) / 86400.0 >= ${STALE_THRESHOLD_DAYS}
       ORDER BY COALESCE(stage_entry.entered_at, a.created_at) ASC;
     ` as Promise<Record<string, unknown>[]>,
@@ -934,7 +952,8 @@ export async function getStatsData(): Promise<StatsPayload> {
   const funnel = stages.map((stage) => ({
     stage: stage.name,
     reached: reachedMap.get(stage.name) ?? 0,
-    sortOrder: stage.sortOrder
+    sortOrder: stage.sortOrder,
+    kind: stage.kind
   }));
 
   const stagePairs = stagePairRows.map((row) => ({

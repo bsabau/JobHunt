@@ -1,7 +1,10 @@
+export type StageKind = "intake" | "active" | "interview" | "offer" | "rejected";
+
 export interface Stage {
   id: number;
   name: string;
   sortOrder: number;
+  kind: StageKind;
 }
 
 export interface Application {
@@ -14,6 +17,7 @@ export interface Application {
   logoUrl: string | null;
   stageId: number;
   stageName: string;
+  stageKind: StageKind;
   createdAt: string;
   updatedAt: string;
   stageEnteredAt?: string;
@@ -39,7 +43,7 @@ export interface StatsPayload {
   applicationsOverTime: { date: string; created: number; cumulative: number }[];
   transitionsByDay: { date: string; count: number }[];
   topCompanies: { company: string; count: number }[];
-  funnel: { stage: string; reached: number; sortOrder: number }[];
+  funnel: { stage: string; reached: number; sortOrder: number; kind: StageKind }[];
   stagePairs: { from: string; to: string; count: number }[];
   upcomingInterviews: { company: string; role: string; interviewDate: string; stageName: string }[];
   staleApplications: { company: string; role: string; stageName: string; daysSinceUpdate: number }[];

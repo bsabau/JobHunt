@@ -131,7 +131,7 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
 
   const dropOffData = useMemo(() => {
     const pipeline = [...data.funnel]
-      .filter((row) => row.stage.trim().toLowerCase() !== "rejected")
+      .filter((row) => row.kind !== "rejected")
       .sort((a, b) => a.sortOrder - b.sortOrder);
 
     const rows: {
