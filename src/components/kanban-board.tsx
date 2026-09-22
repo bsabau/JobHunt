@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, Plus, Trash2 } from "lucide-react";
 import { STAGE_TONES, daysSince, daysUntil, isApplicationStale } from "@/lib/constants";
 import { Application, Stage } from "@/lib/types";
+import { useHorizontalWheelScroll } from "@/lib/use-horizontal-wheel-scroll";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AddApplicationDialog } from "@/components/add-application-dialog";
+import { ApplicationSearch } from "@/components/application-search";
 import { EditApplicationDialog } from "@/components/edit-application-dialog";
 import {
   trackApplicationDeleted,
@@ -97,6 +99,7 @@ interface KanbanApplicationCardProps {
   logoBgClass: string;
   readOnly: boolean;
   pending: boolean;
+  highlighted: boolean;
   timeZone: string;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -110,6 +113,7 @@ function KanbanApplicationCard({
   logoBgClass,
   readOnly,
   pending,
+  highlighted,
   timeZone,
   onDragStart,
   onDragEnd,
@@ -146,7 +150,12 @@ function KanbanApplicationCard({
 
   return (
     <>
-      <div ref={anchorRef} onMouseEnter={showNotesTooltip} onMouseLeave={hideNotesTooltip}>
+      <div
+        ref={anchorRef}
+        data-application-id={app.id}
+        onMouseEnter={showNotesTooltip}
+        onMouseLeave={hideNotesTooltip}
+      >
         <Card
           draggable={!readOnly && !pending}
           onDragStart={readOnly || pending ? undefined : onDragStart}
@@ -154,9 +163,9 @@ function KanbanApplicationCard({
           onDoubleClick={readOnly ? undefined : onEdit}
           className={`${
             readOnly ? "cursor-default" : pending ? "cursor-wait opacity-60" : "cursor-move"
-          } border-border/70 bg-card/80 backdrop-blur ${
+          } border-border/70 bg-card/80 backdrop-blur transition-shadow ${
             stale ? "border-l-4 border-l-amber-400/80" : ""
-          }`}
+          } ${highlighted ? "ring-2 ring-sky-400 ring-offset-2 ring-offset-background animate-pulse" : ""}`}
         >
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-2">
@@ -217,6 +226,25 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   const [binHover, setBinHover] = useState(false);
   const [pendingMoveIds, setPendingMoveIds] = useState<number[]>([]);
   const pendingMoveIdsRef = useRef<Set<number>>(new Set());
+  const [highlightedId, setHighlightedId] = useState<number | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useHorizontalWheelScroll(scrollRef);
+
+  // The highlight is a transient "here it is" cue, not a selection state.
+  useEffect(() => {
+    if (highlightedId === null) {
+      return;
+    }
+    const timer = window.setTimeout(() => setHighlightedId(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [highlightedId]);
+
+  function focusApplication(app: Application) {
+    setHighlightedId(app.id);
+    const card = scrollRef.current?.querySelector<HTMLElement>(`[data-application-id="${app.id}"]`);
+    card?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+  }
 
   const grouped = useMemo(() => {
     return stages.reduce(
@@ -451,7 +479,10 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   return (
     <section className="space-y-6 pb-24">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Applications Board</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-xl font-semibold">Applications Board</h2>
+          <ApplicationSearch applications={applications} stages={stages} onSelect={focusApplication} />
+        </div>
         {!readOnly && (
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => void addStage()}>
@@ -467,7 +498,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
         )}
       </div>
 
-      <div className="overflow-x-auto overscroll-x-contain pb-3">
+      <div ref={scrollRef} className="scrollbar-none overflow-x-auto overscroll-x-contain pb-3">
         <div
           className="inline-grid gap-4"
           style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(240px, 280px))` }}
@@ -523,6 +554,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                         logoBgClass={tone.logoBg}
                         readOnly={readOnly}
                         pending={pendingMoveIds.includes(app.id)}
+                        highlighted={highlightedId === app.id}
                         timeZone={timeZone}
                         onDragStart={() => setDraggedItem({ type: "application", id: app.id })}
                         onDragEnd={onAnyDragEnd}
