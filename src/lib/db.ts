@@ -1,7 +1,26 @@
 import { neon } from "@neondatabase/serverless";
 import type { NeonQueryFunctionInTransaction } from "@neondatabase/serverless";
 import { STALE_THRESHOLD_DAYS } from "@/lib/constants";
+import { ConflictError, InvalidInputError } from "@/lib/api-errors";
+import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
+import { buildSankeyPayload } from "@/lib/sankey";
 import { Application, SankeyPayload, Stage, StatsPayload } from "@/lib/types";
+
+function hasPgCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === code;
+}
+
+function pgConstraint(error: unknown): string | undefined {
+  const value = typeof error === "object" && error !== null ? (error as { constraint?: unknown }).constraint : undefined;
+  return typeof value === "string" ? value : undefined;
+}
+
+// A stage can be deleted between the "does it exist" check and the write that
+// references it. The FK violation that follows is a caller-visible state
+// change, not a server fault, so it maps to the same error as the check.
+function isStageForeignKeyViolation(error: unknown): boolean {
+  return hasPgCode(error, "23503") && (pgConstraint(error)?.includes("stage_id") ?? true);
+}
 
 type SqlClient = ReturnType<typeof neon>;
 type TransactionSql = NeonQueryFunctionInTransaction<boolean, boolean>;
@@ -28,6 +47,11 @@ function transaction(queries: (tx: TransactionSql) => TransactionQuery[]) {
   return getSql().transaction((tx) => queries(tx));
 }
 
+// "created" is a synthetic marker on legacy entry-transition rows and "New"
+// labels the Sankey entry node, so neither may be used to name a real stage.
+const LEGACY_CREATED_STAGE = "created";
+const RESERVED_STAGE_NAMES = new Set([LEGACY_CREATED_STAGE, "new"]);
+
 let schemaReadyPromise: Promise<void> | null = null;
 
 function toIsoString(value: unknown): string {
@@ -51,8 +75,10 @@ function mapApplication(row: Record<string, unknown>): Application {
     logoUrl: row.logourl ? String(row.logourl) : null,
     stageId: Number(row.stageid),
     stageName: String(row.stagename),
+    stageKind: String(row.stagekind ?? "active") as Application["stageKind"],
     createdAt: toIsoString(row.createdat),
-    updatedAt: toIsoString(row.updatedat)
+    updatedAt: toIsoString(row.updatedat),
+    stageEnteredAt: toIsoString(row.stageenteredat ?? row.createdat)
   };
 }
 
@@ -75,17 +101,33 @@ async function ensureSchema(): Promise<void> {
             SELECT 1
             FROM information_schema.tables
             WHERE table_schema = 'public' AND table_name = 'application_transitions'
-          ) AS has_application_transitions;
+          ) AS has_application_transitions,
+          EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'stages' AND column_name = 'kind'
+          ) AS has_stage_kind;
       `) as Record<string, unknown>[];
 
       const row = checks[0];
-      if (!row.has_stages || !row.has_applications || !row.has_application_transitions) {
-        throw new Error("Database schema is missing. Run `npm run migrate:up`.");
+      if (
+        !row.has_stages ||
+        !row.has_applications ||
+        !row.has_application_transitions ||
+        !row.has_stage_kind
+      ) {
+        throw new Error("Database schema is missing or outdated. Run `npm run migrate:up`.");
       }
     })();
   }
 
-  await schemaReadyPromise;
+  try {
+    await schemaReadyPromise;
+  } catch (error) {
+    // A transient first request failure must not poison this process forever.
+    schemaReadyPromise = null;
+    throw error;
+  }
 }
 
 async function getFirstStage(): Promise<{ id: number; name: string }> {
@@ -111,7 +153,7 @@ async function getDefaultCreateStage(): Promise<{ id: number; name: string }> {
   const appliedRows = (await sql`
     SELECT id, name
     FROM stages
-    WHERE LOWER(name) = LOWER(${ "Applied" })
+    WHERE kind = 'active'
     ORDER BY sort_order ASC, id ASC
     LIMIT 1;
   `) as Record<string, unknown>[];
@@ -137,8 +179,17 @@ async function selectApplicationById(id: number): Promise<Application | null> {
       a.logo_url AS logoUrl,
       a.stage_id AS stageId,
       s.name AS stageName,
+      s.kind AS stageKind,
       a.created_at AS createdAt,
-      a.updated_at AS updatedAt
+      a.updated_at AS updatedAt,
+      COALESCE(
+        (SELECT t.transitioned_at
+         FROM application_transitions t
+         WHERE t.application_id = a.id AND t.to_status = s.name
+         ORDER BY t.transitioned_at DESC, t.id DESC
+         LIMIT 1),
+        a.created_at
+      ) AS stageEnteredAt
     FROM applications a
     JOIN stages s ON s.id = a.stage_id
     WHERE a.id = ${id};
@@ -155,7 +206,7 @@ export async function listStages(): Promise<Stage[]> {
   await ensureSchema();
 
   const rows = (await sql`
-    SELECT id, name, sort_order AS sortOrder
+    SELECT id, name, sort_order AS sortOrder, kind
     FROM stages
     ORDER BY sort_order ASC, id ASC;
   `) as Record<string, unknown>[];
@@ -163,7 +214,8 @@ export async function listStages(): Promise<Stage[]> {
   return rows.map((row) => ({
     id: Number(row.id),
     name: String(row.name),
-    sortOrder: Number(row.sortorder)
+    sortOrder: Number(row.sortorder),
+    kind: String(row.kind ?? "active") as Stage["kind"]
   }));
 }
 
@@ -172,58 +224,78 @@ export async function addStage(name: string): Promise<Stage> {
 
   const trimmed = name.trim();
   if (!trimmed) {
-    throw new Error("Stage name is required");
+    throw new InvalidInputError("Stage name is required");
   }
 
-  const maxRows = (await sql`
-    SELECT COALESCE(MAX(sort_order), -1) AS value
-    FROM stages;
-  `) as Record<string, unknown>[];
+  // "New" labels the Sankey entry node and "created" is reserved by legacy
+  // transition rows, so a real stage using either name would be merged or
+  // filtered out of the analytics.
+  if (RESERVED_STAGE_NAMES.has(trimmed.toLowerCase())) {
+    throw new InvalidInputError(`"${trimmed}" is a reserved stage name`);
+  }
 
-  const maxOrder = Number(maxRows[0].value);
+  let inserted: Record<string, unknown>[];
 
-  const inserted = (await sql`
-    INSERT INTO stages (name, sort_order)
-    VALUES (${trimmed}, ${maxOrder + 1})
-    RETURNING id, name, sort_order AS sortOrder;
-  `) as Record<string, unknown>[];
+  try {
+    inserted = (await sql`
+      INSERT INTO stages (name, sort_order)
+      SELECT ${trimmed}, COALESCE(MAX(sort_order), -1) + 1
+      FROM stages
+      RETURNING id, name, sort_order AS sortOrder, kind;
+    `) as Record<string, unknown>[];
+  } catch (error) {
+    if (hasPgCode(error, "23505")) {
+      // Two unique constraints can fire here: the name, or the deferred
+      // sort_order key when another stage was inserted at the same moment.
+      throw pgConstraint(error) === "stages_sort_order_key"
+        ? new ConflictError("Another stage was added at the same time. Try again.")
+        : new ConflictError("Stage already exists");
+    }
+    throw error;
+  }
 
   return {
     id: Number(inserted[0].id),
     name: String(inserted[0].name),
-    sortOrder: Number(inserted[0].sortorder)
+    sortOrder: Number(inserted[0].sortorder),
+    kind: (inserted[0].kind ?? "active") as Stage["kind"]
   };
 }
 
 export async function reorderStages(stageIds: number[]): Promise<Stage[]> {
   await ensureSchema();
 
-  const existing = await listStages();
+  if (stageIds.length > 0) {
+    // Validation and renumbering share one statement so a concurrent stage
+    // insert/delete cannot slip between the two. `guard` only lets the UPDATE
+    // run when the payload is exactly the current set of stages (count matches,
+    // no duplicates, no unknown ids); otherwise zero rows change and we report
+    // the conflict below.
+    const updated = (await sql`
+      WITH payload AS (
+        SELECT id, ord
+        FROM unnest(${stageIds}::int[]) WITH ORDINALITY AS t(id, ord)
+      ),
+      guard AS (
+        SELECT
+          (SELECT COUNT(*) FROM stages) = (SELECT COUNT(*) FROM payload)
+          AND (SELECT COUNT(*) FROM payload) = (SELECT COUNT(DISTINCT id) FROM payload)
+          AND NOT EXISTS (
+            SELECT 1 FROM payload p
+            WHERE NOT EXISTS (SELECT 1 FROM stages s WHERE s.id = p.id)
+          ) AS ok
+      )
+      UPDATE stages s
+      SET sort_order = (payload.ord - 1)::int
+      FROM payload, guard
+      WHERE guard.ok AND s.id = payload.id
+      RETURNING s.id;
+    `) as Record<string, unknown>[];
 
-  if (stageIds.length !== existing.length) {
-    throw new Error("Reorder payload must include all stages");
-  }
-
-  const existingSet = new Set(existing.map((stage) => stage.id));
-  const payloadSet = new Set(stageIds);
-
-  if (payloadSet.size !== stageIds.length) {
-    throw new Error("Reorder payload must not contain duplicate stages");
-  }
-
-  for (const id of stageIds) {
-    if (!existingSet.has(id)) {
-      throw new Error("Unknown stage in reorder payload");
+    if (updated.length !== stageIds.length) {
+      throw new InvalidInputError("Reorder payload must include every stage exactly once");
     }
   }
-
-  await transaction((tx) =>
-    stageIds.map((id, index) => tx`
-      UPDATE stages
-      SET sort_order = ${index}
-      WHERE id = ${id};
-    `)
-  );
 
   return listStages();
 }
@@ -231,36 +303,47 @@ export async function reorderStages(stageIds: number[]): Promise<Stage[]> {
 export async function deleteStage(id: number): Promise<{ deleted: boolean; reason?: string }> {
   await ensureSchema();
 
-  const appCountRows = (await sql`
-    SELECT COUNT(*)::int AS value
-    FROM applications
-    WHERE stage_id = ${id};
-  `) as Record<string, unknown>[];
+  let results: Record<string, unknown>[][];
 
-  if (Number(appCountRows[0].value) > 0) {
-    return { deleted: false, reason: "Stage is not empty" };
+  try {
+    results = (await transaction((tx) => [
+      tx`
+        DELETE FROM stages
+        WHERE id = ${id}
+          AND NOT EXISTS (SELECT 1 FROM applications WHERE stage_id = ${id})
+        RETURNING id;
+      `,
+      tx`
+        WITH ordered AS (
+          SELECT id, ROW_NUMBER() OVER (ORDER BY sort_order ASC, id ASC) - 1 AS new_sort
+          FROM stages
+        )
+        UPDATE stages s
+        SET sort_order = ordered.new_sort
+        FROM ordered
+        WHERE s.id = ordered.id;
+      `
+    ])) as Record<string, unknown>[][];
+  } catch (error) {
+    // A concurrent move may add an application to the stage between the
+    // conditional delete and the FK check. Treat that as "not empty".
+    if (hasPgCode(error, "23503")) {
+      return { deleted: false, reason: "Stage is not empty" };
+    }
+    throw error;
   }
 
-  const deletedRows = (await sql`
-    DELETE FROM stages
-    WHERE id = ${id}
-    RETURNING id;
-  `) as Record<string, unknown>[];
+  const deletedRows = results[0] ?? [];
 
   if (deletedRows.length === 0) {
-    return { deleted: false, reason: "Stage not found" };
-  }
+    const existsRows = (await sql`
+      SELECT 1 FROM stages WHERE id = ${id} LIMIT 1;
+    `) as Record<string, unknown>[];
 
-  await sql`
-    WITH ordered AS (
-      SELECT id, ROW_NUMBER() OVER (ORDER BY sort_order ASC, id ASC) - 1 AS new_sort
-      FROM stages
-    )
-    UPDATE stages s
-    SET sort_order = ordered.new_sort
-    FROM ordered
-    WHERE s.id = ordered.id;
-  `;
+    return existsRows.length === 0
+      ? { deleted: false, reason: "Stage not found" }
+      : { deleted: false, reason: "Stage is not empty" };
+  }
 
   return { deleted: true };
 }
@@ -279,8 +362,17 @@ export async function listApplications(): Promise<Application[]> {
       a.logo_url AS logoUrl,
       a.stage_id AS stageId,
       s.name AS stageName,
+      s.kind AS stageKind,
       a.created_at AS createdAt,
-      a.updated_at AS updatedAt
+      a.updated_at AS updatedAt,
+      COALESCE(
+        (SELECT t.transitioned_at
+         FROM application_transitions t
+         WHERE t.application_id = a.id AND t.to_status = s.name
+         ORDER BY t.transitioned_at DESC, t.id DESC
+         LIMIT 1),
+        a.created_at
+      ) AS stageEnteredAt
     FROM applications a
     JOIN stages s ON s.id = a.stage_id
     ORDER BY a.updated_at DESC;
@@ -313,7 +405,7 @@ export async function createApplication(input: CreateApplicationInput): Promise<
       : [];
 
   if (input.stageId !== undefined && selectedStageRows.length === 0) {
-    throw new Error("Invalid stage");
+    throw new InvalidInputError("Invalid stage");
   }
 
   const stage =
@@ -321,30 +413,39 @@ export async function createApplication(input: CreateApplicationInput): Promise<
       ? { id: Number(selectedStageRows[0].id), name: String(selectedStageRows[0].name) }
       : await getDefaultCreateStage();
 
-  const insertRows = (await sql`
-    INSERT INTO applications (
-      company,
-      role,
-      notes,
-      interview_date,
-      source_url,
-      logo_url,
-      stage_id,
-      created_at,
-      updated_at
-    ) VALUES (
-      ${input.company.trim()},
-      ${input.role.trim()},
-      ${input.notes?.trim() || null},
-      ${input.interviewDate ? input.interviewDate : null},
-      ${input.sourceUrl?.trim() || null},
-      ${input.logoUrl || null},
-      ${stage.id},
-      NOW(),
-      NOW()
-    )
-    RETURNING id;
-  `) as Record<string, unknown>[];
+  let insertRows: Record<string, unknown>[];
+
+  try {
+    insertRows = (await sql`
+      INSERT INTO applications (
+        company,
+        role,
+        notes,
+        interview_date,
+        source_url,
+        logo_url,
+        stage_id,
+        created_at,
+        updated_at
+      ) VALUES (
+        ${input.company.trim()},
+        ${input.role.trim()},
+        ${input.notes?.trim() || null},
+        ${input.interviewDate ? input.interviewDate : null},
+        ${input.sourceUrl?.trim() || null},
+        ${input.logoUrl || null},
+        ${stage.id},
+        NOW(),
+        NOW()
+      )
+      RETURNING id;
+    `) as Record<string, unknown>[];
+  } catch (error) {
+    if (isStageForeignKeyViolation(error)) {
+      throw new InvalidInputError("Invalid stage");
+    }
+    throw error;
+  }
 
   const applicationId = Number(insertRows[0].id);
 
@@ -356,93 +457,196 @@ export async function createApplication(input: CreateApplicationInput): Promise<
   return application;
 }
 
-function recordTransition(
-  tx: TransactionSql,
+type SqlFragment = ReturnType<typeof sql>;
+
+// Atomically guards a stage change against the caller's expected stage and
+// records the matching transition in one statement. Because the UPDATE and the
+// transition INSERT/DELETE live in the same data-modifying CTE chain, Postgres
+// uses a single snapshot and the transition is only derived from (and written
+// with) a row that actually still sat in `expectedStageId`. `expectedStageId`
+// null disables the guard for callers that cannot supply one.
+function stageMoveQuery(
+  updateSet: SqlFragment,
   applicationId: number,
-  currentStageName: string,
-  targetStageName: string,
-  targetSortOrder: number,
-  currentSortOrder: number
-): TransactionQuery {
-  const isBackward = targetSortOrder < currentSortOrder;
-
-  if (isBackward) {
-    return tx`
-      WITH candidate_from AS (
-        SELECT t.to_status
-        FROM application_transitions t
-        JOIN stages s ON s.name = t.to_status
-        WHERE t.application_id = ${applicationId}
-          AND s.sort_order < ${targetSortOrder}
-        ORDER BY t.transitioned_at DESC
-        LIMIT 1
-      ),
-      deleted AS (
-        DELETE FROM application_transitions
-        WHERE application_id = ${applicationId}
-          AND id IN (
-            SELECT t.id FROM application_transitions t
-            JOIN stages s ON s.name = t.to_status
-            WHERE t.application_id = ${applicationId}
-              AND s.sort_order >= ${targetSortOrder}
-          )
-        RETURNING id
-      )
+  expectedStageId: number | null,
+  toStageId: number
+): SqlFragment {
+  return sql`
+    WITH target AS (
+      SELECT id, name, sort_order
+      FROM stages
+      WHERE id = ${toStageId}
+    ),
+    current_app AS (
+      SELECT a.stage_id AS stage_id, s.name AS stage_name, s.sort_order AS sort_order
+      FROM applications a
+      JOIN stages s ON s.id = a.stage_id
+      WHERE a.id = ${applicationId}
+    ),
+    moved AS (
+      UPDATE applications a
+      SET ${updateSet}
+      WHERE a.id = ${applicationId}
+        AND a.stage_id = COALESCE(${expectedStageId}, a.stage_id)
+      RETURNING a.id
+    ),
+    is_rewind AS (
+      SELECT 1
+      FROM current_app c, target tg
+      WHERE tg.sort_order < c.sort_order
+    ),
+    entry_stage AS (
+      SELECT COALESCE(
+        (SELECT t.from_status
+         FROM application_transitions t
+         WHERE t.application_id = ${applicationId}
+         ORDER BY t.transitioned_at ASC, t.id ASC
+         LIMIT 1),
+        (SELECT stage_name FROM current_app)
+      ) AS name
+    ),
+    clear_history AS (
+      -- Moving before the stage the application entered in clears the path.
+      SELECT (
+        EXISTS (SELECT 1 FROM is_rewind)
+        AND (SELECT e.sort_order FROM stages e WHERE e.name = (SELECT name FROM entry_stage)) IS NOT NULL
+        AND (SELECT sort_order FROM target)
+              < (SELECT e.sort_order FROM stages e WHERE e.name = (SELECT name FROM entry_stage))
+      ) AS should_clear
+    ),
+    rewind_boundary AS (
+      -- First edge on the ordered path that reaches or passes the target.
+      SELECT t.id, t.from_status, t.to_status, t.transitioned_at
+      FROM application_transitions t
+      JOIN stages s ON s.name = t.to_status
+      WHERE EXISTS (SELECT 1 FROM is_rewind)
+        AND t.application_id = ${applicationId}
+        AND s.sort_order >= (SELECT sort_order FROM target)
+      ORDER BY t.transitioned_at ASC, t.id ASC
+      LIMIT 1
+    ),
+    rewind_from AS (
+      -- The edge immediately before the boundary (the last kept node), else the
+      -- entry stage. Referenced by (timestamp, id) so it tracks the pure
+      -- rewindTransitionPath() helper exactly.
+      SELECT COALESCE(
+        (SELECT t.to_status
+         FROM application_transitions t
+         WHERE t.application_id = ${applicationId}
+           AND (t.transitioned_at, t.id) < (SELECT b.transitioned_at, b.id FROM rewind_boundary b)
+         ORDER BY t.transitioned_at DESC, t.id DESC
+         LIMIT 1),
+        (SELECT name FROM entry_stage)
+      ) AS status
+    ),
+    forward_insert AS (
       INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
-      SELECT ${applicationId}, to_status, ${targetStageName}, NOW()
-      FROM candidate_from
-      WHERE to_status <> ${targetStageName};
-    `;
-  }
-
-  return tx`
-    INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
-    VALUES (${applicationId}, ${currentStageName}, ${targetStageName}, NOW());
+      SELECT ${applicationId}, c.stage_name, tg.name, NOW()
+      FROM moved m, current_app c, target tg
+      WHERE tg.sort_order >= c.sort_order
+        AND tg.name <> c.stage_name
+      RETURNING id
+    ),
+    backward_delete AS (
+      -- Keep everything before the boundary. If the boundary already lands on
+      -- the target, keep it too so its original timestamp survives; otherwise
+      -- it is replaced by the reconnect edge below.
+      DELETE FROM application_transitions t
+      WHERE t.application_id = ${applicationId}
+        AND EXISTS (SELECT 1 FROM moved)
+        AND (
+          (SELECT should_clear FROM clear_history)
+          OR EXISTS (
+            SELECT 1
+            FROM rewind_boundary b
+            WHERE (t.transitioned_at, t.id) > (b.transitioned_at, b.id)
+               OR (t.id = b.id AND b.to_status <> (SELECT name FROM target))
+          )
+        )
+      RETURNING id
+    ),
+    backward_insert AS (
+      INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
+      SELECT ${applicationId}, (SELECT status FROM rewind_from), tg.name, NOW()
+      FROM moved m, target tg
+      WHERE EXISTS (SELECT 1 FROM is_rewind)
+        AND NOT (SELECT should_clear FROM clear_history)
+        AND NOT EXISTS (
+          SELECT 1 FROM rewind_boundary b WHERE b.to_status = tg.name
+        )
+        AND (SELECT status FROM rewind_from) <> tg.name
+      RETURNING id
+    )
+    SELECT
+      (SELECT COUNT(*)::int FROM current_app) AS found,
+      (SELECT COUNT(*)::int FROM moved) AS updated;
   `;
 }
 
-export async function updateApplicationStage(id: number, toStageId: number): Promise<Application | null> {
-  await ensureSchema();
+type StageMoveOutcome = "ok" | "missing" | "conflict";
 
-  const currentRows = (await sql`
-    SELECT a.id, a.stage_id AS stageId, s.name AS stageName, s.sort_order AS sortOrder
-    FROM applications a
-    JOIN stages s ON s.id = a.stage_id
-    WHERE a.id = ${id}
-    LIMIT 1;
-  `) as Record<string, unknown>[];
+async function applyStageMove(
+  updateSet: SqlFragment,
+  applicationId: number,
+  expectedStageId: number | null,
+  toStageId: number
+): Promise<StageMoveOutcome> {
+  let rows: Record<string, unknown>[];
 
-  if (currentRows.length === 0) {
-    return null;
+  try {
+    rows = (await stageMoveQuery(updateSet, applicationId, expectedStageId, toStageId)) as Record<string, unknown>[];
+  } catch (error) {
+    if (isStageForeignKeyViolation(error)) {
+      throw new InvalidInputError("Target stage not found");
+    }
+    throw error;
   }
 
+  const found = Number(rows[0]?.found ?? 0);
+  const updated = Number(rows[0]?.updated ?? 0);
+
+  if (found === 0) {
+    return "missing";
+  }
+
+  if (updated === 0) {
+    return "conflict";
+  }
+
+  return "ok";
+}
+
+export async function updateApplicationStage(
+  id: number,
+  toStageId: number,
+  expectedStageId?: number
+): Promise<Application | null> {
+  await ensureSchema();
+
   const targetRows = (await sql`
-    SELECT id, name, sort_order AS sortOrder
+    SELECT 1
     FROM stages
     WHERE id = ${toStageId}
     LIMIT 1;
   `) as Record<string, unknown>[];
 
   if (targetRows.length === 0) {
-    throw new Error("Target stage not found");
+    throw new InvalidInputError("Target stage not found");
   }
 
-  const currentStageId = Number(currentRows[0].stageid);
-  const currentStageName = String(currentRows[0].stagename);
-  const currentSortOrder = Number(currentRows[0].sortorder);
-  const targetStageId = Number(targetRows[0].id);
-  const targetStageName = String(targetRows[0].name);
-  const targetSortOrder = Number(targetRows[0].sortorder);
+  const outcome = await applyStageMove(
+    sql`stage_id = ${toStageId}, updated_at = NOW()`,
+    id,
+    expectedStageId ?? null,
+    toStageId
+  );
 
-  if (currentStageId !== targetStageId) {
-    await transaction((tx) => [
-      tx`
-        UPDATE applications
-        SET stage_id = ${targetStageId}, updated_at = NOW()
-        WHERE id = ${id};
-      `,
-      recordTransition(tx, id, currentStageName, targetStageName, targetSortOrder, currentSortOrder)
-    ]);
+  if (outcome === "missing") {
+    return null;
+  }
+
+  if (outcome === "conflict") {
+    throw new ConflictError("This application was moved elsewhere. Reload and try again.");
   }
 
   return selectApplicationById(id);
@@ -451,11 +655,7 @@ export async function updateApplicationStage(id: number, toStageId: number): Pro
 export async function deleteApplication(id: number): Promise<boolean> {
   await ensureSchema();
 
-  await sql`
-    DELETE FROM application_transitions
-    WHERE application_id = ${id};
-  `;
-
+  // application_transitions has ON DELETE CASCADE, so a single statement is enough.
   const deletedRows = (await sql`
     DELETE FROM applications
     WHERE id = ${id}
@@ -472,70 +672,44 @@ interface UpdateApplicationInput {
   interviewDate?: string | null;
   sourceUrl?: string;
   stageId: number;
+  expectedStageId?: number;
 }
 
 export async function updateApplication(id: number, input: UpdateApplicationInput): Promise<Application | null> {
   await ensureSchema();
 
-  const currentRows = (await sql`
-    SELECT a.id, a.stage_id AS stageId, s.name AS stageName, s.sort_order AS sortOrder
-    FROM applications a
-    JOIN stages s ON s.id = a.stage_id
-    WHERE a.id = ${id}
-    LIMIT 1;
-  `) as Record<string, unknown>[];
-
-  if (currentRows.length === 0) {
-    return null;
-  }
-
   const targetRows = (await sql`
-    SELECT id, name, sort_order AS sortOrder
+    SELECT 1
     FROM stages
     WHERE id = ${input.stageId}
     LIMIT 1;
   `) as Record<string, unknown>[];
 
   if (targetRows.length === 0) {
-    throw new Error("Target stage not found");
+    throw new InvalidInputError("Target stage not found");
   }
 
-  const currentStageId = Number(currentRows[0].stageid);
-  const currentStageName = String(currentRows[0].stagename);
-  const currentSortOrder = Number(currentRows[0].sortorder);
-  const targetStageId = Number(targetRows[0].id);
-  const targetStageName = String(targetRows[0].name);
-  const targetSortOrder = Number(targetRows[0].sortorder);
+  const outcome = await applyStageMove(
+    sql`
+      company = ${input.company.trim()},
+      role = ${input.role.trim()},
+      notes = ${input.notes?.trim() || null},
+      interview_date = ${input.interviewDate ? input.interviewDate : null},
+      source_url = ${input.sourceUrl?.trim() || null},
+      stage_id = ${input.stageId},
+      updated_at = NOW()
+    `,
+    id,
+    input.expectedStageId ?? null,
+    input.stageId
+  );
 
-  if (currentStageId !== targetStageId) {
-    await transaction((tx) => [
-      tx`
-        UPDATE applications
-        SET
-          company = ${input.company.trim()},
-          role = ${input.role.trim()},
-          notes = ${input.notes?.trim() || null},
-          interview_date = ${input.interviewDate ? input.interviewDate : null},
-          source_url = ${input.sourceUrl?.trim() || null},
-          stage_id = ${targetStageId},
-          updated_at = NOW()
-        WHERE id = ${id};
-      `,
-      recordTransition(tx, id, currentStageName, targetStageName, targetSortOrder, currentSortOrder)
-    ]);
-  } else {
-    await sql`
-      UPDATE applications
-      SET
-        company = ${input.company.trim()},
-        role = ${input.role.trim()},
-        notes = ${input.notes?.trim() || null},
-        interview_date = ${input.interviewDate ? input.interviewDate : null},
-        source_url = ${input.sourceUrl?.trim() || null},
-        stage_id = ${targetStageId},
-        updated_at = NOW()
-      WHERE id = ${id};
-    `;
+  if (outcome === "missing") {
+    return null;
+  }
+
+  if (outcome === "conflict") {
+    throw new ConflictError("This application was moved elsewhere. Reload and try again.");
   }
 
   return selectApplicationById(id);
@@ -550,14 +724,14 @@ export async function getSankeyData(): Promise<SankeyPayload> {
       SELECT t.from_status AS fromStatus, t.to_status AS toStatus, a.company
       FROM application_transitions t
       JOIN applications a ON a.id = t.application_id
-      WHERE LOWER(t.from_status) <> LOWER(${ "created" }) AND LOWER(t.to_status) <> LOWER(${ "created" });
+      WHERE LOWER(t.from_status) <> LOWER(${LEGACY_CREATED_STAGE}) AND LOWER(t.to_status) <> LOWER(${LEGACY_CREATED_STAGE});
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT
         COALESCE(
           (SELECT t.from_status FROM application_transitions t
            WHERE t.application_id = a.id
-           ORDER BY t.transitioned_at ASC LIMIT 1),
+           ORDER BY t.transitioned_at ASC, t.id ASC LIMIT 1),
           s.name
         ) AS entryStage,
         a.company
@@ -571,78 +745,28 @@ export async function getSankeyData(): Promise<SankeyPayload> {
     ` as Promise<Record<string, unknown>[]>,
   ]);
 
-  const transitionMap = new Map<string, { from: string; to: string; count: number; companies: string[] }>();
-  for (const row of transitionDetails) {
-    const from = String(row.fromstatus);
-    const to = String(row.tostatus);
-    const key = `${from}|${to}`;
-    const entry = transitionMap.get(key) ?? { from, to, count: 0, companies: [] };
-    entry.count += 1;
-    entry.companies.push(String(row.company));
-    transitionMap.set(key, entry);
-  }
-
-  const currentStageNames = stages.map((stage) => stage.name);
-
-  const entryMap = new Map<string, { count: number; companies: string[] }>();
-  for (const row of entryDetails) {
-    const stage = String(row.entrystage);
-    const entry = entryMap.get(stage) ?? { count: 0, companies: [] };
-    entry.count += 1;
-    entry.companies.push(String(row.company));
-    entryMap.set(stage, entry);
-  }
-
-  const nodeCompanyMap = new Map<string, string[]>();
-  for (const row of nodeCompanies) {
-    const stage = String(row.stagename);
-    const list = nodeCompanyMap.get(stage) ?? [];
-    list.push(String(row.company));
-    nodeCompanyMap.set(stage, list);
-  }
-
-  const transitionStageNames = Array.from(transitionMap.values()).flatMap((t) => [t.from, t.to]);
-
-  const entryNode = "New";
-
-  const nodeNames = Array.from(new Set([
-    entryNode,
-    ...currentStageNames,
-    ...transitionStageNames,
-    ...Array.from(entryMap.keys())
-  ]));
-
-  const links: { source: number; target: number; value: number; companies: string[] }[] = [];
-
-  // Add entry links: New → entry stage for all applications
-  for (const [stage, data] of entryMap) {
-    const source = nodeNames.indexOf(entryNode);
-    const target = nodeNames.indexOf(stage);
-    if (source >= 0 && target >= 0 && data.count > 0) {
-      links.push({ source, target, value: data.count, companies: data.companies });
-    }
-  }
-
-  // Add transition-based links between stages
-  for (const data of transitionMap.values()) {
-    const source = nodeNames.indexOf(data.from);
-    const target = nodeNames.indexOf(data.to);
-    if (source >= 0 && target >= 0 && data.count > 0) {
-      links.push({ source, target, value: data.count, companies: data.companies });
-    }
-  }
-
-  return {
-    nodes: nodeNames.map((name) => ({
-      name,
-      companies: nodeCompanyMap.get(name) ?? []
+  return buildSankeyPayload({
+    stages: stages.map((stage) => ({ name: stage.name, sortOrder: stage.sortOrder })),
+    transitions: transitionDetails.map((row) => ({
+      fromStatus: String(row.fromstatus),
+      toStatus: String(row.tostatus),
+      company: String(row.company)
     })),
-    links
-  };
+    entries: entryDetails.map((row) => ({
+      entryStage: String(row.entrystage),
+      company: String(row.company)
+    })),
+    current: nodeCompanies.map((row) => ({
+      stageName: String(row.stagename),
+      company: String(row.company)
+    }))
+  });
 }
 
-export async function getStatsData(): Promise<StatsPayload> {
+export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promise<StatsPayload> {
   await ensureSchema();
+
+  const zone = normalizeTimeZone(timeZone);
 
   const [
     stages,
@@ -670,46 +794,56 @@ export async function getStatsData(): Promise<StatsPayload> {
     sql`
       SELECT COUNT(*)::int AS count
       FROM application_transitions
-      WHERE LOWER(from_status) <> LOWER(${ "created" })
-        AND LOWER(to_status) <> LOWER(${ "created" });
+      WHERE LOWER(from_status) <> LOWER(${LEGACY_CREATED_STAGE})
+        AND LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE});
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0), 0) AS days
       FROM applications;
     ` as Promise<Record<string, unknown>[]>,
     sql`
-      SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - a.updated_at)) / 86400.0), 0) AS days
+      SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - COALESCE(stage_entry.entered_at, a.created_at))) / 86400.0), 0) AS days
       FROM applications a
       JOIN stages s ON s.id = a.stage_id
-      WHERE LOWER(s.name) <> 'rejected';
+      LEFT JOIN LATERAL (
+        SELECT t.transitioned_at AS entered_at
+        FROM application_transitions t
+        WHERE t.application_id = a.id AND t.to_status = s.name
+        ORDER BY t.transitioned_at DESC, t.id DESC
+        LIMIT 1
+      ) stage_entry ON true
+      WHERE s.kind <> 'rejected';
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT
-        COALESCE(AVG(
+        AVG(
           EXTRACT(EPOCH FROM (first_interview.transitioned_at - a.created_at)) / 86400.0
-        ), 0) AS days,
-        COUNT(*)::int AS count
+        ) AS days,
+        COUNT(first_interview.transitioned_at)::int AS count
       FROM applications a
       JOIN LATERAL (
         SELECT MIN(t.transitioned_at) AS transitioned_at
         FROM application_transitions t
         WHERE t.application_id = a.id
-          AND LOWER(t.to_status) = 'interview'
+          AND EXISTS (
+            SELECT 1 FROM stages interview_stage
+            WHERE interview_stage.name = t.to_status AND interview_stage.kind = 'interview'
+          )
       ) first_interview ON true;
     ` as Promise<Record<string, unknown>[]>,
     sql`
-      SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+      SELECT to_char((created_at AT TIME ZONE ${zone})::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
       FROM applications
-      GROUP BY date_trunc('day', created_at)
-      ORDER BY date_trunc('day', created_at) ASC;
+      GROUP BY (created_at AT TIME ZONE ${zone})::date
+      ORDER BY (created_at AT TIME ZONE ${zone})::date ASC;
     ` as Promise<Record<string, unknown>[]>,
     sql`
-      SELECT to_char(date_trunc('day', transitioned_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+      SELECT to_char((transitioned_at AT TIME ZONE ${zone})::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
       FROM application_transitions
-      WHERE LOWER(from_status) <> LOWER(${ "created" })
-        AND LOWER(to_status) <> LOWER(${ "created" })
-      GROUP BY date_trunc('day', transitioned_at)
-      ORDER BY date_trunc('day', transitioned_at) ASC;
+      WHERE LOWER(from_status) <> LOWER(${LEGACY_CREATED_STAGE})
+        AND LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE})
+      GROUP BY (transitioned_at AT TIME ZONE ${zone})::date
+      ORDER BY (transitioned_at AT TIME ZONE ${zone})::date ASC;
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT company, COUNT(*)::int AS count
@@ -724,7 +858,7 @@ export async function getStatsData(): Promise<StatsPayload> {
         SELECT a.id AS application_id, COALESCE(
           (SELECT t.from_status FROM application_transitions t
            WHERE t.application_id = a.id
-           ORDER BY t.transitioned_at ASC LIMIT 1),
+           ORDER BY t.transitioned_at ASC, t.id ASC LIMIT 1),
           s.name
         ) AS stage
         FROM applications a
@@ -732,7 +866,7 @@ export async function getStatsData(): Promise<StatsPayload> {
         UNION ALL
         SELECT application_id, to_status AS stage
         FROM application_transitions
-        WHERE LOWER(to_status) <> LOWER(${ "created" })
+        WHERE LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE})
       ) visits
       GROUP BY stage;
     ` as Promise<Record<string, unknown>[]>,
@@ -740,8 +874,8 @@ export async function getStatsData(): Promise<StatsPayload> {
       SELECT from_status AS from_stage, to_status AS to_stage,
              COUNT(DISTINCT application_id)::int AS count
       FROM application_transitions
-      WHERE LOWER(from_status) <> LOWER(${ "created" })
-        AND LOWER(to_status) <> LOWER(${ "created" })
+      WHERE LOWER(from_status) <> LOWER(${LEGACY_CREATED_STAGE})
+        AND LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE})
       GROUP BY from_status, to_status;
     ` as Promise<Record<string, unknown>[]>,
     sql`
@@ -750,18 +884,25 @@ export async function getStatsData(): Promise<StatsPayload> {
              s.name AS stage_name
       FROM applications a
       JOIN stages s ON s.id = a.stage_id
-      WHERE a.interview_date >= CURRENT_DATE
+      WHERE a.interview_date >= (CURRENT_TIMESTAMP AT TIME ZONE ${zone})::date - 1
       ORDER BY a.interview_date ASC
       LIMIT 10;
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT a.company, a.role, s.name AS stage_name,
-             FLOOR(EXTRACT(EPOCH FROM (NOW() - a.updated_at)) / 86400.0)::int AS days_since_update
+             FLOOR(EXTRACT(EPOCH FROM (NOW() - COALESCE(stage_entry.entered_at, a.created_at))) / 86400.0)::int AS days_since_update
       FROM applications a
       JOIN stages s ON s.id = a.stage_id
-      WHERE LOWER(s.name) NOT IN ('wishlist', 'offer', 'rejected')
-        AND EXTRACT(EPOCH FROM (NOW() - a.updated_at)) / 86400.0 >= ${STALE_THRESHOLD_DAYS}
-      ORDER BY a.updated_at ASC;
+      LEFT JOIN LATERAL (
+        SELECT t.transitioned_at AS entered_at
+        FROM application_transitions t
+        WHERE t.application_id = a.id AND t.to_status = s.name
+        ORDER BY t.transitioned_at DESC, t.id DESC
+        LIMIT 1
+      ) stage_entry ON true
+      WHERE s.kind NOT IN ('intake', 'offer', 'rejected')
+        AND EXTRACT(EPOCH FROM (NOW() - COALESCE(stage_entry.entered_at, a.created_at))) / 86400.0 >= ${STALE_THRESHOLD_DAYS}
+      ORDER BY COALESCE(stage_entry.entered_at, a.created_at) ASC;
     ` as Promise<Record<string, unknown>[]>,
   ]);
 
@@ -811,7 +952,8 @@ export async function getStatsData(): Promise<StatsPayload> {
   const funnel = stages.map((stage) => ({
     stage: stage.name,
     reached: reachedMap.get(stage.name) ?? 0,
-    sortOrder: stage.sortOrder
+    sortOrder: stage.sortOrder,
+    kind: stage.kind
   }));
 
   const stagePairs = stagePairRows.map((row) => ({

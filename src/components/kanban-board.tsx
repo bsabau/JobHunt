@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, Plus, Trash2 } from "lucide-react";
 import { STAGE_TONES, daysSince, daysUntil, isApplicationStale } from "@/lib/constants";
 import { Application, Stage } from "@/lib/types";
+import { useHorizontalWheelScroll } from "@/lib/use-horizontal-wheel-scroll";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AddApplicationDialog } from "@/components/add-application-dialog";
+import { ApplicationSearch } from "@/components/application-search";
 import { EditApplicationDialog } from "@/components/edit-application-dialog";
 import {
   trackApplicationDeleted,
@@ -20,6 +22,7 @@ interface KanbanBoardProps {
   initialApplications: Application[];
   initialStages: Stage[];
   readOnly?: boolean;
+  timeZone: string;
 }
 
 type DragItem =
@@ -54,6 +57,7 @@ function CompanyLogo({ company, logoUrl, logoBgClass }: { company: string; logoU
         width={32}
         height={32}
         loading="lazy"
+        referrerPolicy="no-referrer"
         className="h-full w-full object-contain"
         onError={() => setFailed(true)}
       />
@@ -73,9 +77,9 @@ function formatInterviewDate(date: string) {
   return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date(date));
 }
 
-function formatInterviewLabel(date: string) {
+function formatInterviewLabel(date: string, timeZone: string) {
   const formatted = formatInterviewDate(date);
-  const until = daysUntil(date);
+  const until = daysUntil(date, timeZone);
   if (until === 0) {
     return `${formatted} · Today`;
   }
@@ -94,6 +98,9 @@ interface KanbanApplicationCardProps {
   staleDays: number;
   logoBgClass: string;
   readOnly: boolean;
+  pending: boolean;
+  highlighted: boolean;
+  timeZone: string;
   onDragStart: () => void;
   onDragEnd: () => void;
   onEdit: () => void;
@@ -105,6 +112,9 @@ function KanbanApplicationCard({
   staleDays,
   logoBgClass,
   readOnly,
+  pending,
+  highlighted,
+  timeZone,
   onDragStart,
   onDragEnd,
   onEdit
@@ -140,15 +150,22 @@ function KanbanApplicationCard({
 
   return (
     <>
-      <div ref={anchorRef} onMouseEnter={showNotesTooltip} onMouseLeave={hideNotesTooltip}>
+      <div
+        ref={anchorRef}
+        data-application-id={app.id}
+        onMouseEnter={showNotesTooltip}
+        onMouseLeave={hideNotesTooltip}
+      >
         <Card
-          draggable={!readOnly}
-          onDragStart={readOnly ? undefined : onDragStart}
-          onDragEnd={readOnly ? undefined : onDragEnd}
+          draggable={!readOnly && !pending}
+          onDragStart={readOnly || pending ? undefined : onDragStart}
+          onDragEnd={readOnly || pending ? undefined : onDragEnd}
           onDoubleClick={readOnly ? undefined : onEdit}
-          className={`${readOnly ? "cursor-default" : "cursor-move"} border-border/70 bg-card/80 backdrop-blur ${
+          className={`${
+            readOnly ? "cursor-default" : pending ? "cursor-wait opacity-60" : "cursor-move"
+          } border-border/70 bg-card/80 backdrop-blur transition-shadow ${
             stale ? "border-l-4 border-l-amber-400/80" : ""
-          }`}
+          } ${highlighted ? "ring-2 ring-sky-400 ring-offset-2 ring-offset-background animate-pulse" : ""}`}
         >
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-2">
@@ -177,7 +194,7 @@ function KanbanApplicationCard({
             ) : null}
             {app.interviewDate ? (
               <div className="rounded-md border border-border/60 bg-background/70 p-2">
-                <p className="text-xs text-amber-300">Interview: {formatInterviewLabel(app.interviewDate)}</p>
+                <p className="text-xs text-amber-300">Interview: {formatInterviewLabel(app.interviewDate, timeZone)}</p>
               </div>
             ) : null}
           </CardContent>
@@ -199,7 +216,7 @@ function KanbanApplicationCard({
   );
 }
 
-export function KanbanBoard({ initialApplications, initialStages, readOnly = false }: KanbanBoardProps) {
+export function KanbanBoard({ initialApplications, initialStages, readOnly = false, timeZone }: KanbanBoardProps) {
   const [applications, setApplications] = useState<Application[]>(initialApplications);
   const [stages, setStages] = useState<Stage[]>(initialStages);
   const [editingApplication, setEditingApplication] = useState<Application | null>(null);
@@ -207,6 +224,27 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   const [draggedItem, setDraggedItem] = useState<DragItem>(null);
   const [stageDropTargetId, setStageDropTargetId] = useState<number | null>(null);
   const [binHover, setBinHover] = useState(false);
+  const [pendingMoveIds, setPendingMoveIds] = useState<number[]>([]);
+  const pendingMoveIdsRef = useRef<Set<number>>(new Set());
+  const [highlightedId, setHighlightedId] = useState<number | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useHorizontalWheelScroll(scrollRef);
+
+  // The highlight is a transient "here it is" cue, not a selection state.
+  useEffect(() => {
+    if (highlightedId === null) {
+      return;
+    }
+    const timer = window.setTimeout(() => setHighlightedId(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [highlightedId]);
+
+  function focusApplication(app: Application) {
+    setHighlightedId(app.id);
+    const card = scrollRef.current?.querySelector<HTMLElement>(`[data-application-id="${app.id}"]`);
+    card?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+  }
 
   const grouped = useMemo(() => {
     return stages.reduce(
@@ -218,27 +256,64 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     );
   }, [applications, stages]);
 
-  async function moveCard(id: number, stageId: number) {
-    const app = applications.find((item) => item.id === id);
-    const fromStage = app ? stages.find((stage) => stage.id === app.stageId) : undefined;
-    const toStage = stages.find((stage) => stage.id === stageId);
-
-    const response = await fetch(`/api/applications/${id}/status`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stageId })
-    });
+  async function refreshBoard() {
+    const response = await fetch("/api/applications");
 
     if (!response.ok) {
-      alert("Failed to move application.");
       return;
     }
 
-    const updated = (await response.json()) as Application;
-    setApplications((current) => current.map((item) => (item.id === id ? updated : item)));
+    const body = (await response.json()) as { applications: Application[]; stages: Stage[] };
+    setApplications(body.applications);
+    setStages(body.stages);
+  }
 
-    if (fromStage && toStage && fromStage.id !== toStage.id) {
-      trackApplicationMoved({ fromStageName: fromStage.name, toStageName: toStage.name });
+  async function moveCard(id: number, stageId: number) {
+    // Ignore a second drop while this card's previous move is still in flight.
+    if (pendingMoveIdsRef.current.has(id)) {
+      return;
+    }
+
+    const app = applications.find((item) => item.id === id);
+
+    if (!app || app.stageId === stageId) {
+      return;
+    }
+
+    const fromStage = stages.find((stage) => stage.id === app.stageId);
+    const toStage = stages.find((stage) => stage.id === stageId);
+    const expectedStageId = app.stageId;
+
+    pendingMoveIdsRef.current.add(id);
+    setPendingMoveIds((current) => [...current, id]);
+
+    try {
+      const response = await fetch(`/api/applications/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stageId, expectedStageId })
+      });
+
+      if (response.status === 409) {
+        await refreshBoard();
+        alert("This application was moved elsewhere. The board has been refreshed.");
+        return;
+      }
+
+      if (!response.ok) {
+        alert("Failed to move application.");
+        return;
+      }
+
+      const updated = (await response.json()) as Application;
+      setApplications((current) => current.map((item) => (item.id === id ? updated : item)));
+
+      if (fromStage && toStage && fromStage.id !== toStage.id) {
+        trackApplicationMoved({ fromStageName: fromStage.name, toStageName: toStage.name });
+      }
+    } finally {
+      pendingMoveIdsRef.current.delete(id);
+      setPendingMoveIds((current) => current.filter((pendingId) => pendingId !== id));
     }
   }
 
@@ -318,7 +393,24 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     });
 
     if (!response.ok) {
-      setStages(current);
+      setStages((latest) => {
+        const byId = new Map(latest.map((stage) => [stage.id, stage]));
+        const restored = current
+          .map((stage, index) => {
+            const latestStage = byId.get(stage.id);
+            return latestStage ? { ...latestStage, sortOrder: index } : null;
+          })
+          .filter((stage): stage is Stage => stage !== null);
+
+        const restoredIds = new Set(restored.map((stage) => stage.id));
+        for (const stage of latest) {
+          if (!restoredIds.has(stage.id)) {
+            restored.push(stage);
+          }
+        }
+
+        return restored;
+      });
       alert("Failed to reorder stages.");
       return;
     }
@@ -360,10 +452,22 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     }
 
     if (draggedItem.type === "application") {
+      const app = applications.find((item) => item.id === draggedItem.id);
+      const label = app ? `"${app.company} - ${app.role}"` : "this application";
+      if (!window.confirm(`Delete ${label}? This cannot be undone.`)) {
+        onAnyDragEnd();
+        return;
+      }
       await deleteApplicationById(draggedItem.id);
     }
 
     if (draggedItem.type === "stage") {
+      const stage = stages.find((item) => item.id === draggedItem.id);
+      const label = stage ? `stage "${stage.name}"` : "this stage";
+      if (!window.confirm(`Delete ${label}? This cannot be undone.`)) {
+        onAnyDragEnd();
+        return;
+      }
       await deleteStageById(draggedItem.id);
     }
 
@@ -375,7 +479,10 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   return (
     <section className="space-y-6 pb-24">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Applications Board</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-xl font-semibold">Applications Board</h2>
+          <ApplicationSearch applications={applications} stages={stages} onSelect={focusApplication} />
+        </div>
         {!readOnly && (
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => void addStage()}>
@@ -391,7 +498,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
         )}
       </div>
 
-      <div className="overflow-x-auto overscroll-x-contain pb-3">
+      <div ref={scrollRef} className="scrollbar-none overflow-x-auto overscroll-x-contain pb-3">
         <div
           className="inline-grid gap-4"
           style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(240px, 280px))` }}
@@ -437,7 +544,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                 <div className="space-y-3">
                   {(grouped[stage.id] ?? []).map((app) => {
                     const stale = isApplicationStale(app);
-                    const staleDays = stale ? daysSince(app.updatedAt) : 0;
+                    const staleDays = stale ? daysSince(app.stageEnteredAt ?? app.updatedAt) : 0;
                     return (
                       <KanbanApplicationCard
                         key={app.id}
@@ -446,6 +553,9 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                         staleDays={staleDays}
                         logoBgClass={tone.logoBg}
                         readOnly={readOnly}
+                        pending={pendingMoveIds.includes(app.id)}
+                        highlighted={highlightedId === app.id}
+                        timeZone={timeZone}
                         onDragStart={() => setDraggedItem({ type: "application", id: app.id })}
                         onDragEnd={onAnyDragEnd}
                         onEdit={() => {

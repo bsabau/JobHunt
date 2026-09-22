@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
+import { TEXT_LIMITS } from "@/lib/limits";
+
+export { TEXT_LIMITS };
 
 export class ApiValidationError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly status = 400) {
     super(message);
     this.name = "ApiValidationError";
   }
@@ -12,7 +15,7 @@ export function isApiValidationError(error: unknown): error is ApiValidationErro
 }
 
 export function validationErrorResponse(error: ApiValidationError) {
-  return NextResponse.json({ message: error.message }, { status: 400 });
+  return NextResponse.json({ message: error.message }, { status: error.status });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -20,6 +23,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
+  const contentType = request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/json") {
+    throw new ApiValidationError("Content-Type must be application/json", 415);
+  }
+
   let body: unknown;
 
   try {
@@ -35,17 +43,37 @@ export async function readJsonObject(request: Request): Promise<Record<string, u
   return body;
 }
 
-export function requiredString(body: Record<string, unknown>, field: string): string {
+interface StringOptions {
+  maxLength?: number;
+}
+
+function assertMaxLength(value: string, field: string, maxLength: number | undefined) {
+  if (maxLength !== undefined && value.length > maxLength) {
+    throw new ApiValidationError(`${field} must be at most ${maxLength} characters`);
+  }
+}
+
+export function requiredString(
+  body: Record<string, unknown>,
+  field: string,
+  options: StringOptions = {}
+): string {
   const value = body[field];
 
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new ApiValidationError(`${field} is required`);
   }
 
+  assertMaxLength(value, field, options.maxLength);
+
   return value;
 }
 
-export function optionalString(body: Record<string, unknown>, field: string): string | undefined {
+export function optionalString(
+  body: Record<string, unknown>,
+  field: string,
+  options: StringOptions = {}
+): string | undefined {
   const value = body[field];
 
   if (value === undefined || value === null || value === "") {
@@ -56,6 +84,8 @@ export function optionalString(body: Record<string, unknown>, field: string): st
     throw new ApiValidationError(`${field} must be a string`);
   }
 
+  assertMaxLength(value, field, options.maxLength);
+
   return value;
 }
 
@@ -64,9 +94,13 @@ export function positiveInteger(value: unknown, field: string): number {
     throw new ApiValidationError(`${field} must be a positive integer`);
   }
 
-  const parsed = typeof value === "number" ? value : Number(value);
+  const parsed = typeof value === "number"
+    ? value
+    : typeof value === "string" && /^[1-9]\d*$/.test(value)
+      ? Number(value)
+      : NaN;
 
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > 2147483647) {
     throw new ApiValidationError(`${field} must be a positive integer`);
   }
 
@@ -118,6 +152,8 @@ export function optionalHttpUrl(body: Record<string, unknown>, field: string): s
   if (typeof value !== "string") {
     throw new ApiValidationError(`${field} must be a URL`);
   }
+
+  assertMaxLength(value, field, TEXT_LIMITS.url);
 
   const trimmed = value.trim();
 

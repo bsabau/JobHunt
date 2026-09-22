@@ -17,6 +17,7 @@ import {
   YAxis,
 } from "recharts";
 import { StatsPayload } from "@/lib/types";
+import { daysUntil } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const STAGE_COLORS: Record<string, string> = {
@@ -37,8 +38,19 @@ function colorFor(name: string, fallbackIndex = 0): string {
 }
 
 function formatDate(value: string): string {
-  const d = new Date(value);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  // A date-only PostgreSQL value must be formatted as a calendar date. Parsing
+  // it with Date treats it as UTC midnight and shifts it for western timezones.
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const d = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(value);
+  // An explicit locale keeps SSR and the browser in agreement (a default
+  // locale would produce a hydration mismatch).
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function isTodayOrFuture(value: string, timeZone: string): boolean {
+  return daysUntil(value, timeZone) >= 0;
 }
 
 interface SummaryTileProps {
@@ -66,7 +78,11 @@ const tooltipStyle = {
   fontSize: 12,
 };
 
-export function StatsCharts({ data }: { data: StatsPayload }) {
+export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: string }) {
+  const upcomingInterviews = useMemo(
+    () => data.upcomingInterviews.filter((row) => isTodayOrFuture(row.interviewDate, timeZone)),
+    [data.upcomingInterviews, timeZone]
+  );
   const stageData = useMemo(
     () => data.stageCounts.map((row) => ({ ...row, fill: colorFor(row.stage) })),
     [data.stageCounts]
@@ -116,7 +132,7 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
 
   const dropOffData = useMemo(() => {
     const pipeline = [...data.funnel]
-      .filter((row) => row.stage.trim().toLowerCase() !== "rejected")
+      .filter((row) => row.kind !== "rejected")
       .sort((a, b) => a.sortOrder - b.sortOrder);
 
     const rows: {
@@ -196,11 +212,11 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
                 <CardTitle>Upcoming Interviews</CardTitle>
               </CardHeader>
               <CardContent>
-                {data.upcomingInterviews.length > 0 ? (
+                {upcomingInterviews.length > 0 ? (
                   <ul className="space-y-3">
-                    {data.upcomingInterviews.map((row) => (
+                    {upcomingInterviews.map((row, index) => (
                       <li
-                        key={`${row.company}-${row.interviewDate}`}
+                        key={`${index}-${row.company}-${row.interviewDate}`}
                         className="flex items-start justify-between gap-3 rounded-md border border-border/60 bg-background/50 px-3 py-2"
                       >
                         <div>
@@ -227,9 +243,9 @@ export function StatsCharts({ data }: { data: StatsPayload }) {
               <CardContent>
                 {data.staleApplications.length > 0 ? (
                   <ul className="space-y-3">
-                    {data.staleApplications.map((row) => (
+                    {data.staleApplications.map((row, index) => (
                       <li
-                        key={`${row.company}-${row.stageName}`}
+                        key={`${index}-${row.company}-${row.stageName}`}
                         className="flex items-start justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2"
                       >
                         <div>

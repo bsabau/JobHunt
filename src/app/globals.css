@@ -49,6 +49,14 @@
   @apply border-border;
 }
 
+/* Keeps an element scrollable (wheel, keyboard, trackpad) without a visible bar. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 body {
   @apply bg-background text-foreground antialiased;
   background-image: radial-gradient(circle at 10% 0%, rgba(56, 189, 248, 0.16), transparent 30%),

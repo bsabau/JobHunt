@@ -14,7 +14,10 @@
     "migrate:create": "node scripts/migrate-create.mjs",
     "reset:db": "node scripts/reset-neon-db.mjs",
     "cleanup:created": "node scripts/cleanup-created-transitions.mjs",
-    "verify:auth": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-auth.mjs"
+    "verify:auth": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-auth.mjs",
+    "verify:timezone": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-timezone.mjs",
+    "verify:sankey": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-sankey.mjs",
+    "verify:transitions": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-transitions.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -45,7 +48,7 @@
   },
   "overrides": {
     "minimatch": "^10.2.2",
-    "postcss": "^8.5.15",
+    "postcss": "^8.5.28",
     "eslint-plugin-import": {
       "minimatch": "^10.2.2"
     },
@@ -54,6 +57,8 @@
     },
     "eslint-plugin-react": {
       "minimatch": "^10.2.2"
-    }
+    },
+    "brace-expansion": "^5.0.12",
+    "@humanfs/node": "^0.16.8"
   }
 }

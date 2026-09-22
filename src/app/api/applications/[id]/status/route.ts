@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateApplicationStage } from "@/lib/db";
-import {
-  isApiValidationError,
-  positiveInteger,
-  readJsonObject,
-  validationErrorResponse
-} from "@/lib/api-validation";
+import { errorResponse } from "@/lib/api-errors";
+import { requireSession } from "@/lib/auth";
+import { positiveInteger, readJsonObject } from "@/lib/api-validation";
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -15,9 +12,17 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   const { id } = await params;
 
   try {
+    await requireSession({ write: true });
     const applicationId = positiveInteger(id, "id");
     const body = await readJsonObject(request);
-    const updated = await updateApplicationStage(applicationId, positiveInteger(body.stageId, "stageId"));
+    // The expected stage is mandatory: without it the move cannot be guarded
+    // against a concurrent move and the recorded transition may start from a
+    // stage the application had already left.
+    const updated = await updateApplicationStage(
+      applicationId,
+      positiveInteger(body.stageId, "stageId"),
+      positiveInteger(body.expectedStageId, "expectedStageId")
+    );
 
     if (!updated) {
       return NextResponse.json({ message: "Application not found" }, { status: 404 });
@@ -25,13 +30,6 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
     return NextResponse.json(updated);
   } catch (error) {
-    if (isApiValidationError(error)) {
-      return validationErrorResponse(error);
-    }
-
-    return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Failed to update application" },
-      { status: 400 }
-    );
+    return errorResponse(error, "Failed to update application");
   }
 }

@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { trackApplicationUpdated } from "@/lib/analytics";
+import { TEXT_LIMITS } from "@/lib/limits";
 import { applicationsForCompany, confirmDuplicateCompany } from "@/lib/utils";
 
 interface EditApplicationDialogProps {
@@ -77,8 +78,12 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
       const response = await fetch(`/api/applications/${application.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form)
+        body: JSON.stringify({ ...form, expectedStageId: application.stageId })
       });
+
+      if (response.status === 409) {
+        throw new Error("This application was moved elsewhere, please reload.");
+      }
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -109,6 +114,7 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
           id="edit-company"
           value={form.company}
           onChange={(e) => setForm((current) => ({ ...current, company: e.target.value }))}
+          maxLength={TEXT_LIMITS.company}
           required
         />
       </div>
@@ -118,6 +124,7 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
           id="edit-role"
           value={form.role}
           onChange={(e) => setForm((current) => ({ ...current, role: e.target.value }))}
+          maxLength={TEXT_LIMITS.role}
           required
         />
       </div>
@@ -128,6 +135,7 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
           type="url"
           value={form.sourceUrl}
           onChange={(e) => setForm((current) => ({ ...current, sourceUrl: e.target.value }))}
+          maxLength={TEXT_LIMITS.url}
         />
       </div>
       <div className="space-y-2">
@@ -163,6 +171,7 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
           id="edit-notes"
           value={form.notes}
           onChange={(e) => setForm((current) => ({ ...current, notes: e.target.value }))}
+          maxLength={TEXT_LIMITS.notes}
         />
       </div>
       <DialogFooter>

@@ -1,28 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createApplication, listApplications, listStages } from "@/lib/db";
 import { findCompanyLogo } from "@/lib/logo";
+import { errorResponse } from "@/lib/api-errors";
+import { requireSession } from "@/lib/auth";
 import {
-  isApiValidationError,
+  TEXT_LIMITS,
   optionalDateOnly,
   optionalHttpUrl,
   optionalPositiveInteger,
   optionalString,
   readJsonObject,
-  requiredString,
-  validationErrorResponse
+  requiredString
 } from "@/lib/api-validation";
 
 export async function GET() {
-  const [applications, stages] = await Promise.all([listApplications(), listStages()]);
-  return NextResponse.json({ applications, stages });
+  try {
+    const session = await requireSession();
+    const [applications, stages] = await Promise.all([listApplications(), listStages()]);
+    // Notes can hold salary expectations and recruiter contacts; guests get a
+    // redacted DTO rather than the owner's free text.
+    const visibleApplications =
+      session.role === "guest" ? applications.map((application) => ({ ...application, notes: null })) : applications;
+    return NextResponse.json({ applications: visibleApplications, stages });
+  } catch (error) {
+    return errorResponse(error, "Failed to load applications");
+  }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    await requireSession({ write: true });
     const payload = await readJsonObject(request);
-    const company = requiredString(payload, "company");
-    const role = requiredString(payload, "role");
-    const notes = optionalString(payload, "notes");
+    const company = requiredString(payload, "company", { maxLength: TEXT_LIMITS.company });
+    const role = requiredString(payload, "role", { maxLength: TEXT_LIMITS.role });
+    const notes = optionalString(payload, "notes", { maxLength: TEXT_LIMITS.notes });
     const interviewDate = optionalDateOnly(payload, "interviewDate");
     const sourceUrl = optionalHttpUrl(payload, "sourceUrl");
     const stageId = optionalPositiveInteger(payload, "stageId");
@@ -40,13 +51,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(application, { status: 201 });
   } catch (error) {
-    if (isApiValidationError(error)) {
-      return validationErrorResponse(error);
-    }
-
-    return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Failed to create application" },
-      { status: 400 }
-    );
+    return errorResponse(error, "Failed to create application");
   }
 }

@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { safeVerifySessionToken, SESSION_COOKIE } from "@/lib/auth";
 
 export async function proxy(request: NextRequest) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    const origin = request.headers.get("origin");
+    const fetchSite = request.headers.get("sec-fetch-site");
+    if ((origin && origin !== request.nextUrl.origin) || (fetchSite && !["same-origin", "none"].includes(fetchSite))) {
+      return NextResponse.json({ message: "Cross-site requests are not allowed" }, { status: 403 });
+    }
+  }
+
   // Allow login page and login API without auth
   if (
     request.nextUrl.pathname === "/login" ||
@@ -25,19 +33,19 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
-  // Block mutating API requests for guest users
+  // Block mutating API requests for guest users. Logout is the one write a
+  // guest must always be able to perform, otherwise the cookie outlives the
+  // "Sign out" click for its full lifetime.
   if (
     session.role === "guest" &&
     request.nextUrl.pathname.startsWith("/api/") &&
+    request.nextUrl.pathname !== "/api/auth/logout" &&
     request.method !== "GET"
   ) {
     return NextResponse.json({ message: "Guest access is read-only" }, { status: 403 });
   }
 
-  // Pass role via request header so server components can read it
-  const response = NextResponse.next();
-  response.headers.set("x-user-role", session.role);
-  return response;
+  return NextResponse.next();
 }
 
 export const config = {

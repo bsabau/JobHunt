@@ -32,6 +32,17 @@ AUTH_PASS="your-password"
 AUTH_SECRET="generate-a-long-random-session-signing-secret"
 ```
 
+`AUTH_SECRET` must be at least 32 characters.
+
+Optional read-only guest access:
+
+```bash
+AUTH_GUEST_ENABLED="true"
+AUTH_GUEST_PASS="a-separate-guest-password"
+```
+
+Signing in with the username `guest` and that password grants a session that can view the board, stats, and Sankey but never sees notes and cannot change data. The owner username must not be `guest`. Setting `AUTH_GUEST_ENABLED` to anything other than `true`, or rotating `AUTH_GUEST_PASS`, invalidates every issued guest session.
+
 For Vercel deployment, add the same values in Project Settings -> Environment Variables.
 
 ## Database migrations

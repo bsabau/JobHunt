@@ -8,16 +8,92 @@ import {
   isAuthConfigurationError
 } from "@/lib/auth";
 
+const LOGIN_WINDOW_MS = 60_000;
+const LOGIN_MAX_ATTEMPTS = 5;
+const MAX_TRACKED_IPS = 5_000;
+// Real credentials are short; anything longer only costs hashing time.
+const MAX_CREDENTIAL_LENGTH = 512;
+
+// Best-effort, per-instance brute-force throttle. It resets on cold start and
+// does not coordinate across regions/instances; a platform-level rate limit
+// (e.g. Vercel Firewall) is the durable fix. `x-forwarded-for` is only a
+// trustworthy key where the platform sets it (Vercel does); on other hosts the
+// header is client-controlled and the counter is trivially bypassed, so it
+// must never be the only control.
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function clientIp(request: NextRequest): string {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    const first = forwardedFor.split(",")[0]?.trim();
+    if (first) return first;
+  }
+
+  const realIp = request.headers.get("x-real-ip");
+  if (realIp?.trim()) return realIp.trim();
+
+  return "unknown";
+}
+
+function pruneExpiredAttempts(now: number) {
+  if (loginAttempts.size < MAX_TRACKED_IPS) {
+    return;
+  }
+
+  for (const [ip, record] of loginAttempts) {
+    if (now >= record.resetAt) {
+      loginAttempts.delete(ip);
+    }
+  }
+
+  // Where the forwarded-for header is client-controlled, a flood of distinct
+  // fake addresses inside one window would otherwise grow the map without
+  // bound. Map iteration is insertion-ordered, so this drops the oldest.
+  for (const ip of loginAttempts.keys()) {
+    if (loginAttempts.size < MAX_TRACKED_IPS) {
+      break;
+    }
+    loginAttempts.delete(ip);
+  }
+}
+
+function recordFailedAttempt(ip: string, now: number) {
+  pruneExpiredAttempts(now);
+
+  const record = loginAttempts.get(ip);
+  if (!record || now >= record.resetAt) {
+    loginAttempts.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return;
+  }
+
+  record.count += 1;
+}
+
 export async function POST(request: NextRequest) {
+  const ip = clientIp(request);
+  const now = Date.now();
+  const attempt = loginAttempts.get(ip);
+
+  if (attempt && now < attempt.resetAt && attempt.count >= LOGIN_MAX_ATTEMPTS) {
+    const retryAfter = Math.max(1, Math.ceil((attempt.resetAt - now) / 1000));
+    return NextResponse.json(
+      { message: "Too many login attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+
   try {
     const body = await readJsonObject(request);
-    const user = requiredString(body, "user");
-    const pass = requiredString(body, "pass");
+    const user = requiredString(body, "user", { maxLength: MAX_CREDENTIAL_LENGTH });
+    const pass = requiredString(body, "pass", { maxLength: MAX_CREDENTIAL_LENGTH });
 
-    const role = validateCredentials(user, pass);
+    const role = await validateCredentials(user, pass);
     if (!role) {
+      recordFailedAttempt(ip, Date.now());
       return NextResponse.json({ message: "Invalid credentials" }, { status: 401 });
     }
+
+    loginAttempts.delete(ip);
 
     const token = await createSessionToken(role);
 
@@ -37,11 +113,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (isAuthConfigurationError(error)) {
-      console.error(error.message);
-      return NextResponse.json(
-        { message: "Authentication is not configured. Check AUTH_USER, AUTH_PASS, and AUTH_SECRET in Vercel." },
-        { status: 500 }
-      );
+      // Log the configuration problem server-side but do not reveal it to the
+      // caller: an unauthenticated probe should not be able to tell a
+      // misconfigured deployment from bad credentials.
+      console.error("Login failed due to auth configuration:", error.message);
+      return NextResponse.json({ message: "Invalid credentials" }, { status: 401 });
     }
 
     return NextResponse.json({ message: "Login failed" }, { status: 500 });
