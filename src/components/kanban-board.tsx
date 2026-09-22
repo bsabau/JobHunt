@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, Plus, Trash2 } from "lucide-react";
 import { STAGE_TONES, daysSince, daysUntil, isApplicationStale } from "@/lib/constants";
 import { Application, Stage } from "@/lib/types";
-import { useHorizontalWheelScroll } from "@/lib/use-horizontal-wheel-scroll";
 import { useMiddleButtonPan } from "@/lib/use-middle-button-pan";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -230,7 +229,6 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useHorizontalWheelScroll(scrollRef);
   useMiddleButtonPan(scrollRef);
 
   // The highlight is a transient "here it is" cue, not a selection state.
