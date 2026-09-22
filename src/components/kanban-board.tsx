@@ -5,6 +5,7 @@ import { ArrowLeftRight, Plus, Trash2 } from "lucide-react";
 import { STAGE_TONES, daysSince, daysUntil, isApplicationStale } from "@/lib/constants";
 import { Application, Stage } from "@/lib/types";
 import { useHorizontalWheelScroll } from "@/lib/use-horizontal-wheel-scroll";
+import { useMiddleButtonPan } from "@/lib/use-middle-button-pan";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AddApplicationDialog } from "@/components/add-application-dialog";
@@ -230,6 +231,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useHorizontalWheelScroll(scrollRef);
+  useMiddleButtonPan(scrollRef);
 
   // The highlight is a transient "here it is" cue, not a selection state.
   useEffect(() => {
@@ -498,7 +500,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
         )}
       </div>
 
-      <div ref={scrollRef} className="scrollbar-none overflow-x-auto overscroll-x-contain pb-3">
+      <div ref={scrollRef} className="scrollbar-none overflow-x-auto overscroll-x-contain pb-3 data-[panning=true]:cursor-grabbing data-[panning=true]:select-none">
         <div
           className="inline-grid gap-4"
           style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(240px, 280px))` }}
