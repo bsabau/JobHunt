@@ -12,3 +12,4 @@ pnpm-debug.log*
 *.sqlite-shm
 *.sqlite-wal
 tsconfig.tsbuildinfo
+next-env.d.ts

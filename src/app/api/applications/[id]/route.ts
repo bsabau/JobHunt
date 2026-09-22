@@ -6,7 +6,6 @@ import {
   TEXT_LIMITS,
   optionalDateOnly,
   optionalHttpUrl,
-  optionalPositiveInteger,
   optionalString,
   positiveInteger,
   readJsonObject,
@@ -31,7 +30,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       interviewDate: optionalDateOnly(payload, "interviewDate"),
       sourceUrl: optionalHttpUrl(payload, "sourceUrl"),
       stageId: positiveInteger(payload.stageId, "stageId"),
-      expectedStageId: optionalPositiveInteger(payload, "expectedStageId")
+      // Mandatory so the stage change is always guarded against a concurrent move.
+      expectedStageId: positiveInteger(payload.expectedStageId, "expectedStageId")
     });
 
     if (!updated) {

@@ -11,6 +11,8 @@ import {
 const LOGIN_WINDOW_MS = 60_000;
 const LOGIN_MAX_ATTEMPTS = 5;
 const MAX_TRACKED_IPS = 5_000;
+// Real credentials are short; anything longer only costs hashing time.
+const MAX_CREDENTIAL_LENGTH = 512;
 
 // Best-effort, per-instance brute-force throttle. It resets on cold start and
 // does not coordinate across regions/instances; a platform-level rate limit
@@ -43,6 +45,16 @@ function pruneExpiredAttempts(now: number) {
       loginAttempts.delete(ip);
     }
   }
+
+  // Where the forwarded-for header is client-controlled, a flood of distinct
+  // fake addresses inside one window would otherwise grow the map without
+  // bound. Map iteration is insertion-ordered, so this drops the oldest.
+  for (const ip of loginAttempts.keys()) {
+    if (loginAttempts.size < MAX_TRACKED_IPS) {
+      break;
+    }
+    loginAttempts.delete(ip);
+  }
 }
 
 function recordFailedAttempt(ip: string, now: number) {
@@ -72,8 +84,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await readJsonObject(request);
-    const user = requiredString(body, "user");
-    const pass = requiredString(body, "pass");
+    const user = requiredString(body, "user", { maxLength: MAX_CREDENTIAL_LENGTH });
+    const pass = requiredString(body, "pass", { maxLength: MAX_CREDENTIAL_LENGTH });
 
     const role = await validateCredentials(user, pass);
     if (!role) {

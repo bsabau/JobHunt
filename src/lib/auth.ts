@@ -24,8 +24,18 @@ function requireEnv(name: "AUTH_USER" | "AUTH_PASS" | "AUTH_SECRET" | "AUTH_GUES
   return value;
 }
 
+// HMAC-SHA256 gains nothing from a key longer than the block size, but a short
+// one is guessable; 32 characters is the floor documented in .env.example.
+const MIN_SECRET_LENGTH = 32;
+
 function getSecret(): string {
-  return requireEnv("AUTH_SECRET");
+  const secret = requireEnv("AUTH_SECRET");
+
+  if (secret.length < MIN_SECRET_LENGTH) {
+    throw new AuthConfigurationError(`AUTH_SECRET must be at least ${MIN_SECRET_LENGTH} characters`);
+  }
+
+  return secret;
 }
 
 function toHex(buffer: ArrayBuffer): string {

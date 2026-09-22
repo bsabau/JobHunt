@@ -11,8 +11,8 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   images: {
-    // Logos are rendered with a regular <img>; keep Next's vulnerable image
-    // optimizer out of the request path until dependencies are patched.
+    // Logos are third-party favicons rendered with a plain <img>, so the image
+    // optimizer (and its remote-pattern surface) stays out of the request path.
     unoptimized: true
   },
   async headers() {

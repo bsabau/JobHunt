@@ -33,10 +33,13 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
-  // Block mutating API requests for guest users
+  // Block mutating API requests for guest users. Logout is the one write a
+  // guest must always be able to perform, otherwise the cookie outlives the
+  // "Sign out" click for its full lifetime.
   if (
     session.role === "guest" &&
     request.nextUrl.pathname.startsWith("/api/") &&
+    request.nextUrl.pathname !== "/api/auth/logout" &&
     request.method !== "GET"
   ) {
     return NextResponse.json({ message: "Guest access is read-only" }, { status: 403 });

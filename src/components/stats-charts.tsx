@@ -214,9 +214,9 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
               <CardContent>
                 {upcomingInterviews.length > 0 ? (
                   <ul className="space-y-3">
-                    {upcomingInterviews.map((row) => (
+                    {upcomingInterviews.map((row, index) => (
                       <li
-                        key={`${row.company}-${row.interviewDate}`}
+                        key={`${index}-${row.company}-${row.interviewDate}`}
                         className="flex items-start justify-between gap-3 rounded-md border border-border/60 bg-background/50 px-3 py-2"
                       >
                         <div>
@@ -243,9 +243,9 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
               <CardContent>
                 {data.staleApplications.length > 0 ? (
                   <ul className="space-y-3">
-                    {data.staleApplications.map((row) => (
+                    {data.staleApplications.map((row, index) => (
                       <li
-                        key={`${row.company}-${row.stageName}`}
+                        key={`${index}-${row.company}-${row.stageName}`}
                         className="flex items-start justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2"
                       >
                         <div>

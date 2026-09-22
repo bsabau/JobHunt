@@ -33,7 +33,11 @@ try {
 
   await assert.rejects(() => createSessionToken("user"), /AUTH_SECRET/);
 
-  setEnv("AUTH_SECRET", "test-session-secret");
+  // A secret shorter than 32 characters is a configuration error, not a key.
+  setEnv("AUTH_SECRET", "too-short-secret");
+  await assert.rejects(() => createSessionToken("user"), /AUTH_SECRET must be at least 32 characters/);
+
+  setEnv("AUTH_SECRET", "test-session-secret-with-at-least-32-characters");
   setEnv("AUTH_USER", "");
   await assert.rejects(() => validateCredentials("owner", "password"), /AUTH_USER/);
 

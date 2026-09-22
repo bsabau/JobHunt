@@ -10,6 +10,18 @@ function hasPgCode(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && (error as { code?: unknown }).code === code;
 }
 
+function pgConstraint(error: unknown): string | undefined {
+  const value = typeof error === "object" && error !== null ? (error as { constraint?: unknown }).constraint : undefined;
+  return typeof value === "string" ? value : undefined;
+}
+
+// A stage can be deleted between the "does it exist" check and the write that
+// references it. The FK violation that follows is a caller-visible state
+// change, not a server fault, so it maps to the same error as the check.
+function isStageForeignKeyViolation(error: unknown): boolean {
+  return hasPgCode(error, "23503") && (pgConstraint(error)?.includes("stage_id") ?? true);
+}
+
 type SqlClient = ReturnType<typeof neon>;
 type TransactionSql = NeonQueryFunctionInTransaction<boolean, boolean>;
 type TransactionQuery = ReturnType<TransactionSql>;
@@ -233,7 +245,11 @@ export async function addStage(name: string): Promise<Stage> {
     `) as Record<string, unknown>[];
   } catch (error) {
     if (hasPgCode(error, "23505")) {
-      throw new ConflictError("Stage already exists");
+      // Two unique constraints can fire here: the name, or the deferred
+      // sort_order key when another stage was inserted at the same moment.
+      throw pgConstraint(error) === "stages_sort_order_key"
+        ? new ConflictError("Another stage was added at the same time. Try again.")
+        : new ConflictError("Stage already exists");
     }
     throw error;
   }
@@ -397,30 +413,39 @@ export async function createApplication(input: CreateApplicationInput): Promise<
       ? { id: Number(selectedStageRows[0].id), name: String(selectedStageRows[0].name) }
       : await getDefaultCreateStage();
 
-  const insertRows = (await sql`
-    INSERT INTO applications (
-      company,
-      role,
-      notes,
-      interview_date,
-      source_url,
-      logo_url,
-      stage_id,
-      created_at,
-      updated_at
-    ) VALUES (
-      ${input.company.trim()},
-      ${input.role.trim()},
-      ${input.notes?.trim() || null},
-      ${input.interviewDate ? input.interviewDate : null},
-      ${input.sourceUrl?.trim() || null},
-      ${input.logoUrl || null},
-      ${stage.id},
-      NOW(),
-      NOW()
-    )
-    RETURNING id;
-  `) as Record<string, unknown>[];
+  let insertRows: Record<string, unknown>[];
+
+  try {
+    insertRows = (await sql`
+      INSERT INTO applications (
+        company,
+        role,
+        notes,
+        interview_date,
+        source_url,
+        logo_url,
+        stage_id,
+        created_at,
+        updated_at
+      ) VALUES (
+        ${input.company.trim()},
+        ${input.role.trim()},
+        ${input.notes?.trim() || null},
+        ${input.interviewDate ? input.interviewDate : null},
+        ${input.sourceUrl?.trim() || null},
+        ${input.logoUrl || null},
+        ${stage.id},
+        NOW(),
+        NOW()
+      )
+      RETURNING id;
+    `) as Record<string, unknown>[];
+  } catch (error) {
+    if (isStageForeignKeyViolation(error)) {
+      throw new InvalidInputError("Invalid stage");
+    }
+    throw error;
+  }
 
   const applicationId = Number(insertRows[0].id);
 
@@ -566,7 +591,17 @@ async function applyStageMove(
   expectedStageId: number | null,
   toStageId: number
 ): Promise<StageMoveOutcome> {
-  const rows = (await stageMoveQuery(updateSet, applicationId, expectedStageId, toStageId)) as Record<string, unknown>[];
+  let rows: Record<string, unknown>[];
+
+  try {
+    rows = (await stageMoveQuery(updateSet, applicationId, expectedStageId, toStageId)) as Record<string, unknown>[];
+  } catch (error) {
+    if (isStageForeignKeyViolation(error)) {
+      throw new InvalidInputError("Target stage not found");
+    }
+    throw error;
+  }
+
   const found = Number(rows[0]?.found ?? 0);
   const updated = Number(rows[0]?.updated ?? 0);
 

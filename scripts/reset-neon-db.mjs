@@ -1,25 +1,5 @@
 import { neon } from "@neondatabase/serverless";
-import fs from "node:fs";
-import path from "node:path";
-
-function loadDatabaseUrl() {
-  if (process.env.DATABASE_URL) {
-    return process.env.DATABASE_URL;
-  }
-
-  const envPath = path.join(process.cwd(), ".env.local");
-  if (!fs.existsSync(envPath)) {
-    throw new Error("DATABASE_URL not found. Set env var or add it to .env.local");
-  }
-
-  const content = fs.readFileSync(envPath, "utf8");
-  const match = content.match(/^DATABASE_URL\s*=\s*(.+)$/m);
-  if (!match) {
-    throw new Error("DATABASE_URL not found in .env.local");
-  }
-
-  return match[1].trim().replace(/^['\"]|['\"]$/g, "");
-}
+import { loadDatabaseUrl } from "./migration-utils.mjs";
 
 const databaseUrl = loadDatabaseUrl();
 const sql = neon(databaseUrl);
