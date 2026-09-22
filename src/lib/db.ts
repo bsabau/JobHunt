@@ -832,18 +832,21 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       ) first_interview ON true;
     ` as Promise<Record<string, unknown>[]>,
     sql`
-      SELECT to_char((created_at AT TIME ZONE ${zone})::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
-      FROM applications
-      GROUP BY (created_at AT TIME ZONE ${zone})::date
-      ORDER BY (created_at AT TIME ZONE ${zone})::date ASC;
+      SELECT to_char(day, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+      FROM (SELECT (created_at AT TIME ZONE ${zone})::date AS day FROM applications) buckets
+      GROUP BY day
+      ORDER BY day ASC;
     ` as Promise<Record<string, unknown>[]>,
     sql`
-      SELECT to_char((transitioned_at AT TIME ZONE ${zone})::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
-      FROM application_transitions
-      WHERE LOWER(from_status) <> LOWER(${LEGACY_CREATED_STAGE})
-        AND LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE})
-      GROUP BY (transitioned_at AT TIME ZONE ${zone})::date
-      ORDER BY (transitioned_at AT TIME ZONE ${zone})::date ASC;
+      SELECT to_char(day, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+      FROM (
+        SELECT (transitioned_at AT TIME ZONE ${zone})::date AS day
+        FROM application_transitions
+        WHERE LOWER(from_status) <> LOWER(${LEGACY_CREATED_STAGE})
+          AND LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE})
+      ) buckets
+      GROUP BY day
+      ORDER BY day ASC;
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT company, COUNT(*)::int AS count
