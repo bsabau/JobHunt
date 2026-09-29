@@ -36,13 +36,13 @@ Sizes: tiny is under an hour, small is up to half a day, medium is about a day.
 | 2 | A stats page that says each thing once | 2.1 M-1, R-3, R-4; 2.2 R-1; 2.3 R-2 | 1 to 2 days |
 | 3 | New metrics | 3.1 M-2, 3.2 M-3, 3.3 M-4, 3.4 M-5 | 2 days |
 | 4 | Acting on what the stats show | 4.1 F-1, 4.2 F-2 | 1 to 2 days |
-| 5 | Optional: more fields, calendar, CSV | 5.1 F-6, 5.2 F-7, 5.3 IMP, 5.4 F-5 | 2 to 4 days |
+| 5 | More fields, calendar; optional CSV | 5.1 F-6, 5.2 F-7, 5.3 IMP, 5.4 F-5 | 2 to 4 days |
 
 - Phase 1 is the timeline and the filter. CSV import and export were first in `ROADMAP.md`; the owner does not need them now (2026-09-29), so they are optional steps 5.3 and 5.4. Without the export, the backup before the bulk close (4.2) is Neon's point-in-time restore.
 - Phase 2 comes before phase 3 because every new metric reads the view that 2.1 adds, and because removing four charts first leaves room on the page for the new ones.
 - M-5 is last in phase 3: it adds a parameter to every ranged query, so it is cheaper once those queries exist.
 - F-2 needs "no reply yet" (2.1) and must respect a snooze (4.1).
-- Phase 5 is optional. 5.1 and 5.2 add columns that only pay off if the owner fills them in (decisions 14 and 16); 5.3 and 5.4 wait until the owner asks for them (decision 19). The steps of phase 5 can be built in any order; where two share a piece, the first one built adds it.
+- Phase 5 comes last. 5.1 and 5.2 are built after phases 1 to 4 (decisions 14 and 16); 5.3 and 5.4 are optional and wait until the owner asks for them (decision 19). The steps of phase 5 can be built in any order; where two share a piece, the first one built adds it.
 
 One step is one branch and one pull request. Steps inside a phase can be reordered; the "Depends on" column is the only hard order.
 
@@ -525,7 +525,7 @@ This differs from the audit, which proposed one `next_action_date DATE`:
 **Scope**
 
 - A button on the stats page near the stale list, owner only: "Close ghosted applications…". Hidden when the board has no `closed` lane.
-- A dialog with a number field "No reply after N days", default 30 (decision 13); the median from 3.1 is shown next to it as a hint. The list below updates as N changes.
+- A dialog with a number field "No reply after N days", default 21 (decision 13); the median from 3.1 is shown next to it as a hint. The list below updates as N changes.
 - Candidates: sent, `responded` false, currently in a lane whose kind can go stale, sent at least N days ago, and not snoozed.
 - Every row has a checkbox, ticked by default. One confirmation moves the ticked cards.
 - The browser sends the existing `PATCH /api/applications/:id/status` once per card, one after another, each with the card's `expectedStageId`. A 409 or 404 on one card is reported and does not stop the rest. At most 50 cards per run.
@@ -555,15 +555,15 @@ This differs from the audit, which proposed one `next_action_date DATE`:
 
 **Acceptance**
 
-- The dialog's list for N = 30 equals a hand count on `dev`.
+- The dialog's list for N = 21 equals a hand count on `dev`.
 - After confirming, every moved card has one new edge into the closed lane, the ghosted rate rises accordingly, and the stale list no longer shows them.
 - Moving one of the cards in another tab before confirming reports that card as skipped and moves the others.
 
 ---
 
-## Phase 5: optional
+## Phase 5: more fields, calendar, optional CSV
 
-Every step here is optional: 5.1 and 5.2 by decisions 14 and 16, 5.3 and 5.4 by decision 19.
+5.1 and 5.2 are built last (decisions 14 and 16). 5.3 and 5.4 are optional (decision 19).
 
 ### 5.1 Optional fields: referral, location, salary (F-6)
 
@@ -806,28 +806,28 @@ ALTER TABLE applications
 | Touch drag and drop | Owner decision 4 of the fix plan. |
 | Changes to Vercel settings, the firewall rule or environment variables | None needed by any step. |
 
-## Open decisions for the owner
+## Decisions
 
-Answer "use the defaults" to accept every recommendation. Decision 19 is already made.
+Answered by the owner on 2026-09-29. Every recommendation was accepted except 13 (21 days instead of 30). Decisions 1, 2, 3, 5 and 6 stay open: they concern the optional CSV steps and are asked when those are built.
 
-| # | Question | Recommended default |
-|---|---|---|
-| 1 | Import: comma only, or detect comma, semicolon and tab? (5.3) | Detect all three; spreadsheets in many locales write semicolons |
-| 2 | Import: rows for a company that already has a card? (5.3) | Marked and unticked; the owner can tick them |
-| 3 | Import limits? (5.3) | 200 rows and 1 MB per file |
-| 4 | Timeline for the guest: a read-only details dialog, or owner only for now? (1.1) | Read-only details dialog, as the roadmap says "owner and guest alike" |
-| 5 | Export: byte-order mark for spreadsheets? (5.4) | Yes |
-| 6 | Export: write cells exactly, or prefix cells that start with `=`, `+`, `-`, `@` so a spreadsheet does not read them as formulas? (5.4) | Exactly. Every cell is text the owner typed, and the file must load back unchanged |
-| 7 | Applications over time: count by applied date or by creation date? (2.3) | Applied date, like every other metric |
-| 8 | First day of the week? (2.3, 3.2) | Monday |
-| 9 | Smallest sample for a median? (3.1) | 5 applications; below that the tile shows "—" |
-| 10 | Results by source: smallest group shown on its own? (3.3) | 3 applications; smaller hosts go to "Other" |
-| 11 | Date ranges? (3.4) | 30 days, 90 days, all time; all time by default |
-| 12 | Stale actions on the board cards too? (4.1) | No; stats page only, board later if missed |
-| 13 | Bulk close: default for "no reply after N days"? (4.2) | 30, with the median shown as a hint. The audit's default (the median itself) would close half of all eventual replies too early |
-| 14 | Build the optional fields at all? (5.1) | Yes, after phases 1 to 4 |
-| 15 | Salary: free text or numbers? Visible to the guest? (5.1) | Free text, owner only. Referral, work mode and location visible to the guest |
-| 16 | Build the calendar export at all? (5.2) | Yes, last; skip it if interviews arrive as calendar invitations anyway |
-| 17 | Calendar: default length of a timed interview? Owner only? (5.2) | 60 minutes; owner only |
-| 18 | One PR per step, or R-1 and R-2 together with 2.1? (phase 2) | One PR per step; each is small and reviewed faster alone |
-| 19 | CSV import and export? (5.3, 5.4) | **Decided 2026-09-29:** not needed now, kept as optional steps. Decisions 1, 2, 3, 5 and 6 apply only if they are built |
+| # | Question | Recommended default | Decision |
+|---|---|---|---|
+| 1 | Import: comma only, or detect comma, semicolon and tab? (5.3) | Detect all three; spreadsheets in many locales write semicolons | Open (optional step) |
+| 2 | Import: rows for a company that already has a card? (5.3) | Marked and unticked; the owner can tick them | Open (optional step) |
+| 3 | Import limits? (5.3) | 200 rows and 1 MB per file | Open (optional step) |
+| 4 | Timeline for the guest: a read-only details dialog, or owner only for now? (1.1) | Read-only details dialog, as the roadmap says "owner and guest alike" | Default |
+| 5 | Export: byte-order mark for spreadsheets? (5.4) | Yes | Open (optional step) |
+| 6 | Export: write cells exactly, or prefix cells that start with `=`, `+`, `-`, `@` so a spreadsheet does not read them as formulas? (5.4) | Exactly. Every cell is text the owner typed, and the file must load back unchanged | Open (optional step) |
+| 7 | Applications over time: count by applied date or by creation date? (2.3) | Applied date, like every other metric | Default |
+| 8 | First day of the week? (2.3, 3.2) | Monday | Default |
+| 9 | Smallest sample for a median? (3.1) | 5 applications; below that the tile shows "—" | Default |
+| 10 | Results by source: smallest group shown on its own? (3.3) | 3 applications; smaller hosts go to "Other" | Default |
+| 11 | Date ranges? (3.4) | 30 days, 90 days, all time; all time by default | Default |
+| 12 | Stale actions on the board cards too? (4.1) | No; stats page only, board later if missed | Default |
+| 13 | Bulk close: default for "no reply after N days"? (4.2) | 30, with the median shown as a hint. The audit's default (the median itself) would close half of all eventual replies too early | **21 days** |
+| 14 | Build the optional fields at all? (5.1) | Yes, after phases 1 to 4 | Default |
+| 15 | Salary: free text or numbers? Visible to the guest? (5.1) | Free text, owner only. Referral, work mode and location visible to the guest | Default |
+| 16 | Build the calendar export at all? (5.2) | Yes, last; skip it if interviews arrive as calendar invitations anyway | Default |
+| 17 | Calendar: default length of a timed interview? Owner only? (5.2) | 60 minutes; owner only | Default |
+| 18 | One PR per step, or R-1 and R-2 together with 2.1? (phase 2) | One PR per step; each is small and reviewed faster alone | Default |
+| 19 | CSV import and export? (5.3, 5.4) | **Decided 2026-09-29:** not needed now, kept as optional steps. Decisions 1, 2, 3, 5 and 6 apply only if they are built | Optional |
