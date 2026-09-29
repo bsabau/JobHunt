@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import type { NeonQueryFunctionInTransaction } from "@neondatabase/serverless";
+import { LATEST_MIGRATION } from "./schema-version";
 
 // Connection, error helpers and the schema guard shared by every db module.
 
@@ -12,9 +13,10 @@ export function pgConstraint(error: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-// A stage can be deleted between the "does it exist" check and the write that
-// references it. The FK violation that follows is a caller-visible state
-// change, not a server fault, so it maps to the same error as the check.
+// A write that names a lane that does not exist (never did, or was just
+// deleted) fails the stage_id foreign key. That is a caller error, not a
+// server fault: moves and edits rely on it instead of checking the lane first,
+// and createApplication uses it for a lane deleted after its own check.
 export function isStageForeignKeyViolation(error: unknown): boolean {
   return hasPgCode(error, "23503") && (pgConstraint(error)?.includes("stage_id") ?? true);
 }
@@ -40,53 +42,40 @@ export function sql(strings: TemplateStringsArray, ...values: unknown[]) {
   return getSql()(strings, ...values);
 }
 
-export function transaction(queries: (tx: TransactionSql) => TransactionQuery[]) {
-  return getSql().transaction((tx) => queries(tx));
+type TransactionOptions = Parameters<SqlClient["transaction"]>[1];
+
+// Sends the queries as one request in one transaction. Pass
+// { readOnly: true, isolationLevel: "RepeatableRead" } for reads that must
+// agree with each other (one snapshot).
+export function transaction(queries: (tx: TransactionSql) => TransactionQuery[], options?: TransactionOptions) {
+  return getSql().transaction((tx) => queries(tx), options);
 }
 
 let schemaReadyPromise: Promise<void> | null = null;
 
+// Checks once per process that the database has every migration this code
+// needs (LATEST_MIGRATION), so a missed `migrate:prod` fails with a clear
+// message instead of a missing column deep in some query. A database that is
+// ahead of the code passes: the deploy runbook migrates before merging.
 export async function ensureSchema(): Promise<void> {
   if (!schemaReadyPromise) {
     schemaReadyPromise = (async () => {
-      const checks = (await sql`
-        SELECT
-          EXISTS (
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = 'stages'
-          ) AS has_stages,
-          EXISTS (
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = 'applications'
-          ) AS has_applications,
-          EXISTS (
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = 'application_transitions'
-          ) AS has_application_transitions,
-          EXISTS (
-            SELECT 1
-            FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = 'stages' AND column_name = 'kind'
-          ) AS has_stage_kind,
-          EXISTS (
-            SELECT 1
-            FROM information_schema.views
-            WHERE table_schema = 'public' AND table_name = 'application_entry_stage'
-          ) AS has_entry_stage_view;
-      `) as Record<string, unknown>[];
+      let newest: string | null = null;
+      try {
+        const rows = (await sql`SELECT MAX(filename) AS newest FROM schema_migrations;`) as Record<string, unknown>[];
+        newest = rows[0]?.newest == null ? null : String(rows[0].newest);
+      } catch (error) {
+        // 42P01: schema_migrations does not exist, so nothing was ever migrated.
+        if (!hasPgCode(error, "42P01")) {
+          throw error;
+        }
+      }
 
-      const row = checks[0];
-      if (
-        !row.has_stages ||
-        !row.has_applications ||
-        !row.has_application_transitions ||
-        !row.has_stage_kind ||
-        !row.has_entry_stage_view
-      ) {
-        throw new Error("Database schema is missing or outdated. Run `npm run migrate:up`.");
+      if (newest === null || newest < LATEST_MIGRATION) {
+        throw new Error(
+          `Database schema is behind the code (has ${newest ?? "no migrations"}, needs ${LATEST_MIGRATION}). ` +
+            "Run `npm run migrate:up` (or `npm run migrate:prod` for production)."
+        );
       }
     })();
   }

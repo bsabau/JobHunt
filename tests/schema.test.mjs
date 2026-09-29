@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, test } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { getMigrationFiles, runMigrations } from "../scripts/migration-utils.mjs";
+import { LATEST_MIGRATION } from "../src/lib/db/schema-version.ts";
 
 let pg;
 
@@ -211,6 +212,35 @@ describe("schema built by the migrations", () => {
     // A deleted entry lane keeps its name.
     await sql`DELETE FROM stages WHERE id = ${screening.id}`;
     assert.deepEqual((await entries())[1], { application_id: moved.id, stage_id: null, stage_name: "Screening" });
+  });
+
+  test("LATEST_MIGRATION names the newest migration file", () => {
+    const files = getMigrationFiles().map((migration) => migration.file);
+    assert.equal(LATEST_MIGRATION, files[files.length - 1], "update src/lib/db/schema-version.ts with the new migration");
+  });
+
+  test("application_stage_entry gives when each application entered its current lane", async () => {
+    const appliedId = await applied();
+    const [screening] = await sql`INSERT INTO stages (name, sort_order) VALUES ('Screening', 2) RETURNING id`;
+    const created = "2026-01-01T00:00:00.000Z";
+    const insertApp = async (company, stageId) =>
+      (await sql`INSERT INTO applications (company, role, stage_id, created_at) VALUES (${company}, 'Engineer', ${stageId}, ${created}) RETURNING id`)[0].id;
+    const fresh = await insertApp("Fresh", appliedId);
+    const moved = await insertApp("Moved", screening.id);
+    const rewound = await insertApp("Rewound", appliedId);
+    await sql`
+      INSERT INTO application_transitions (application_id, from_status, from_stage_id, to_status, to_stage_id, transitioned_at) VALUES
+        (${moved}, 'Applied', ${appliedId}, 'Screening', ${screening.id}, '2026-01-03T00:00:00Z'),
+        (${moved}, 'Applied', ${appliedId}, 'Screening', ${screening.id}, '2026-01-02T00:00:00Z'),
+        (${rewound}, 'Screening', ${screening.id}, 'Interview', NULL, '2026-01-04T00:00:00Z')`;
+    const rows = await sql`
+      SELECT application_id, entered_at FROM application_stage_entry
+      WHERE application_id IN (${fresh}, ${moved}, ${rewound}) ORDER BY application_id`;
+    assert.deepEqual(rows.map((row) => new Date(row.entered_at).toISOString()), [
+      created, // no history: its creation
+      "2026-01-03T00:00:00.000Z", // the latest move into its lane
+      created // no move into its current lane: its creation
+    ]);
   });
 
   test("a second run applies nothing", async () => {

@@ -1,9 +1,9 @@
 import { STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
-import { STALE_EXCLUDED_KINDS, TERMINAL_KINDS, StageKind } from "@/lib/stage-kinds";
+import { INTERVIEW_KIND, RESOLVED_KINDS, STALE_EXCLUDED_KINDS, TERMINAL_KINDS, StageKind } from "@/lib/stage-kinds";
 import { StatsPayload } from "@/lib/types";
-import { ensureSchema, sql } from "./client";
-import { listStages } from "./stages";
+import { ensureSchema, transaction } from "./client";
+import { mapStage } from "./rows";
 
 // Label for applications that were created straight into an outcome lane.
 const OUTCOME_DIRECT_ENTRY = "Added directly";
@@ -13,8 +13,9 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
 
   const zone = normalizeTimeZone(timeZone);
 
+  // One request and one snapshot: the totals, lists and charts cannot disagree
+  // because a write landed between two of these queries.
   const [
-    stages,
     stageCountRows,
     transitionCountRows,
     avgDaysRows,
@@ -28,37 +29,30 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     upcomingInterviewRows,
     staleApplicationRows,
     outcomeRows,
-  ] = await Promise.all([
-    listStages(),
-    sql`
+  ] = (await transaction((tx) => [
+    tx`
       SELECT s.id, s.name, s.sort_order AS sortOrder, s.kind, COUNT(a.id)::int AS count
       FROM stages s
       LEFT JOIN applications a ON a.stage_id = s.id
       GROUP BY s.id, s.name, s.sort_order, s.kind
       ORDER BY s.sort_order ASC, s.id ASC;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
+    `,
+    tx`
       SELECT COUNT(*)::int AS count
       FROM application_transitions;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
+    `,
+    tx`
       SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0), 0) AS days
       FROM applications;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
-      SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - COALESCE(stage_entry.entered_at, a.created_at))) / 86400.0), 0) AS days
+    `,
+    tx`
+      SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - e.entered_at)) / 86400.0), 0) AS days
       FROM applications a
       JOIN stages s ON s.id = a.stage_id
-      LEFT JOIN LATERAL (
-        SELECT t.transitioned_at AS entered_at
-        FROM application_transitions t
-        WHERE t.application_id = a.id AND t.to_stage_id = s.id
-        ORDER BY t.transitioned_at DESC, t.id DESC
-        LIMIT 1
-      ) stage_entry ON true
+      JOIN application_stage_entry e ON e.application_id = a.id
       WHERE s.kind <> ALL(${[...TERMINAL_KINDS]}::text[]);
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
+    `,
+    tx`
       SELECT
         AVG(
           EXTRACT(EPOCH FROM (first_interview.transitioned_at - a.created_at)) / 86400.0
@@ -71,17 +65,17 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
         WHERE t.application_id = a.id
           AND EXISTS (
             SELECT 1 FROM stages interview_stage
-            WHERE interview_stage.id = t.to_stage_id AND interview_stage.kind = 'interview'
+            WHERE interview_stage.id = t.to_stage_id AND interview_stage.kind = ${INTERVIEW_KIND}
           )
       ) first_interview ON true;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
+    `,
+    tx`
       SELECT to_char(day, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
       FROM (SELECT (created_at AT TIME ZONE ${zone})::date AS day FROM applications) buckets
       GROUP BY day
       ORDER BY day ASC;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
+    `,
+    tx`
       SELECT to_char(day, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
       FROM (
         SELECT (transitioned_at AT TIME ZONE ${zone})::date AS day
@@ -89,15 +83,18 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       ) buckets
       GROUP BY day
       ORDER BY day ASC;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
-      SELECT company, COUNT(*)::int AS count
+    `,
+    tx`
+      -- Grouped the way the duplicate warning compares names (trimmed, any
+      -- case), shown with the most common spelling. On a tie MODE() takes the
+      -- first spelling in the database's collation order.
+      SELECT MODE() WITHIN GROUP (ORDER BY btrim(company)) AS company, COUNT(*)::int AS count
       FROM applications
-      GROUP BY company
+      GROUP BY LOWER(btrim(company))
       ORDER BY count DESC, company ASC
       LIMIT 8;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
+    `,
+    tx`
       -- Applications that visited each lane: the entry lane (where the first
       -- edge starts, else the current lane) plus every lane moved into.
       -- Counted by lane id, so a deleted lane's history never counts for a
@@ -112,8 +109,8 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       ) visits
       WHERE stage_id IS NOT NULL
       GROUP BY stage_id;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
+    `,
+    tx`
       -- Moves between current lanes, labelled with their current names.
       SELECT fs.name AS from_stage, ts.name AS to_stage,
              COUNT(DISTINCT t.application_id)::int AS count
@@ -121,34 +118,29 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       JOIN stages fs ON fs.id = t.from_stage_id
       JOIN stages ts ON ts.id = t.to_stage_id
       GROUP BY fs.id, fs.name, ts.id, ts.name;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
+    `,
+    tx`
       SELECT a.company, a.role,
              to_char(a.interview_date, 'YYYY-MM-DD') AS interview_date,
              s.name AS stage_name
       FROM applications a
       JOIN stages s ON s.id = a.stage_id
       WHERE a.interview_date >= (CURRENT_TIMESTAMP AT TIME ZONE ${zone})::date - 1
+        AND s.kind <> ALL(${[...TERMINAL_KINDS]}::text[])
       ORDER BY a.interview_date ASC
       LIMIT 10;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
+    `,
+    tx`
       SELECT a.company, a.role, s.name AS stage_name,
-             FLOOR(EXTRACT(EPOCH FROM (NOW() - COALESCE(stage_entry.entered_at, a.created_at))) / 86400.0)::int AS days_since_update
+             FLOOR(EXTRACT(EPOCH FROM (NOW() - e.entered_at)) / 86400.0)::int AS days_since_update
       FROM applications a
       JOIN stages s ON s.id = a.stage_id
-      LEFT JOIN LATERAL (
-        SELECT t.transitioned_at AS entered_at
-        FROM application_transitions t
-        WHERE t.application_id = a.id AND t.to_stage_id = s.id
-        ORDER BY t.transitioned_at DESC, t.id DESC
-        LIMIT 1
-      ) stage_entry ON true
+      JOIN application_stage_entry e ON e.application_id = a.id
       WHERE s.kind <> ALL(${[...STALE_EXCLUDED_KINDS]}::text[])
-        AND EXTRACT(EPOCH FROM (NOW() - COALESCE(stage_entry.entered_at, a.created_at))) / 86400.0 >= ${STALE_THRESHOLD_DAYS}
-      ORDER BY COALESCE(stage_entry.entered_at, a.created_at) ASC;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
+        AND EXTRACT(EPOCH FROM (NOW() - e.entered_at)) / 86400.0 >= ${STALE_THRESHOLD_DAYS}
+      ORDER BY e.entered_at ASC;
+    `,
+    tx`
       -- For every application sitting in an outcome lane, the stage it left to
       -- get there: its current name, "<name> (deleted)" for a deleted lane, and
       -- NULL when the application was created directly in the outcome lane.
@@ -170,17 +162,20 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
         LIMIT 1
       ) last_move ON true
       LEFT JOIN stages fs ON fs.id = last_move.from_stage_id
-      WHERE s.kind IN ('offer', 'rejected', 'closed')
+      WHERE s.kind = ANY(${[...RESOLVED_KINDS]}::text[])
       GROUP BY s.id, s.name, s.kind, s.sort_order, fs.id, 3
       ORDER BY s.sort_order ASC, count DESC;
-    ` as Promise<Record<string, unknown>[]>,
-  ]);
+    `,
+  ], { readOnly: true, isolationLevel: "RepeatableRead" })) as Record<string, unknown>[][];
+
+  // The lanes come from the same snapshot as the counts.
+  const stages = stageCountRows.map(mapStage);
 
   const stageCounts = stageCountRows.map((row) => ({
     stage: String(row.name),
     count: Number(row.count),
     sortOrder: Number(row.sortorder),
-    kind: String(row.kind ?? "active") as StageKind
+    kind: String(row.kind) as StageKind
   }));
 
   const totalApps = stageCounts.reduce((sum, row) => sum + row.count, 0);

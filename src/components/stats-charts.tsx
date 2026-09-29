@@ -18,11 +18,8 @@ import {
 } from "recharts";
 import { StageKind, StatsPayload } from "@/lib/types";
 import { daysUntil } from "@/lib/constants";
-import { KIND_COLORS, KIND_LABELS, colorFor, compareStageRank, isTerminalKind } from "@/lib/stage-kinds";
+import { KIND_COLORS, KIND_LABELS, RESOLVED_KINDS, ResolvedKind, colorFor, compareStageRank, isTerminalKind } from "@/lib/stage-kinds";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-const OUTCOME_KINDS = ["rejected", "closed", "offer"] as const;
-type OutcomeKind = (typeof OUTCOME_KINDS)[number];
 
 function formatDate(value: string): string {
   // A date-only PostgreSQL value must be formatted as a calendar date. Parsing
@@ -175,11 +172,11 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
   // One row per stage applications left to reach an outcome, stacked by the
   // kind of outcome: shows where in the process applications end.
   const outcomeData = useMemo(() => {
-    const byStage = new Map<string, { fromStage: string; lanes: string[] } & Record<OutcomeKind, number>>();
+    const byStage = new Map<string, { fromStage: string; lanes: string[] } & Record<ResolvedKind, number>>();
     for (const row of data.outcomes) {
-      if (!(OUTCOME_KINDS as readonly string[]).includes(row.kind)) continue;
+      if (!(RESOLVED_KINDS as readonly string[]).includes(row.kind)) continue;
       const entry = byStage.get(row.fromStage) ?? { fromStage: row.fromStage, lanes: [], rejected: 0, closed: 0, offer: 0 };
-      entry[row.kind as OutcomeKind] += row.count;
+      entry[row.kind as ResolvedKind] += row.count;
       entry.lanes.push(`${row.outcomeStage}: ${row.count}`);
       byStage.set(row.fromStage, entry);
     }
@@ -199,10 +196,10 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
   }, [data.outcomes, stageRank]);
 
   const outcomeTotals = useMemo(() => {
-    const totals: Record<OutcomeKind, number> = { rejected: 0, closed: 0, offer: 0 };
+    const totals: Record<ResolvedKind, number> = { rejected: 0, closed: 0, offer: 0 };
     for (const row of data.outcomes) {
-      if ((OUTCOME_KINDS as readonly string[]).includes(row.kind)) {
-        totals[row.kind as OutcomeKind] += row.count;
+      if ((RESOLVED_KINDS as readonly string[]).includes(row.kind)) {
+        totals[row.kind as ResolvedKind] += row.count;
       }
     }
     return totals;
@@ -316,7 +313,7 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
               <CardTitle>Where Applications Ended</CardTitle>
               <div className="flex flex-wrap gap-2 text-xs">
                 <OutcomeChip label="Open" color={KIND_COLORS.active} count={data.openCount} total={data.totals.applications} />
-                {OUTCOME_KINDS.map((kind) => (
+                {RESOLVED_KINDS.map((kind) => (
                   <OutcomeChip
                     key={kind}
                     label={KIND_LABELS[kind]}
@@ -349,7 +346,7 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
                       }}
                     />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    {OUTCOME_KINDS.map((kind) => (
+                    {RESOLVED_KINDS.map((kind) => (
                       <Bar
                         key={kind}
                         dataKey={kind}

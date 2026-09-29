@@ -269,6 +269,14 @@ Add `RESOLVED_KINDS = ["offer", "rejected", "closed"]` and `INTERVIEW_KIND`, `DE
 - `listApplications`: order by `updated_at DESC, id DESC`.
 - Top companies: group by `LOWER(btrim(company))` and display the most common spelling.
 
+Done in PR #16 (4.2, 4.4 to 4.7):
+
+- 4.2: migration `1730000014000` adds the view `application_stage_entry`; the applications query (both copies), the average time in lane and the stale list read it. With 3.5 both planned views exist.
+- 4.4: the stats page and the Sankey each send one read-only `RepeatableRead` transaction; the lanes come from the same snapshot instead of a separate `listStages()`. On `dev` the stats payload, the applications list and the Sankey are identical before and after.
+- 4.5: the lane existence checks before moves are gone; an unknown lane still returns 400 through the foreign key. Two status changes follow from dropping the check: a card that no longer exists gets 404 first, and an unknown lane together with a stale `expectedStageId` gets 409 (the guarded update matches no row, so the foreign key never fires). Both are pinned by tests. `ensureSchema()` compares `LATEST_MIGRATION` (in code, kept in step by a test) with the newest `schema_migrations` row in one query, instead of listing tables. Not done: returning the full application from the move statement. Its post-move "entered lane at" depends on which rewind branch ran and would duplicate the new view in a harder-to-test place; the follow-up select stays.
+- 4.6: `RESOLVED_KINDS`, `INTERVIEW_KIND`, `DEFAULT_CREATE_KIND` and `INTAKE_KIND` in `stage-kinds.ts`, used by the queries, the stats chart, the board and the dialogs. The only lane-kind literals left outside `stage-kinds.ts` are the lane picker's list of every kind. The lane row mapping is one `mapStage()` in `db/rows.ts`, and the unreachable `?? "active"` fallbacks are gone (`kind` is `NOT NULL`).
+- 4.7: all three query fixes.
+
 ### 4.8 Redact in the data layer (ARCH-1)
 
 Give `listApplications` a required `viewer: Role` argument and strip notes inside it. Remove the two call-site redactions. A caller can then no longer forget.

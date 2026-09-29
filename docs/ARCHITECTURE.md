@@ -51,7 +51,7 @@ All bodies are JSON and must be sent with `Content-Type: application/json` (415 
 | `PATCH /api/stages/reorder` | `stageIds` | Must list every lane exactly once |
 | `GET /api/sankey` | | |
 
-There is no stats endpoint; the stats page is server-rendered only.
+There is no stats endpoint; the stats page is server-rendered only. It reads everything in one request and one read-only snapshot (`transaction(..., { readOnly: true, isolationLevel: "RepeatableRead" })`), as does the Sankey. Upcoming interviews leave out applications in rejected or closed lanes; top companies group names trimmed and case-insensitively.
 
 ## Request pipeline
 
@@ -118,6 +118,10 @@ application_entry_stage            -- VIEW
   application_id  INTEGER
   stage_id        INTEGER           -- NULL when the entry lane was deleted
   stage_name      TEXT
+
+application_stage_entry            -- VIEW
+  application_id  INTEGER
+  entered_at      TIMESTAMPTZ       -- latest move into the current lane, else created_at
 ```
 
 Indexes beyond the primary keys and unique constraints: `application_transitions (application_id, transitioned_at, id)`, which serves the first/latest-transition subqueries in both directions; `application_transitions (to_stage_id)` and `(from_stage_id)`; and `applications (stage_id)`.
@@ -134,6 +138,8 @@ Migration notes:
 - `1730000011000` adds `from_stage_id` / `to_stage_id` and fills them by name; names with no lane stay `NULL`. It must run only once: after a lane is deleted and another created under its name, a re-run would attach the old history to the new lane.
 - `1730000012000` replaces the name-based no-self-loop check with `application_transitions_distinct_lanes`, which compares ids, so a move from a deleted lane into a new lane of the same name can be stored.
 - `1730000013000` creates the view `application_entry_stage`. It reads `applications.id` and `.stage_id`, `stages.id` and `.name`, and the transitions' `id`, `application_id`, `from_stage_id`, `from_status` and `transitioned_at`; Postgres refuses to drop or retype any of those while the view exists, so such a migration must drop and re-create the view. `CREATE OR REPLACE VIEW` can only append columns: renaming or retyping a view column also needs `DROP VIEW` first.
+- `1730000014000` creates the view `application_stage_entry`, which reads `applications.id`, `.stage_id` and `.created_at` and the transitions' `id`, `application_id`, `to_stage_id` and `transitioned_at`; the same drop-and-re-create rule applies.
+- Every new migration also updates `LATEST_MIGRATION` in `src/lib/db/schema-version.ts`. `ensureSchema()` compares it with the newest row in `schema_migrations` once per process and refuses to query a database that is behind; a test fails when the constant falls behind the `migrations/` folder.
 - The runner serialises concurrent runs with `pg_advisory_xact_lock` inside each migration's transaction, then re-checks `schema_migrations`. A session-level lock would not survive Neon's transaction pooler.
 
 ### Lane kinds
@@ -152,7 +158,7 @@ The kind carries a lane's meaning. Its position on the board is layout only. All
 Two groupings are in use and they differ on `offer`:
 
 - **Terminal** (`TERMINAL_KINDS`): `rejected`, `closed`. Drives pipeline rank and the "average days in current stage" figure.
-- **Resolved**: `offer`, `rejected`, `closed`. Drives the "Where applications ended" chart and `openCount`. This set is written out by hand in `db/stats.ts` and in `stats-charts.tsx` rather than named in `stage-kinds.ts`.
+- **Resolved**: `offer`, `rejected`, `closed` (`RESOLVED_KINDS`). Drives the "Where applications ended" chart and `openCount`. `INTERVIEW_KIND` and `DEFAULT_CREATE_KIND` name the other kinds that queries used to hard-code.
 
 ### Pipeline rank
 
@@ -190,7 +196,7 @@ A rename is refused (409) when another lane has the name in any case. Charts gro
 
 | Value | Definition |
 |---|---|
-| Stage entered at | Latest transition into the current lane, else `created_at` |
+| Stage entered at | Latest transition into the current lane, else `created_at` (view `application_stage_entry`) |
 | Stale | In a lane that can go stale for 14 days or more since it was entered (`STALE_THRESHOLD_DAYS`) |
 | Reached (funnel) | Distinct applications whose entry lane or any lane moved into is the lane, by lane id |
 | Days to interview | First transition into any `interview` lane minus `created_at` |
