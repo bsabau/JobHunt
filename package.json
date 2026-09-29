@@ -17,7 +17,8 @@
     "verify:auth": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-auth.mjs",
     "verify:timezone": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-timezone.mjs",
     "verify:sankey": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-sankey.mjs",
-    "verify:transitions": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-transitions.mjs"
+    "verify:transitions": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-transitions.mjs",
+    "verify:stage-kinds": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-stage-kinds.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

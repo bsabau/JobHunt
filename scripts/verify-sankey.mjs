@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { buildSankeyPayload, hasCycle } from "../src/lib/sankey.ts";
+import { withPipelineRank } from "../src/lib/stage-kinds.ts";
 
 // Mirror of the default pipeline. Node order comes from this list.
 const stages = [
@@ -80,5 +81,41 @@ const forwardOnly = buildSankeyPayload({
 
 assertAcyclic(forwardOnly, "forward only");
 assert.equal(forwardOnly.hiddenBackward, 0);
+
+// An outcome lane placed before Screening on the board. With pipeline ranks the
+// Screening -> "Rejected at screening" link points forward and is kept, and
+// nodes carry their kind (absent for the entry node).
+const outcomeBoard = withPipelineRank([
+  { name: "Applied", sortOrder: 0, kind: "active" },
+  { name: "Rejected at screening", sortOrder: 1, kind: "rejected" },
+  { name: "Screening", sortOrder: 2, kind: "active" },
+  { name: "Ghosting", sortOrder: 3, kind: "closed" }
+]);
+const outcomeLanes = buildSankeyPayload({
+  stages: outcomeBoard,
+  transitions: [
+    { fromStatus: "Applied", toStatus: "Screening", company: "F" },
+    { fromStatus: "Screening", toStatus: "Rejected at screening", company: "F" },
+    { fromStatus: "Applied", toStatus: "Rejected at screening", company: "G" },
+    { fromStatus: "Applied", toStatus: "Ghosting", company: "H" }
+  ],
+  entries: [
+    { entryStage: "Applied", company: "F" },
+    { entryStage: "Applied", company: "G" },
+    { entryStage: "Applied", company: "H" }
+  ],
+  current: [
+    { stageName: "Rejected at screening", company: "F" },
+    { stageName: "Rejected at screening", company: "G" },
+    { stageName: "Ghosting", company: "H" }
+  ]
+});
+
+assertAcyclic(outcomeLanes, "outcome lanes");
+assert.equal(outcomeLanes.hiddenBackward, 0, "links into an earlier-positioned outcome lane are kept");
+assert.deepEqual(
+  outcomeLanes.nodes.map((node) => `${node.name}:${node.kind ?? "-"}`),
+  ["New:-", "Applied:active", "Screening:active", "Rejected at screening:rejected", "Ghosting:closed"]
+);
 
 console.log("Sankey DAG checks passed.");

@@ -5,6 +5,9 @@ export interface TransitionRecord {
   transitionedAt: string;
 }
 
+// `sortOrder` is the pipeline rank (withPipelineRank in stage-kinds.ts), not
+// the board position: outcome lanes rank after every pipeline lane, so moving a
+// card into one is always forward and never truncates its history.
 export interface StageOrder {
   name: string;
   sortOrder: number;

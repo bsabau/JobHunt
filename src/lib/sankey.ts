@@ -1,7 +1,10 @@
-import type { SankeyPayload } from "@/lib/types";
+import type { SankeyPayload, StageKind } from "@/lib/types";
 
 export interface SankeySourceData {
-  stages: { name: string; sortOrder: number }[];
+  // `sortOrder` is the pipeline rank (withPipelineRank in stage-kinds.ts), not
+  // the board position: outcome lanes rank last so links into them always
+  // point forward, wherever the lane sits on the board.
+  stages: { name: string; sortOrder: number; kind?: StageKind }[];
   transitions: { fromStatus: string; toStatus: string; company: string }[];
   entries: { entryStage: string; company: string }[];
   current: { stageName: string; company: string }[];
@@ -27,7 +30,9 @@ export function buildSankeyPayload(source: SankeySourceData): SankeyPayload {
     transitionMap.set(key, entry);
   }
 
-  const currentStageNames = stages.map((stage) => stage.name);
+  const orderedStages = [...stages].sort((a, b) => a.sortOrder - b.sortOrder);
+  const currentStageNames = orderedStages.map((stage) => stage.name);
+  const kindByName = new Map(orderedStages.map((stage) => [stage.name, stage.kind]));
 
   const entryMap = new Map<string, { count: number; companies: string[] }>();
   for (const row of entries) {
@@ -108,10 +113,14 @@ export function buildSankeyPayload(source: SankeySourceData): SankeyPayload {
   return {
     nodes: [
       { name: ENTRY_NODE_NAME, companies: entryCompanies },
-      ...stageNames.map((name) => ({
-        name,
-        companies: Array.from(nodeCompanySets.get(name) ?? [])
-      }))
+      ...stageNames.map((name) => {
+        const kind = kindByName.get(name);
+        return {
+          name,
+          companies: Array.from(nodeCompanySets.get(name) ?? []),
+          ...(kind ? { kind } : {})
+        };
+      })
     ],
     links: dagLinks,
     hiddenBackward

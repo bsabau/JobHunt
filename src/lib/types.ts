@@ -1,4 +1,6 @@
-export type StageKind = "intake" | "active" | "interview" | "offer" | "rejected";
+import type { StageKind } from "@/lib/stage-kinds";
+
+export type { StageKind };
 
 export interface Stage {
   id: number;
@@ -24,7 +26,9 @@ export interface Application {
 }
 
 export interface SankeyPayload {
-  nodes: { name: string; companies?: string[] }[];
+  // `kind` is absent for the synthetic "New" entry node and for names that only
+  // survive in history.
+  nodes: { name: string; companies?: string[]; kind?: StageKind }[];
   links: { source: number; target: number; value: number; companies?: string[] }[];
   // Number of backward links dropped so the graph stays acyclic. Older stored
   // history can still contain them after a reorder or a legacy rewind.
@@ -42,7 +46,7 @@ export interface StatsPayload {
     interviewReachedCount: number;
     staleCount: number;
   };
-  stageCounts: { stage: string; count: number; sortOrder: number }[];
+  stageCounts: { stage: string; count: number; sortOrder: number; kind: StageKind }[];
   applicationsOverTime: { date: string; created: number; cumulative: number }[];
   transitionsByDay: { date: string; count: number }[];
   topCompanies: { company: string; count: number }[];
@@ -50,4 +54,8 @@ export interface StatsPayload {
   stagePairs: { from: string; to: string; count: number }[];
   upcomingInterviews: { company: string; role: string; interviewDate: string; stageName: string }[];
   staleApplications: { company: string; role: string; stageName: string; daysSinceUpdate: number }[];
+  // Where applications that reached an outcome lane (offer, rejected, closed)
+  // came from: the stage they left to get there.
+  outcomes: { fromStage: string; outcomeStage: string; kind: StageKind; count: number }[];
+  openCount: number;
 }

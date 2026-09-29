@@ -89,6 +89,34 @@ export function optionalString(
   return value;
 }
 
+export function requiredEnum<T extends string>(
+  body: Record<string, unknown>,
+  field: string,
+  values: readonly T[]
+): T {
+  const value = body[field];
+
+  if (typeof value !== "string" || !(values as readonly string[]).includes(value)) {
+    throw new ApiValidationError(`${field} must be one of: ${values.join(", ")}`);
+  }
+
+  return value as T;
+}
+
+export function optionalEnum<T extends string>(
+  body: Record<string, unknown>,
+  field: string,
+  values: readonly T[]
+): T | undefined {
+  const value = body[field];
+
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  return requiredEnum(body, field, values);
+}
+
 export function positiveInteger(value: unknown, field: string): number {
   if (value === "" || value === null || value === undefined) {
     throw new ApiValidationError(`${field} must be a positive integer`);

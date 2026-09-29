@@ -16,26 +16,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { StatsPayload } from "@/lib/types";
+import { StageKind, StatsPayload } from "@/lib/types";
 import { daysUntil } from "@/lib/constants";
+import { KIND_COLORS, KIND_LABELS, colorFor, compareStageRank, isTerminalKind } from "@/lib/stage-kinds";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const STAGE_COLORS: Record<string, string> = {
-  new: "#64748b",
-  wishlist: "#94a3b8",
-  applied: "#60a5fa",
-  screening: "#a78bfa",
-  interview: "#818cf8",
-  ghosting: "#cbd5e1",
-  offer: "#34d399",
-  rejected: "#f87171",
-};
-const FALLBACK_COLOR = "#94a3b8";
-const PALETTE = ["#60a5fa", "#a78bfa", "#34d399", "#f59e0b", "#f87171", "#818cf8", "#22d3ee", "#fb7185"];
-
-function colorFor(name: string, fallbackIndex = 0): string {
-  return STAGE_COLORS[name.toLowerCase()] ?? PALETTE[fallbackIndex % PALETTE.length] ?? FALLBACK_COLOR;
-}
+const OUTCOME_KINDS = ["rejected", "closed", "offer"] as const;
+type OutcomeKind = (typeof OUTCOME_KINDS)[number];
 
 function formatDate(value: string): string {
   // A date-only PostgreSQL value must be formatted as a calendar date. Parsing
@@ -71,6 +58,18 @@ function SummaryTile({ label, value, hint }: SummaryTileProps) {
   );
 }
 
+function OutcomeChip({ label, color, count, total }: { label: string; color: string; count: number; total: number }) {
+  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-2.5 py-1 text-muted-foreground">
+      <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+      {label}
+      <span className="font-semibold tabular-nums text-foreground">{count}</span>
+      <span className="tabular-nums">({pct}%)</span>
+    </span>
+  );
+}
+
 const tooltipStyle = {
   background: "rgb(var(--popover, 15 23 42))",
   border: "1px solid rgb(var(--border, 51 65 85))",
@@ -84,16 +83,24 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
     [data.upcomingInterviews, timeZone]
   );
   const stageData = useMemo(
-    () => data.stageCounts.map((row) => ({ ...row, fill: colorFor(row.stage) })),
+    () => data.stageCounts.map((row) => ({ ...row, fill: colorFor(row.stage, row.kind) })),
     [data.stageCounts]
+  );
+
+  // Pipeline rank of every current stage: outcome lanes come after the
+  // pipeline wherever they sit on the board. History-only names rank last.
+  const rankedFunnel = useMemo(() => [...data.funnel].sort(compareStageRank), [data.funnel]);
+  const stageRank = useMemo(
+    () => new Map(rankedFunnel.map((row, index) => [row.stage, index])),
+    [rankedFunnel]
   );
 
   const conversionData = useMemo(() => {
     const reachedMap = new Map<string, number>();
-    const sortMap = new Map<string, number>();
+    const kindMap = new Map<string, StageKind>();
     for (const f of data.funnel) {
       reachedMap.set(f.stage, f.reached);
-      sortMap.set(f.stage, f.sortOrder);
+      kindMap.set(f.stage, f.kind);
     }
     const rows: { transition: string; rate: number; fill: string; fromSort: number; toSort: number }[] = [];
     for (const p of data.stagePairs ?? []) {
@@ -103,14 +110,14 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
       rows.push({
         transition: `${p.from} → ${p.to}`,
         rate,
-        fill: colorFor(p.to),
-        fromSort: sortMap.get(p.from) ?? 0,
-        toSort: sortMap.get(p.to) ?? 0,
+        fill: colorFor(p.to, kindMap.get(p.to)),
+        fromSort: stageRank.get(p.from) ?? Number.MAX_SAFE_INTEGER,
+        toSort: stageRank.get(p.to) ?? Number.MAX_SAFE_INTEGER,
       });
     }
     rows.sort((a, b) => a.fromSort - b.fromSort || a.toSort - b.toSort);
     return rows;
-  }, [data.funnel, data.stagePairs]);
+  }, [data.funnel, data.stagePairs, stageRank]);
 
   const timeSeriesData = useMemo(
     () => data.applicationsOverTime.map((row) => ({ ...row, label: formatDate(row.date) })),
@@ -123,17 +130,12 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
   );
 
   const funnelData = useMemo(
-    () =>
-      [...data.funnel]
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map((row) => ({ ...row, fill: colorFor(row.stage) })),
-    [data.funnel]
+    () => rankedFunnel.map((row) => ({ ...row, fill: colorFor(row.stage, row.kind) })),
+    [rankedFunnel]
   );
 
   const dropOffData = useMemo(() => {
-    const pipeline = [...data.funnel]
-      .filter((row) => row.kind !== "rejected")
-      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const pipeline = rankedFunnel.filter((row) => !isTerminalKind(row.kind));
 
     const rows: {
       transition: string;
@@ -156,12 +158,40 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
         dropOffPct,
         dropped,
         reachedFrom: from.reached,
-        fill: colorFor(to.stage, i + 1)
+        fill: colorFor(to.stage, to.kind, i + 1)
       });
     }
 
     return rows;
-  }, [data.funnel]);
+  }, [rankedFunnel]);
+
+  // One row per stage applications left to reach an outcome, stacked by the
+  // kind of outcome: shows where in the process applications end.
+  const outcomeData = useMemo(() => {
+    const byStage = new Map<string, { fromStage: string; lanes: string[] } & Record<OutcomeKind, number>>();
+    for (const row of data.outcomes) {
+      if (!(OUTCOME_KINDS as readonly string[]).includes(row.kind)) continue;
+      const entry = byStage.get(row.fromStage) ?? { fromStage: row.fromStage, lanes: [], rejected: 0, closed: 0, offer: 0 };
+      entry[row.kind as OutcomeKind] += row.count;
+      entry.lanes.push(`${row.outcomeStage}: ${row.count}`);
+      byStage.set(row.fromStage, entry);
+    }
+    return Array.from(byStage.values()).sort(
+      (a, b) =>
+        (stageRank.get(a.fromStage) ?? Number.MAX_SAFE_INTEGER) -
+        (stageRank.get(b.fromStage) ?? Number.MAX_SAFE_INTEGER)
+    );
+  }, [data.outcomes, stageRank]);
+
+  const outcomeTotals = useMemo(() => {
+    const totals: Record<OutcomeKind, number> = { rejected: 0, closed: 0, offer: 0 };
+    for (const row of data.outcomes) {
+      if ((OUTCOME_KINDS as readonly string[]).includes(row.kind)) {
+        totals[row.kind as OutcomeKind] += row.count;
+      }
+    }
+    return totals;
+  }, [data.outcomes]);
 
   const hasApps = data.totals.applications > 0;
 
@@ -178,7 +208,7 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
         <SummaryTile
           label="Avg Days in Current Stage"
           value={data.totals.avgDaysInCurrentStage}
-          hint="Active apps, excluding Rejected"
+          hint="Excluding rejected and closed lanes"
         />
         <SummaryTile
           label="Avg Days to Interview"
@@ -265,6 +295,63 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
+              <CardTitle>Where Applications Ended</CardTitle>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <OutcomeChip label="Open" color={KIND_COLORS.active} count={data.openCount} total={data.totals.applications} />
+                {OUTCOME_KINDS.map((kind) => (
+                  <OutcomeChip
+                    key={kind}
+                    label={KIND_LABELS[kind]}
+                    color={KIND_COLORS[kind]}
+                    count={outcomeTotals[kind]}
+                    total={data.totals.applications}
+                  />
+                ))}
+              </div>
+            </CardHeader>
+            <CardContent style={{ height: Math.max(200, outcomeData.length * 44 + 64) }}>
+              {outcomeData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
+                  <BarChart data={outcomeData} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
+                    <CartesianGrid stroke="rgba(148,163,184,0.15)" horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
+                    <YAxis
+                      type="category"
+                      dataKey="fromStage"
+                      width={130}
+                      tick={{ fontSize: 12, fill: "#94a3b8" }}
+                      tickFormatter={(value: string) => `after ${value}`}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "rgba(148,163,184,0.08)" }}
+                      contentStyle={tooltipStyle}
+                      labelFormatter={(label, payload) => {
+                        const row = payload?.[0]?.payload as (typeof outcomeData)[number] | undefined;
+                        return row ? `After ${label} · ${row.lanes.join(", ")}` : `After ${label}`;
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    {OUTCOME_KINDS.map((kind) => (
+                      <Bar
+                        key={kind}
+                        dataKey={kind}
+                        name={KIND_LABELS[kind]}
+                        stackId="outcome"
+                        fill={KIND_COLORS[kind]}
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  No application has reached an offer, rejected or closed lane yet.
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>

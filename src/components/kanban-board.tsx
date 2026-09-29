@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftRight, Plus, Trash2 } from "lucide-react";
-import { STAGE_TONES, daysSince, daysUntil, isApplicationStale } from "@/lib/constants";
+import { ArrowLeftRight, Plus, Settings2, Trash2 } from "lucide-react";
+import { KIND_TONES, STAGE_TONES, daysSince, daysUntil, isApplicationStale } from "@/lib/constants";
+import { KIND_LABELS, isTerminalKind } from "@/lib/stage-kinds";
 import { Application, Stage } from "@/lib/types";
 import { useMiddleButtonPan } from "@/lib/use-middle-button-pan";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { AddApplicationDialog } from "@/components/add-application-dialog";
 import { ApplicationSearch } from "@/components/application-search";
 import { EditApplicationDialog } from "@/components/edit-application-dialog";
+import { StageDialog } from "@/components/stage-dialog";
 import {
   trackApplicationDeleted,
   trackApplicationMoved,
@@ -30,8 +32,9 @@ type DragItem =
   | { type: "stage"; id: number }
   | null;
 
-function toneFor(index: number) {
-  return STAGE_TONES[index % STAGE_TONES.length];
+// Outcome lanes keep a fixed tint; pipeline lanes rotate by board position.
+function toneFor(stage: Stage, index: number) {
+  return KIND_TONES[stage.kind] ?? STAGE_TONES[index % STAGE_TONES.length];
 }
 
 function CompanyLogo({ company, logoUrl, logoBgClass }: { company: string; logoUrl: string | null; logoBgClass: string }) {
@@ -75,6 +78,16 @@ function formatInterviewDate(date: string) {
   }
 
   return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date(date));
+}
+
+// Rendered on the server and in the browser, so both the locale and the time
+// zone are pinned to avoid a hydration mismatch.
+function formatAppliedDate(isoDate: string, timeZone: string) {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone }).format(new Date(isoDate));
+}
+
+function formatAge(days: number) {
+  return days <= 0 ? "today" : `${days}d ago`;
 }
 
 function formatInterviewLabel(date: string, timeZone: string) {
@@ -182,6 +195,12 @@ function KanbanApplicationCard({
               <CompanyLogo company={app.company} logoUrl={app.logoUrl} logoBgClass={logoBgClass} />
               <p className="text-sm text-muted-foreground">{app.role}</p>
             </div>
+            {!isTerminalKind(app.stageKind) ? (
+              <p className="text-xs text-muted-foreground/70">
+                {app.stageKind === "intake" ? "Added" : "Applied"} {formatAppliedDate(app.createdAt, timeZone)} ·{" "}
+                {formatAge(daysSince(app.createdAt))}
+              </p>
+            ) : null}
             {app.sourceUrl ? (
               <a
                 className="text-xs font-medium text-sky-400 hover:text-sky-300"
@@ -227,6 +246,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   const [pendingMoveIds, setPendingMoveIds] = useState<number[]>([]);
   const pendingMoveIdsRef = useRef<Set<number>>(new Set());
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
+  const [stageDialog, setStageDialog] = useState<{ open: boolean; stage: Stage | null }>({ open: false, stage: null });
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useMiddleButtonPan(scrollRef);
@@ -329,28 +349,18 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     trackApplicationDeleted();
   }
 
-  async function addStage() {
-    const name = window.prompt("Stage name", "Interview Round 2");
-    if (!name) {
+  function onStageSaved(stage: Stage, mode: "add" | "edit") {
+    if (mode === "add") {
+      setStages((current) => [...current, stage]);
+      trackStageAdded({ stageName: stage.name });
       return;
     }
 
-    const response = await fetch("/api/stages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name })
-    });
-
-    const body = (await response.json().catch(() => null)) as { message?: string } | Stage | null;
-
-    if (!response.ok) {
-      alert((body as { message?: string } | null)?.message || "Failed to add stage");
-      return;
-    }
-
-    const stage = body as Stage;
-    setStages((current) => [...current, stage]);
-    trackStageAdded({ stageName: stage.name });
+    setStages((current) => current.map((item) => (item.id === stage.id ? stage : item)));
+    // Cards carry their lane's kind (staleness, applied date), so keep them in step.
+    setApplications((current) =>
+      current.map((item) => (item.stageId === stage.id ? { ...item, stageKind: stage.kind } : item))
+    );
   }
 
   async function deleteStageById(id: number) {
@@ -485,7 +495,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
         </div>
         {!readOnly && (
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => void addStage()}>
+            <Button variant="outline" onClick={() => setStageDialog({ open: true, stage: null })}>
               <Plus className="mr-1 h-4 w-4" />
               Add Stage
             </Button>
@@ -504,7 +514,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
           style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(240px, 280px))` }}
         >
           {stages.map((stage, index) => {
-            const tone = toneFor(index);
+            const tone = toneFor(stage, index);
             return (
               <div
                 key={stage.id}
@@ -533,8 +543,24 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                   onDragEnd={readOnly ? undefined : onAnyDragEnd}
                   title={readOnly ? undefined : "Drag to reorder stage"}
                 >
-                  <h3 className="truncate text-sm font-semibold tracking-wide text-muted-foreground">{stage.name}</h3>
+                  <h3
+                    className="truncate text-sm font-semibold tracking-wide text-muted-foreground"
+                    title={`${stage.name} · ${KIND_LABELS[stage.kind]}`}
+                  >
+                    {stage.name}
+                  </h3>
                   <div className="flex items-center gap-2">
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                        onClick={() => setStageDialog({ open: true, stage })}
+                        title={`Lane type: ${KIND_LABELS[stage.kind]}`}
+                        aria-label={`Change type of ${stage.name}`}
+                      >
+                        <Settings2 className="h-4 w-4" />
+                      </button>
+                    )}
                     <span className="rounded-full border border-border/60 px-2 py-0.5 text-xs text-muted-foreground">
                       {grouped[stage.id]?.length ?? 0}
                     </span>
@@ -595,6 +621,12 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
               <Trash2 className="h-7 w-7" />
             </div>
           </div>
+          <StageDialog
+            open={stageDialog.open}
+            onOpenChange={(open) => setStageDialog((current) => ({ ...current, open }))}
+            stage={stageDialog.stage}
+            onSaved={onStageSaved}
+          />
           <EditApplicationDialog
             open={editOpen}
             onOpenChange={setEditOpen}

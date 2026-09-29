@@ -1,4 +1,5 @@
 import { Application, StageKind } from "@/lib/types";
+import { STALE_EXCLUDED_KINDS } from "@/lib/stage-kinds";
 import { daysBetweenDateOnly, todayInTimeZone } from "@/lib/timezone";
 
 export const DEFAULT_STAGE_NAMES = ["Wishlist", "Applied", "Interview", "Offer", "Rejected"];
@@ -6,11 +7,9 @@ export const DEFAULT_STAGE_NAMES = ["Wishlist", "Applied", "Interview", "Offer",
 export const STALE_THRESHOLD_DAYS = 14;
 
 // Staleness is a pipeline concept: pre-application (Wishlist) and resolved
-// stages (Offer/Rejected) are not "going stale", whatever they are named.
-const STALE_EXCLUDED_KINDS = new Set<StageKind>(["intake", "offer", "rejected"]);
-
+// stages (Offer/Rejected/Closed) are not "going stale", whatever they are named.
 export function isStaleEligibleStage(kind: StageKind): boolean {
-  return !STALE_EXCLUDED_KINDS.has(kind);
+  return !STALE_EXCLUDED_KINDS.includes(kind);
 }
 
 export function daysSince(isoDate: string): number {
@@ -66,3 +65,11 @@ export const STAGE_TONES = [
   { column: "bg-indigo-500/20 border-indigo-400/30", logoBg: "bg-indigo-500/20" },
   { column: "bg-cyan-500/20 border-cyan-400/30", logoBg: "bg-cyan-500/20" }
 ] as const;
+
+// Outcome lanes keep a fixed tint wherever they sit on the board; pipeline lanes
+// rotate through STAGE_TONES by position.
+export const KIND_TONES: Partial<Record<StageKind, { column: string; logoBg: string }>> = {
+  offer: { column: "bg-emerald-500/20 border-emerald-400/40", logoBg: "bg-emerald-500/20" },
+  rejected: { column: "bg-rose-500/15 border-rose-400/40", logoBg: "bg-rose-500/20" },
+  closed: { column: "bg-zinc-500/15 border-zinc-400/30", logoBg: "bg-zinc-500/20" }
+};

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { addStage, listStages } from "@/lib/db";
 import { errorResponse } from "@/lib/api-errors";
 import { requireSession } from "@/lib/auth";
-import { TEXT_LIMITS, readJsonObject, requiredString } from "@/lib/api-validation";
+import { TEXT_LIMITS, optionalEnum, readJsonObject, requiredString } from "@/lib/api-validation";
+import { STAGE_KINDS } from "@/lib/stage-kinds";
 
 export async function GET() {
   try {
@@ -17,7 +18,10 @@ export async function POST(request: NextRequest) {
   try {
     await requireSession({ write: true });
     const body = await readJsonObject(request);
-    const stage = await addStage(requiredString(body, "name", { maxLength: TEXT_LIMITS.stageName }));
+    const stage = await addStage(
+      requiredString(body, "name", { maxLength: TEXT_LIMITS.stageName }),
+      optionalEnum(body, "kind", STAGE_KINDS)
+    );
     return NextResponse.json(stage, { status: 201 });
   } catch (error) {
     return errorResponse(error, "Failed to add stage");

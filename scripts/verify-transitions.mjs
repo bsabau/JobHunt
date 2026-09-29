@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { rewindTransitionPath } from "../src/lib/transitions.ts";
+import { compareStageRank, withPipelineRank } from "../src/lib/stage-kinds.ts";
 
 const stages = [
   { name: "Wishlist", sortOrder: 0 },
@@ -87,6 +88,59 @@ assert.deepEqual(
     stages
   )),
   ["Applied->Interview"]
+);
+
+// Board order with an outcome lane placed before Screening. Pipeline rank moves
+// every outcome lane after the pipeline, so its board position is irrelevant.
+const board = [
+  { name: "Applied", sortOrder: 0, kind: "active" },
+  { name: "Rejected at screening", sortOrder: 1, kind: "rejected" },
+  { name: "Screening", sortOrder: 2, kind: "active" },
+  { name: "Interview", sortOrder: 3, kind: "interview" },
+  { name: "Ghosting", sortOrder: 4, kind: "closed" },
+  { name: "Offer", sortOrder: 5, kind: "offer" }
+];
+const ranked = withPipelineRank(board);
+const rankOf = (name) => ranked.find((stage) => stage.name === name);
+
+assert.deepEqual(
+  ranked.map((stage) => stage.name),
+  ["Applied", "Screening", "Interview", "Offer", "Rejected at screening", "Ghosting"],
+  "outcome lanes rank after the pipeline, keeping their relative order"
+);
+
+// Screening -> Rejected at screening is forward, although the lane sits earlier
+// on the board: stageMoveQuery only rewinds when the target ranks lower.
+assert.ok(
+  compareStageRank(board[1], board[2]) > 0,
+  "a terminal lane outranks every pipeline lane"
+);
+assert.ok(compareStageRank(board[5], board[1]) < 0, "Offer stays in the pipeline group");
+
+// Undoing that rejection (back to Screening) keeps the Screening visit and
+// drops only the rejection edge.
+assert.deepEqual(
+  shape(rewindTransitionPath(
+    [
+      transition(1, "Applied", "Screening", "2026-09-03T00:00:00Z"),
+      transition(2, "Screening", "Rejected at screening", "2026-09-10T00:00:00Z")
+    ],
+    rankOf("Screening"),
+    "Rejected at screening",
+    ranked
+  )),
+  ["Applied->Screening"]
+);
+
+// Undoing a CV-screen rejection back to Applied (the entry stage) clears it.
+assert.deepEqual(
+  shape(rewindTransitionPath(
+    [transition(1, "Applied", "Rejected at screening", "2026-09-03T00:00:00Z")],
+    rankOf("Applied"),
+    "Rejected at screening",
+    ranked
+  )),
+  []
 );
 
 console.log("Transition rewind checks passed.");

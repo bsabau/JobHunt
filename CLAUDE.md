@@ -30,6 +30,7 @@ A Kanban-style job application tracker. Users add job applications, drag them be
 - `src/lib/db.ts` — all database access; exports functions consumed by API routes and the server component. Uses `ensureSchema()` guard that checks tables exist on first query.
 - `src/lib/types.ts` — shared TypeScript interfaces (`Stage`, `Application`, `SankeyPayload`).
 - `src/lib/constants.ts` — default stage names and color tones.
+- `src/lib/stage-kinds.ts` — lane types (`stages.kind`): intake / active / interview / offer / rejected / closed. The kind, not the board position, drives semantics: `rejected` and `closed` are outcome lanes that rank after every pipeline lane (`compareStageRank`), so moving a card into one never counts as a rewind and never truncates history, and they are excluded from staleness and drop-off. Chart colors come from `colorFor()` here. `stageMoveQuery` in `db.ts` mirrors the rank rule in SQL.
 - `src/components/kanban-board.tsx` — main client component with drag-and-drop.
 - `src/components/sankey-chart.tsx` — Recharts Sankey visualization (route: `/sankey`).
 - `src/components/ui/` — shadcn/ui-style primitives (Radix UI + Tailwind).

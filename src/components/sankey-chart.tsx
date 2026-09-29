@@ -2,23 +2,12 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { ResponsiveContainer, Sankey } from "recharts";
-import { SankeyPayload } from "@/lib/types";
+import { SankeyPayload, StageKind } from "@/lib/types";
+import { colorFor, isTerminalKind } from "@/lib/stage-kinds";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const NODE_COLORS: Record<string, string> = {
-  new:        "#64748b",
-  wishlist:   "#94a3b8",
-  applied:    "#60a5fa",
-  screening:  "#a78bfa",
-  interview:  "#818cf8",
-  ghosting:   "#cbd5e1",
-  offer:      "#34d399",
-  rejected:   "#f87171",
-};
-const FALLBACK_COLOR = "#94a3b8";
-
-function nodeColor(name: string): string {
-  return NODE_COLORS[name.toLowerCase()] ?? FALLBACK_COLOR;
+function nodeColor(node: { name?: string; kind?: StageKind } | undefined): string {
+  return colorFor(node?.name ?? "", node?.kind);
 }
 
 interface HoverInfo {
@@ -30,14 +19,16 @@ interface HoverInfo {
 
 function CustomNode(props: any) {
   const { x, y, width, height, payload } = props;
-  const fill = nodeColor(payload?.name ?? "");
+  const fill = nodeColor(payload);
   return <rect x={x} y={y} width={width} height={height} fill={fill} fillOpacity={0.85} stroke="none" rx={2} />;
 }
 
 function CustomLink(props: any) {
   const { sourceX, sourceY, sourceControlX, targetX, targetY, targetControlX, linkWidth, payload } = props;
-  const sourceName = payload?.source?.name ?? "";
-  const color = nodeColor(sourceName);
+  // Flows into an outcome lane take the outcome's colour, so rejections read as
+  // red wherever they came from; every other flow keeps its source colour.
+  const target = payload?.target;
+  const color = isTerminalKind(target?.kind) ? nodeColor(target) : nodeColor(payload?.source);
   return (
     <path
       d={`M${sourceX},${sourceY} C${sourceControlX},${sourceY} ${targetControlX},${targetY} ${targetX},${targetY}`}

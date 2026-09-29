@@ -1,9 +1,10 @@
 import { neon } from "@neondatabase/serverless";
 import type { NeonQueryFunctionInTransaction } from "@neondatabase/serverless";
 import { STALE_THRESHOLD_DAYS } from "@/lib/constants";
-import { ConflictError, InvalidInputError } from "@/lib/api-errors";
+import { ConflictError, InvalidInputError, NotFoundError } from "@/lib/api-errors";
 import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
 import { buildSankeyPayload } from "@/lib/sankey";
+import { STALE_EXCLUDED_KINDS, TERMINAL_KINDS, StageKind, withPipelineRank } from "@/lib/stage-kinds";
 import { Application, SankeyPayload, Stage, StatsPayload } from "@/lib/types";
 
 function hasPgCode(error: unknown, code: string): boolean {
@@ -51,6 +52,9 @@ function transaction(queries: (tx: TransactionSql) => TransactionQuery[]) {
 // labels the Sankey entry node, so neither may be used to name a real stage.
 const LEGACY_CREATED_STAGE = "created";
 const RESERVED_STAGE_NAMES = new Set([LEGACY_CREATED_STAGE, "new"]);
+
+// Label for applications that were created straight into an outcome lane.
+const OUTCOME_DIRECT_ENTRY = "Added directly";
 
 let schemaReadyPromise: Promise<void> | null = null;
 
@@ -219,7 +223,7 @@ export async function listStages(): Promise<Stage[]> {
   }));
 }
 
-export async function addStage(name: string): Promise<Stage> {
+export async function addStage(name: string, kind: StageKind = "active"): Promise<Stage> {
   await ensureSchema();
 
   const trimmed = name.trim();
@@ -238,8 +242,8 @@ export async function addStage(name: string): Promise<Stage> {
 
   try {
     inserted = (await sql`
-      INSERT INTO stages (name, sort_order)
-      SELECT ${trimmed}, COALESCE(MAX(sort_order), -1) + 1
+      INSERT INTO stages (name, sort_order, kind)
+      SELECT ${trimmed}, COALESCE(MAX(sort_order), -1) + 1, ${kind}
       FROM stages
       RETURNING id, name, sort_order AS sortOrder, kind;
     `) as Record<string, unknown>[];
@@ -259,6 +263,30 @@ export async function addStage(name: string): Promise<Stage> {
     name: String(inserted[0].name),
     sortOrder: Number(inserted[0].sortorder),
     kind: (inserted[0].kind ?? "active") as Stage["kind"]
+  };
+}
+
+// Only the kind is editable: transitions reference stages by name, so a rename
+// would have to rewrite the history as well.
+export async function updateStageKind(id: number, kind: StageKind): Promise<Stage> {
+  await ensureSchema();
+
+  const rows = (await sql`
+    UPDATE stages
+    SET kind = ${kind}
+    WHERE id = ${id}
+    RETURNING id, name, sort_order AS sortOrder, kind;
+  `) as Record<string, unknown>[];
+
+  if (rows.length === 0) {
+    throw new NotFoundError("Stage not found");
+  }
+
+  return {
+    id: Number(rows[0].id),
+    name: String(rows[0].name),
+    sortOrder: Number(rows[0].sortorder),
+    kind: String(rows[0].kind) as Stage["kind"]
   };
 }
 
@@ -472,15 +500,21 @@ function stageMoveQuery(
   toStageId: number
 ): SqlFragment {
   return sql`
-    WITH target AS (
-      SELECT id, name, sort_order
+    WITH ranked_stages AS (
+      -- Pipeline rank: outcome lanes sort after every pipeline lane wherever
+      -- they sit on the board (compareStageRank in stage-kinds.ts).
+      SELECT id, name, (kind = ANY(${[...TERMINAL_KINDS]}::text[]))::int AS terminal, sort_order
       FROM stages
+    ),
+    target AS (
+      SELECT id, name, terminal, sort_order
+      FROM ranked_stages
       WHERE id = ${toStageId}
     ),
     current_app AS (
-      SELECT a.stage_id AS stage_id, s.name AS stage_name, s.sort_order AS sort_order
+      SELECT a.stage_id AS stage_id, s.name AS stage_name, s.terminal AS terminal, s.sort_order AS sort_order
       FROM applications a
-      JOIN stages s ON s.id = a.stage_id
+      JOIN ranked_stages s ON s.id = a.stage_id
       WHERE a.id = ${applicationId}
     ),
     moved AS (
@@ -493,7 +527,7 @@ function stageMoveQuery(
     is_rewind AS (
       SELECT 1
       FROM current_app c, target tg
-      WHERE tg.sort_order < c.sort_order
+      WHERE (tg.terminal, tg.sort_order) < (c.terminal, c.sort_order)
     ),
     entry_stage AS (
       SELECT COALESCE(
@@ -509,19 +543,22 @@ function stageMoveQuery(
       -- Moving before the stage the application entered in clears the path.
       SELECT (
         EXISTS (SELECT 1 FROM is_rewind)
-        AND (SELECT e.sort_order FROM stages e WHERE e.name = (SELECT name FROM entry_stage)) IS NOT NULL
-        AND (SELECT sort_order FROM target)
-              < (SELECT e.sort_order FROM stages e WHERE e.name = (SELECT name FROM entry_stage))
+        AND EXISTS (
+          SELECT 1
+          FROM target tg, ranked_stages e
+          WHERE e.name = (SELECT name FROM entry_stage)
+            AND (tg.terminal, tg.sort_order) < (e.terminal, e.sort_order)
+        )
       ) AS should_clear
     ),
     rewind_boundary AS (
       -- First edge on the ordered path that reaches or passes the target.
       SELECT t.id, t.from_status, t.to_status, t.transitioned_at
       FROM application_transitions t
-      JOIN stages s ON s.name = t.to_status
+      JOIN ranked_stages s ON s.name = t.to_status
       WHERE EXISTS (SELECT 1 FROM is_rewind)
         AND t.application_id = ${applicationId}
-        AND s.sort_order >= (SELECT sort_order FROM target)
+        AND (s.terminal, s.sort_order) >= (SELECT tg.terminal, tg.sort_order FROM target tg)
       ORDER BY t.transitioned_at ASC, t.id ASC
       LIMIT 1
     ),
@@ -543,7 +580,7 @@ function stageMoveQuery(
       INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
       SELECT ${applicationId}, c.stage_name, tg.name, NOW()
       FROM moved m, current_app c, target tg
-      WHERE tg.sort_order >= c.sort_order
+      WHERE (tg.terminal, tg.sort_order) >= (c.terminal, c.sort_order)
         AND tg.name <> c.stage_name
       RETURNING id
     ),
@@ -746,7 +783,7 @@ export async function getSankeyData(): Promise<SankeyPayload> {
   ]);
 
   return buildSankeyPayload({
-    stages: stages.map((stage) => ({ name: stage.name, sortOrder: stage.sortOrder })),
+    stages: withPipelineRank(stages).map((stage) => ({ name: stage.name, sortOrder: stage.sortOrder, kind: stage.kind })),
     transitions: transitionDetails.map((row) => ({
       fromStatus: String(row.fromstatus),
       toStatus: String(row.tostatus),
@@ -782,13 +819,14 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     stagePairRows,
     upcomingInterviewRows,
     staleApplicationRows,
+    outcomeRows,
   ] = await Promise.all([
     listStages(),
     sql`
-      SELECT s.id, s.name, s.sort_order AS sortOrder, COUNT(a.id)::int AS count
+      SELECT s.id, s.name, s.sort_order AS sortOrder, s.kind, COUNT(a.id)::int AS count
       FROM stages s
       LEFT JOIN applications a ON a.stage_id = s.id
-      GROUP BY s.id, s.name, s.sort_order
+      GROUP BY s.id, s.name, s.sort_order, s.kind
       ORDER BY s.sort_order ASC, s.id ASC;
     ` as Promise<Record<string, unknown>[]>,
     sql`
@@ -812,7 +850,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
         ORDER BY t.transitioned_at DESC, t.id DESC
         LIMIT 1
       ) stage_entry ON true
-      WHERE s.kind <> 'rejected';
+      WHERE s.kind <> ALL(${[...TERMINAL_KINDS]}::text[]);
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT
@@ -903,16 +941,36 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
         ORDER BY t.transitioned_at DESC, t.id DESC
         LIMIT 1
       ) stage_entry ON true
-      WHERE s.kind NOT IN ('intake', 'offer', 'rejected')
+      WHERE s.kind <> ALL(${[...STALE_EXCLUDED_KINDS]}::text[])
         AND EXTRACT(EPOCH FROM (NOW() - COALESCE(stage_entry.entered_at, a.created_at))) / 86400.0 >= ${STALE_THRESHOLD_DAYS}
       ORDER BY COALESCE(stage_entry.entered_at, a.created_at) ASC;
+    ` as Promise<Record<string, unknown>[]>,
+    sql`
+      -- For every application sitting in an outcome lane, the stage it left to
+      -- get there (NULL when it was created directly in that lane).
+      SELECT s.name AS outcome_stage, s.kind, last_move.from_status AS from_stage, COUNT(*)::int AS count
+      FROM applications a
+      JOIN stages s ON s.id = a.stage_id
+      LEFT JOIN LATERAL (
+        SELECT t.from_status
+        FROM application_transitions t
+        WHERE t.application_id = a.id
+          AND t.to_status = s.name
+          AND LOWER(t.from_status) <> LOWER(${LEGACY_CREATED_STAGE})
+        ORDER BY t.transitioned_at DESC, t.id DESC
+        LIMIT 1
+      ) last_move ON true
+      WHERE s.kind IN ('offer', 'rejected', 'closed')
+      GROUP BY s.name, s.kind, s.sort_order, last_move.from_status
+      ORDER BY s.sort_order ASC, count DESC;
     ` as Promise<Record<string, unknown>[]>,
   ]);
 
   const stageCounts = stageCountRows.map((row) => ({
     stage: String(row.name),
     count: Number(row.count),
-    sortOrder: Number(row.sortorder)
+    sortOrder: Number(row.sortorder),
+    kind: String(row.kind ?? "active") as StageKind
   }));
 
   const totalApps = stageCounts.reduce((sum, row) => sum + row.count, 0);
@@ -979,6 +1037,14 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     daysSinceUpdate: Number(row.days_since_update)
   }));
 
+  const outcomes = outcomeRows.map((row) => ({
+    fromStage: row.from_stage == null ? OUTCOME_DIRECT_ENTRY : String(row.from_stage),
+    outcomeStage: String(row.outcome_stage),
+    kind: String(row.kind) as StageKind,
+    count: Number(row.count)
+  }));
+  const resolvedCount = outcomes.reduce((sum, row) => sum + row.count, 0);
+
   return {
     totals: {
       applications: totalApps,
@@ -997,6 +1063,8 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     funnel,
     stagePairs,
     upcomingInterviews,
-    staleApplications
+    staleApplications,
+    outcomes,
+    openCount: totalApps - resolvedCount
   };
 }
