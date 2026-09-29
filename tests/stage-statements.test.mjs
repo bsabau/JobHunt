@@ -125,6 +125,13 @@ async function move(appId, toName) {
 
   const afterMove = await history(appId);
   assert.deepEqual(idShape(afterMove), idShape(expected), `SQL and rewindTransitionPath() disagree on ${fromName} -> ${toName}`);
+  // Every edge the move keeps or reconnects has a known time; only an edge a
+  // forward move appends is new.
+  assert.deepEqual(
+    afterMove.map((t, index) => (expected[index]?.transitionedAt ? t.transitionedAt : "new")),
+    expected.map((t) => t.transitionedAt ?? "new"),
+    `SQL and rewindTransitionPath() disagree on timestamps for ${fromName} -> ${toName}`
+  );
   return { before: beforeMove, after: afterMove };
 }
 
@@ -158,6 +165,7 @@ describe("stage move statement", () => {
     const { after: path } = await move(app, "Interview");
     assert.deepEqual(shape(path), ["Applied->Interview"]);
     assert.notEqual(path[0].id, skipped.id);
+    assert.equal(path[0].transitionedAt, skipped.transitionedAt, "the reconnect edge keeps the boundary's time");
   });
 
   test("a rewind to the entry lane leaves no edges", async () => {
@@ -294,6 +302,18 @@ describe("stage move statement", () => {
     const { after: path } = await move(app, "Interview");
     assert.deepEqual(shape(path), ["Applied->Screening", "Screening->Offer"]);
   });
+});
+
+// A rewind corrects the path rather than recording a new event, so the time a
+// card entered its lane is the time of the edge kept or reconnected, even when
+// a closed card is reopened long after.
+test("a card reopened from an outcome lane keeps the time it originally left", async () => {
+  const app = await createApp("Applied");
+  await moveAll(app, "Rejected");
+  const [rejected] = await history(app);
+  await move(app, "Screening");
+  const [row] = await sql`SELECT entered_at FROM application_stage_entry WHERE application_id = ${app}`;
+  assert.equal(new Date(row.entered_at).toISOString(), rejected.transitionedAt);
 });
 
 describe("applied date through real moves", () => {

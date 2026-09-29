@@ -172,16 +172,15 @@ export function stageMoveStatement(
       -- The reconnect edge from the last kept lane to the target. Without a
       -- boundary nothing was cut, so nothing is reconnected either (as in
       -- rewindTransitionPath). A deleted lane that shared the target's name is
-      -- a different lane, so the edge from it is written.
+      -- a different lane, so the edge from it is written. It takes the
+      -- boundary's time: the card left the last kept lane then, and the rewind
+      -- only corrects where it went (so the applied date does not move).
       INSERT INTO application_transitions (application_id, from_status, from_stage_id, to_status, to_stage_id, transitioned_at)
-      SELECT ${applicationId}, rf.name, rf.id, tg.name, tg.id, NOW()
-      FROM moved m, target tg, rewind_from rf
+      SELECT ${applicationId}, rf.name, rf.id, tg.name, tg.id, b.transitioned_at
+      FROM moved m, target tg, rewind_from rf, rewind_boundary b
       WHERE EXISTS (SELECT 1 FROM is_rewind)
         AND NOT (SELECT should_clear FROM clear_history)
-        AND EXISTS (SELECT 1 FROM rewind_boundary)
-        AND NOT EXISTS (
-          SELECT 1 FROM rewind_boundary b WHERE b.to_stage_id = tg.id
-        )
+        AND b.to_stage_id IS DISTINCT FROM tg.id
         AND rf.id IS DISTINCT FROM tg.id
       RETURNING id
     )
