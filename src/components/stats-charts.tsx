@@ -80,6 +80,10 @@ const tooltipStyle = {
   fontSize: 12,
 };
 
+// Recharts colours a tooltip row with the <Bar>'s fill and falls back to black.
+// Bars coloured per lane through <Cell> have no fill, so their rows need this.
+const cellTooltipItemStyle = { color: "hsl(var(--popover-foreground))" };
+
 export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: string }) {
   const upcomingInterviews = useMemo(
     () => data.upcomingInterviews.filter((row) => isTodayOrFuture(row.interviewDate, timeZone)),
@@ -375,7 +379,11 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
                     <CartesianGrid stroke="rgba(148,163,184,0.15)" vertical={false} />
                     <XAxis dataKey="stage" tick={{ fontSize: 12, fill: "#94a3b8" }} />
                     <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
-                    <Tooltip cursor={{ fill: "rgba(148,163,184,0.08)" }} contentStyle={tooltipStyle} />
+                    <Tooltip
+                      cursor={{ fill: "rgba(148,163,184,0.08)" }}
+                      contentStyle={tooltipStyle}
+                      itemStyle={cellTooltipItemStyle}
+                    />
                     <Bar dataKey="count" radius={[6, 6, 0, 0]}>
                       {stageData.map((row) => (
                         <Cell key={row.stage} fill={row.fill} />
@@ -414,6 +422,7 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
                       <Tooltip
                         cursor={{ fill: "rgba(148,163,184,0.08)" }}
                         contentStyle={tooltipStyle}
+                        itemStyle={cellTooltipItemStyle}
                         formatter={(value) => [`${value}%`, "Conversion"]}
                       />
                       <Bar dataKey="rate" radius={[0, 6, 6, 0]}>
@@ -460,6 +469,7 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
                     <Tooltip
                       cursor={{ fill: "rgba(148,163,184,0.08)" }}
                       contentStyle={tooltipStyle}
+                      itemStyle={cellTooltipItemStyle}
                       formatter={(value, _name, item) => {
                         const row = item.payload as (typeof dropOffData)[number];
                         return [`${value}% (${row.dropped} of ${row.reachedFrom} did not advance)`, "Drop-off"];
@@ -549,7 +559,11 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
                       width={90}
                       tick={{ fontSize: 12, fill: "#94a3b8" }}
                     />
-                    <Tooltip cursor={{ fill: "rgba(148,163,184,0.08)" }} contentStyle={tooltipStyle} />
+                    <Tooltip
+                      cursor={{ fill: "rgba(148,163,184,0.08)" }}
+                      contentStyle={tooltipStyle}
+                      itemStyle={cellTooltipItemStyle}
+                    />
                     <Bar dataKey="reached" radius={[0, 6, 6, 0]}>
                       {funnelData.map((row) => (
                         <Cell key={row.stage} fill={row.fill} />
