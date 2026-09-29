@@ -2,10 +2,13 @@ import { STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
 import { RESOLVED_KINDS, STALE_EXCLUDED_KINDS, TERMINAL_KINDS, StageKind } from "@/lib/stage-kinds";
 import { buildFunnel } from "@/lib/funnel";
+import { groupBySource } from "@/lib/sources";
 import {
   MilestoneStatsRow,
+  SourceApplicationRow,
   TimeToHearBackRow,
   milestoneStatsStatement,
+  sourceApplicationsStatement,
   timeToHearBackStatement,
   WeekRow,
   weeklyStatement
@@ -20,6 +23,7 @@ type StatsRows = [
   (StageRow & { count: number })[],
   MilestoneStatsRow[],
   TimeToHearBackRow[],
+  SourceApplicationRow[],
   { days: string }[],
   WeekRow[],
   { company: string; count: number }[],
@@ -47,10 +51,12 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
   const milestones = milestoneStatsStatement();
   const weekly = weeklyStatement(zone);
   const hearBack = timeToHearBackStatement();
+  const sourceApplications = sourceApplicationsStatement();
   const [
     stageCountRows,
     milestoneRows,
     hearBackRows,
+    sourceRows,
     avgCurrentStageRows,
     weekRows,
     topCompanyRows,
@@ -68,6 +74,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     `,
     tx.query(milestones.text, milestones.params),
     tx.query(hearBack.text, hearBack.params),
+    tx.query(sourceApplications.text, sourceApplications.params),
     tx`
       SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - e.entered_at)) / 86400.0), 0) AS days
       FROM applications a
@@ -234,6 +241,14 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       rejectionCount: hearBackRows[0]?.rejection_count ?? 0
     },
     weeks,
+    sources: groupBySource(
+      sourceRows.map((row) => ({
+        sourceUrl: row.source_url,
+        responded: row.responded,
+        interviewed: row.interviewed,
+        offered: row.offered
+      }))
+    ),
     topCompanies,
     funnel,
     upcomingInterviews,

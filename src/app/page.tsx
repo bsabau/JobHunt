@@ -17,7 +17,7 @@ export default async function HomePage() {
   return (
     <main className="mx-auto min-h-screen max-w-[1500px] px-6 py-10">
       <PageHeader active="stats" readOnly={readOnly} />
-      <StatsCharts data={stats} timeZone={timeZone} now={now} />
+      <StatsCharts data={stats} timeZone={timeZone} now={now} readOnly={readOnly} />
     </main>
   );
 }
