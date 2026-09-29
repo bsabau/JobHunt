@@ -182,6 +182,7 @@ function KanbanApplicationCard({
           // Focusable so the board works from the keyboard: Tab to a card, Enter
           // to edit it, or the "Move to" menu to change its lane.
           tabIndex={0}
+          role="group"
           aria-label={`${app.company}, ${app.role}, in ${app.stageName}`}
           onKeyDown={
             readOnly
@@ -213,7 +214,9 @@ function KanbanApplicationCard({
                   </span>
                 ) : null}
                 {readOnly ? null : (
-                  <Select value="" onValueChange={(value) => onMove(Number(value))} disabled={pending}>
+                  // moveCard() ignores a second move while one is in flight, so the
+                  // trigger stays enabled: disabling it would drop keyboard focus.
+                  <Select value="" onValueChange={(value) => onMove(Number(value))}>
                     <SelectTrigger
                       aria-label={`Move ${app.company} to another lane`}
                       title="Move to another lane"
@@ -222,7 +225,9 @@ function KanbanApplicationCard({
                     >
                       <ArrowRightLeft className="h-3.5 w-3.5" />
                     </SelectTrigger>
-                    <SelectContent>
+                    {/* Popper positioning: the icon-only trigger has no SelectValue for
+                        the default item-aligned mode to align to. */}
+                    <SelectContent position="popper" align="end">
                       {stages
                         .filter((stage) => stage.id !== app.stageId)
                         .map((stage) => (
@@ -293,10 +298,21 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   const [pendingMoveIds, setPendingMoveIds] = useState<number[]>([]);
   const pendingMoveIdsRef = useRef<Set<number>>(new Set());
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
+  // A card moved from the keyboard remounts in its new lane, which drops focus
+  // to <body>; the effect below puts it back once the new lane has rendered.
+  const refocusCardId = useRef<number | null>(null);
   const [stageDialog, setStageDialog] = useState<{ open: boolean; stage: Stage | null }>({ open: false, stage: null });
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useMiddleButtonPan(scrollRef);
+
+  useEffect(() => {
+    if (refocusCardId.current === null) {
+      return;
+    }
+    scrollRef.current?.querySelector<HTMLElement>(`[data-application-id="${refocusCardId.current}"] [role="group"]`)?.focus();
+    refocusCardId.current = null;
+  }, [applications]);
 
   // The highlight is a transient "here it is" cue, not a selection state.
   useEffect(() => {
@@ -344,7 +360,9 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     }
   }
 
-  async function moveCard(id: number, stageId: number) {
+  // `refocus` returns keyboard focus to the card after it has moved lanes (the
+  // card remounts in its new lane, which would otherwise drop focus to <body>).
+  async function moveCard(id: number, stageId: number, options: { refocus?: boolean } = {}) {
     // Ignore a second drop while this card's previous move is still in flight.
     if (pendingMoveIdsRef.current.has(id)) {
       return;
@@ -384,6 +402,9 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
 
       const updated = (await response.json()) as Application;
       setApplications((current) => current.map((item) => (item.id === id ? updated : item)));
+      if (options.refocus) {
+        refocusCardId.current = id;
+      }
 
       if (fromStage && toStage && fromStage.id !== toStage.id) {
         trackApplicationMoved({ fromStageName: fromStage.name, toStageName: toStage.name });
@@ -649,7 +670,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                           setEditOpen(true);
                         }}
                         stages={stages}
-                        onMove={(stageId) => void moveCard(app.id, stageId)}
+                        onMove={(stageId) => void moveCard(app.id, stageId, { refocus: true })}
                       />
                     );
                   })}

@@ -67,10 +67,21 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
     setToasts((current) => [...current.slice(-3), { id, message, ...options }]);
   }, []);
 
+  // Where focus was when confirm() was called, to return it there afterwards
+  // (Radix would otherwise send it to <body> when the dialog was opened from
+  // code rather than from a trigger).
+  const returnFocusTo = useRef<HTMLElement | null>(null);
+
   const confirm = useCallback(
     (options: ConfirmOptions) =>
       new Promise<boolean>((resolve) => {
-        setPending({ ...options, resolve });
+        returnFocusTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setPending((previous) => {
+          // A newer question replaces an unanswered one; the older caller
+          // gets "no" rather than waiting forever.
+          previous?.resolve(false);
+          return { ...options, resolve };
+        });
       }),
     []
   );
@@ -85,16 +96,23 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   return (
     <FeedbackContext.Provider value={value}>
       {children}
-      <div
-        aria-live="polite"
-        className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-full max-w-sm flex-col gap-2"
-      >
+      {/* Each toast is its own live region (role status or alert). */}
+      <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-full max-w-sm flex-col gap-2">
         {toasts.map((item) => (
-          <ToastView key={item.id} item={item} onDismiss={() => dismiss(item.id)} />
+          <ToastView key={item.id} item={item} dismiss={dismiss} />
         ))}
       </div>
       <AlertDialog open={pending !== null} onOpenChange={(open) => !open && answer(false)}>
-        <AlertDialogContent>
+        <AlertDialogContent
+          onCloseAutoFocus={(event) => {
+            const target = returnFocusTo.current;
+            if (target?.isConnected) {
+              event.preventDefault();
+              target.focus();
+            }
+            returnFocusTo.current = null;
+          }}
+        >
           <AlertDialogTitle>{pending?.title}</AlertDialogTitle>
           {pending?.description ? <AlertDialogDescription>{pending.description}</AlertDialogDescription> : null}
           <AlertDialogFooter>
@@ -115,14 +133,18 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ToastView({ item, onDismiss }: { item: ToastItem; onDismiss: () => void }) {
+function ToastView({ item, dismiss }: { item: ToastItem; dismiss: (id: number) => void }) {
+  const onDismiss = () => dismiss(item.id);
+
+  // `dismiss` is stable, so the timer starts once per toast and later toasts
+  // or dialogs do not restart it.
   useEffect(() => {
     if (item.action) {
       return;
     }
-    const timer = window.setTimeout(onDismiss, AUTO_DISMISS_MS);
+    const timer = window.setTimeout(() => dismiss(item.id), AUTO_DISMISS_MS);
     return () => window.clearTimeout(timer);
-  }, [item.action, onDismiss]);
+  }, [item.id, item.action, dismiss]);
 
   return (
     <div
