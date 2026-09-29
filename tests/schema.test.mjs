@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, test } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
-import { runMigrations } from "../scripts/migration-utils.mjs";
+import { getMigrationFiles, runMigrations } from "../scripts/migration-utils.mjs";
 
 let pg;
 
@@ -108,10 +108,10 @@ describe("schema built by the migrations", () => {
     assert.deepEqual(rows, [{ from_status: "Applied", to_status: "Interview" }]);
   });
 
-  test("the phase 2 and 3 migrations re-run cleanly on a migrated database", async () => {
+  test("every migration from phase 2 on re-runs cleanly on a migrated database", async () => {
     const logged = [];
     await rerunFrom("1730000006000", (line) => logged.push(line));
-    assert.equal(logged.length, 7);
+    assert.equal(logged.length, getMigrationFiles().filter((migration) => migration.file >= "1730000006000").length);
     const rows = await sql`
       SELECT conname FROM pg_constraint
       WHERE conname IN ('applications_company_not_blank', 'applications_role_not_blank', 'stages_name_not_blank',
@@ -176,6 +176,41 @@ describe("schema built by the migrations", () => {
     await sql`DELETE FROM stages WHERE id = ${lane.id}`;
     const [row] = await sql`SELECT from_status, from_stage_id FROM application_transitions WHERE application_id = ${app.id}`;
     assert.deepEqual(row, { from_status: "Screening", from_stage_id: null });
+  });
+
+  test("application_entry_stage gives the lane each application entered in", async () => {
+    const appliedId = await applied();
+    const [screening] = await sql`INSERT INTO stages (name, sort_order) VALUES ('Screening', 2) RETURNING id`;
+    const [fresh] = await sql`INSERT INTO applications (company, role, stage_id) VALUES ('Fresh', 'Engineer', ${appliedId}) RETURNING id`;
+    const [moved] = await sql`INSERT INTO applications (company, role, stage_id) VALUES ('Moved', 'Engineer', ${appliedId}) RETURNING id`;
+    await sql`
+      INSERT INTO application_transitions (application_id, from_status, from_stage_id, to_status, to_stage_id, transitioned_at) VALUES
+        (${moved.id}, 'Screening', ${screening.id}, 'Applied', ${appliedId}, '2026-01-02T00:00:00Z'),
+        (${moved.id}, 'Applied', ${appliedId}, 'Interview', NULL, '2026-01-03T00:00:00Z')`;
+    const entries = async () =>
+      sql`SELECT application_id, stage_id, stage_name FROM application_entry_stage WHERE application_id IN (${fresh.id}, ${moved.id}) ORDER BY application_id`;
+
+    // No history: the current lane. History: where the first edge starts.
+    assert.deepEqual(await entries(), [
+      { application_id: fresh.id, stage_id: appliedId, stage_name: "Applied" },
+      { application_id: moved.id, stage_id: screening.id, stage_name: "Screening" }
+    ]);
+
+    // Equal timestamps: the edge with the lower id is the first one, even when
+    // it was inserted second, as in the move statement's ordering.
+    const [tied] = await sql`INSERT INTO applications (company, role, stage_id) VALUES ('Tied', 'Engineer', ${appliedId}) RETURNING id`;
+    const [late] = await sql`
+      INSERT INTO application_transitions (application_id, from_status, from_stage_id, to_status, to_stage_id, transitioned_at)
+      VALUES (${tied.id}, 'Applied', ${appliedId}, 'Screening', ${screening.id}, '2026-01-05T00:00:00Z') RETURNING id`;
+    await sql`
+      INSERT INTO application_transitions (id, application_id, from_status, from_stage_id, to_status, to_stage_id, transitioned_at)
+      VALUES (${late.id - 1000}, ${tied.id}, 'Screening', ${screening.id}, 'Applied', ${appliedId}, '2026-01-05T00:00:00Z')`;
+    const [tiedEntry] = await sql`SELECT stage_name FROM application_entry_stage WHERE application_id = ${tied.id}`;
+    assert.equal(tiedEntry.stage_name, "Screening");
+
+    // A deleted entry lane keeps its name.
+    await sql`DELETE FROM stages WHERE id = ${screening.id}`;
+    assert.deepEqual((await entries())[1], { application_id: moved.id, stage_id: null, stage_name: "Screening" });
   });
 
   test("a second run applies nothing", async () => {

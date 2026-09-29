@@ -202,6 +202,8 @@ Only if the owner wants to answer questions about undone moves. Two separate opt
 
 The entry event is cheap and recommended. The append-only log is a product decision; leave it out unless there is a concrete question it would answer.
 
+Done differently, with the owner's agreement: an `entry_stage_id` column would lose the lane's name when the lane is deleted, which phase 3 keeps, and would need updating on every move and rename. Migration `1730000013000` instead adds the view `application_entry_stage` (4.2's second view), and the move statement, the Sankey and the funnel read it instead of three copies of the derivation. On `dev` it matches the old derivation for all 30 applications. The append-only log stays out (decision 3).
+
 **Done when:** a lane can be renamed from the board and the stats, Sankey and staleness figures are unchanged by the rename.
 
 Phase 3 result (3.1 to 3.4; 3.5 is left for its own PR):
@@ -240,7 +242,7 @@ Move only; no behaviour change in this step.
 Create two views in a migration and use them everywhere:
 
 - `application_stage_entry (application_id, entered_at)` for "latest transition into the current lane, else `created_at`";
-- `application_entry_stage (application_id, stage_id, stage_name)` for the entry lane, unless 3.5 replaced it with a column.
+- `application_entry_stage (application_id, stage_id, stage_name)` for the entry lane. Done in 3.5 (`1730000013000`).
 
 ### 4.3 Typed rows and explicit aliases (SQL-5)
 

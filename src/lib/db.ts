@@ -111,7 +111,12 @@ async function ensureSchema(): Promise<void> {
             SELECT 1
             FROM information_schema.columns
             WHERE table_schema = 'public' AND table_name = 'stages' AND column_name = 'kind'
-          ) AS has_stage_kind;
+          ) AS has_stage_kind,
+          EXISTS (
+            SELECT 1
+            FROM information_schema.views
+            WHERE table_schema = 'public' AND table_name = 'application_entry_stage'
+          ) AS has_entry_stage_view;
       `) as Record<string, unknown>[];
 
       const row = checks[0];
@@ -119,7 +124,8 @@ async function ensureSchema(): Promise<void> {
         !row.has_stages ||
         !row.has_applications ||
         !row.has_application_transitions ||
-        !row.has_stage_kind
+        !row.has_stage_kind ||
+        !row.has_entry_stage_view
       ) {
         throw new Error("Database schema is missing or outdated. Run `npm run migrate:up`.");
       }
@@ -648,20 +654,9 @@ export async function getSankeyData(): Promise<SankeyPayload> {
       ORDER BY t.transitioned_at, t.id;
     ` as Promise<Record<string, unknown>[]>,
     sql`
-      -- The entry lane: where the first edge starts, else the current lane.
-      SELECT
-        CASE WHEN first_edge.application_id IS NULL THEN s.id ELSE first_edge.from_stage_id END AS entryStageId,
-        COALESCE(first_edge.from_status, s.name) AS entryStage,
-        a.company
-      FROM applications a
-      JOIN stages s ON s.id = a.stage_id
-      LEFT JOIN LATERAL (
-        SELECT t.application_id, t.from_stage_id, t.from_status
-        FROM application_transitions t
-        WHERE t.application_id = a.id
-        ORDER BY t.transitioned_at ASC, t.id ASC
-        LIMIT 1
-      ) first_edge ON true;
+      SELECT e.stage_id AS entryStageId, e.stage_name AS entryStage, a.company
+      FROM application_entry_stage e
+      JOIN applications a ON a.id = e.application_id;
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT s.id AS stageId, s.name AS stageName, a.company
@@ -790,16 +785,8 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       -- later lane with the same name.
       SELECT stage_id, COUNT(DISTINCT application_id)::int AS count
       FROM (
-        SELECT a.id AS application_id,
-               CASE WHEN first_edge.application_id IS NULL THEN a.stage_id ELSE first_edge.from_stage_id END AS stage_id
-        FROM applications a
-        LEFT JOIN LATERAL (
-          SELECT t.application_id, t.from_stage_id
-          FROM application_transitions t
-          WHERE t.application_id = a.id
-          ORDER BY t.transitioned_at ASC, t.id ASC
-          LIMIT 1
-        ) first_edge ON true
+        SELECT application_id, stage_id
+        FROM application_entry_stage
         UNION ALL
         SELECT application_id, to_stage_id
         FROM application_transitions
