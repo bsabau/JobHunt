@@ -286,6 +286,13 @@ test("weekly: the week boundary follows the zone's clock change", async () => {
   assert.deepEqual(await weekly("Europe/Berlin"), [["2026-10-19", 1], ["2026-10-26", 1]]);
 });
 
+test("weekly: a card that waited in the wishlist counts in the week it was sent", async () => {
+  const app = await createApp("Wishlist"); // created 2026-01-01
+  await move(app, "Applied");
+  await sql`UPDATE application_transitions SET transitioned_at = '2026-03-04T10:00:00Z' WHERE application_id = ${app}`;
+  assert.deepEqual(await weekly("UTC"), [["2026-03-02", 1]]);
+});
+
 test("weekly: counts by the date sent, and a card not sent yet is in no week", async () => {
   await sentAt("2026-09-29T10:00:00Z");
   await sentAt("2026-09-30T10:00:00Z");

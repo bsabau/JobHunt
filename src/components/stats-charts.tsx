@@ -16,7 +16,7 @@ import {
   YAxis,
 } from "recharts";
 import { StatsPayload } from "@/lib/types";
-import { daysUntil, todayInTimeZone } from "@/lib/timezone";
+import { daysUntil, formatDateOnly, todayInTimeZone } from "@/lib/timezone";
 import { fillWeeks, weekStartOf } from "@/lib/weeks";
 import { KIND_COLORS, KIND_LABELS, RESOLVED_KINDS, ResolvedKind, colorFor } from "@/lib/stage-kinds";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,14 +115,17 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
 
   // Every week up to the current one in the viewer's zone, so a quiet stretch
   // shows as empty weeks. `now` is the page's clock, so server and browser agree.
-  const weeklyData = useMemo(
-    () =>
-      fillWeeks(data.applicationsOverTime, weekStartOf(todayInTimeZone(timeZone, new Date(now)))).map((row) => ({
-        ...row,
-        label: formatDate(row.weekStart)
-      })),
-    [data.applicationsOverTime, timeZone, now]
-  );
+  // The axis shows the year only when the weeks span more than one; the
+  // tooltip always does.
+  const weeklyData = useMemo(() => {
+    const weeks = fillWeeks(data.applicationsOverTime, weekStartOf(todayInTimeZone(timeZone, new Date(now))));
+    const years = new Set(weeks.map((week) => week.weekStart.slice(0, 4)));
+    return weeks.map((row) => ({
+      ...row,
+      label: years.size > 1 ? `${formatDate(row.weekStart)} '${row.weekStart.slice(2, 4)}` : formatDate(row.weekStart),
+      fullLabel: formatDateOnly(row.weekStart)
+    }));
+  }, [data.applicationsOverTime, timeZone, now]);
 
   // The label beside each bar: the count, and for a pipeline lane the share
   // that went on to the next one.
@@ -413,7 +416,10 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
                     <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#94a3b8" }} />
                     <YAxis yAxisId="week" allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
                     <YAxis yAxisId="total" orientation="right" allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
-                    <Tooltip contentStyle={tooltipStyle} labelFormatter={(label) => `Week of ${label}`} />
+                    <Tooltip
+                      contentStyle={tooltipStyle}
+                      labelFormatter={(_label, payload) => `Week of ${payload?.[0]?.payload?.fullLabel ?? _label}`}
+                    />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Bar yAxisId="week" dataKey="sent" name="Sent that week" fill="#34d399" radius={[4, 4, 0, 0]} />
                     <Line

@@ -50,7 +50,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/stage-statements.ts`: the SQL that moves cards and renames lanes, compiled to text and parameters. No runtime imports, so the tests run it on PGlite.
 - `src/lib/application-statements.ts`: read statements about one application (its timeline), built with `sqlFragment`. Its only runtime import is `./stage-statements.ts`, by relative path with the extension, so the tests still load it from Node and run it on PGlite.
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
-- `src/lib/stats-statements.ts`: statements for the stats page (the rates over `application_milestones`), run inside the page's snapshot with `tx.query()`.
+- `src/lib/stats-statements.ts`: statements for the stats page (the rates over `application_milestones`, the weekly counts), run inside the page's snapshot with `tx.query()`.
 - `src/lib/weeks.ts`: week arithmetic on `YYYY-MM-DD` strings (Monday week starts, empty weeks filled up to the current one).
 - `src/lib/funnel.ts`: the stats funnel (lanes in pipeline rank, and per lane the share of its cards that reached a later pipeline lane); it imports `compareStageRank()`, so the rank rule is not copied a third time.
 - `src/lib/board-filter.ts`: the board filter's rules (company and role only, never notes; outcome lanes hidden by kind).
