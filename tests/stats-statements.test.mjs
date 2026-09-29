@@ -6,15 +6,19 @@ import { test } from "node:test";
 import { CREATED, setupBoard } from "./helpers/pglite-board.mjs";
 import {
   milestoneStatsStatement,
+  outcomesStatement,
   sourceApplicationsStatement,
   timeToHearBackStatement,
+  topCompaniesStatement,
+  visitsStatement,
   weeklyStatement
 } from "../src/lib/stats-statements.ts";
+import { rangeStart } from "../src/lib/stats-range.ts";
 
 const { sql, idOf, createApp, move, edgeAt, run } = setupBoard();
 
 async function stats() {
-  return (await run(milestoneStatsStatement()))[0];
+  return (await run(milestoneStatsStatement(null)))[0];
 }
 
 test("the stats statement: counts over sent applications, and the average days to an interview", async () => {
@@ -45,11 +49,11 @@ test("the stats statement on an empty board: zeros, and no average", async () =>
 });
 
 async function weekly(zone) {
-  return (await run(weeklyStatement(zone))).map((row) => [row.week_start, row.sent]);
+  return (await run(weeklyStatement(zone, null))).map((row) => [row.week_start, row.sent]);
 }
 
 async function weeklyResults(zone) {
-  return (await run(weeklyStatement(zone))).map((row) => [row.week_start, row.sent, row.responded, row.interviewed, row.offered]);
+  return (await run(weeklyStatement(zone, null))).map((row) => [row.week_start, row.sent, row.responded, row.interviewed, row.offered]);
 }
 
 async function sentAt(instant) {
@@ -94,7 +98,7 @@ async function repliedAfter(days, lane = "Screening") {
 }
 
 async function hearBack() {
-  return (await run(timeToHearBackStatement()))[0];
+  return (await run(timeToHearBackStatement(null)))[0];
 }
 
 test("time to hear back: the median of an odd and of an even number of replies", async () => {
@@ -214,10 +218,60 @@ test("source applications: each sent application's link and flags; unsent cards 
   await createApp("Applied"); // no link
   const unsent = await createApp("Wishlist");
   await sql`UPDATE applications SET source_url = 'https://jobs.example.com/2' WHERE id = ${unsent}`;
-  const rows = (await run(sourceApplicationsStatement())).sort((a, b) => String(a.source_url).localeCompare(String(b.source_url)));
+  const rows = (await run(sourceApplicationsStatement(null))).sort((a, b) => String(a.source_url).localeCompare(String(b.source_url)));
   assert.deepEqual(rows, [
     { source_url: "https://jobs.example.com/1", responded: true, interviewed: true, offered: false },
     { source_url: "https://jobs.example.com/3", responded: true, interviewed: false, offered: false },
     { source_url: null, responded: false, interviewed: false, offered: false }
   ]);
+});
+
+// Cards sent 10, 60 and 200 days before a fixed `now`, each rejected a day
+// after it was sent; a card added to the wishlist 100 days ago, sent 10 days
+// ago and rejected, so its creation and applied dates fall in different
+// ranges; and a card not sent yet (in the wishlist).
+const NOW = Date.parse("2026-09-30T12:00:00.000Z");
+async function cardsAcrossTime() {
+  for (const daysAgo of [10, 60, 200]) {
+    const sent = new Date(NOW - daysAgo * 86_400_000).toISOString();
+    const app = await createApp("Applied", sent);
+    await move(app, "Rejected");
+    const replied = new Date(NOW - (daysAgo - 1) * 86_400_000).toISOString();
+    await sql`UPDATE application_transitions SET transitioned_at = ${replied} WHERE application_id = ${app}`;
+  }
+  const waited = await createApp("Wishlist", new Date(NOW - 100 * 86_400_000).toISOString());
+  await move(waited, "Applied", "Rejected");
+  const edges = await sql`SELECT id FROM application_transitions WHERE application_id = ${waited} ORDER BY transitioned_at, id`;
+  await sql`UPDATE application_transitions SET transitioned_at = ${new Date(NOW - 10 * 86_400_000).toISOString()} WHERE id = ${edges[0].id}`;
+  await sql`UPDATE application_transitions SET transitioned_at = ${new Date(NOW - 9 * 86_400_000).toISOString()} WHERE id = ${edges[1].id}`;
+  await createApp("Wishlist", new Date(NOW - 5 * 86_400_000).toISOString());
+}
+
+const RANGES = [["all time", null], ["90 days", 90], ["30 days", 30]];
+
+test("ranged: sent applications, their medians and their sources follow the range", async () => {
+  await cardsAcrossTime();
+  const counts = {};
+  for (const [label, range] of RANGES) {
+    const start = rangeStart(range, NOW);
+    const [milestone] = await run(milestoneStatsStatement(start));
+    const [hearBack] = await run(timeToHearBackStatement(start));
+    const sources = await run(sourceApplicationsStatement(start));
+    const weeks = await run(weeklyStatement("UTC", start));
+    counts[label] = [milestone.applied, milestone.responded, hearBack.rejection_count, sources.length, weeks.reduce((sum, week) => sum + week.sent, 0)];
+  }
+  assert.deepEqual(counts, { "all time": [4, 4, 4, 4, 4], "90 days": [3, 3, 3, 3, 3], "30 days": [2, 2, 2, 2, 2] });
+});
+
+test("ranged: the funnel, the companies and the outcomes count the unsent card only under all time", async () => {
+  await cardsAcrossTime();
+  const counts = {};
+  for (const [label, range] of RANGES) {
+    const start = rangeStart(range, NOW);
+    const visitedApplications = new Set((await run(visitsStatement(start))).map((row) => row.application_id));
+    const companies = (await run(topCompaniesStatement(start))).reduce((sum, row) => sum + row.count, 0);
+    const outcomes = (await run(outcomesStatement(start))).reduce((sum, row) => sum + row.count, 0);
+    counts[label] = [visitedApplications.size, companies, outcomes];
+  }
+  assert.deepEqual(counts, { "all time": [5, 5, 4], "90 days": [3, 3, 3], "30 days": [2, 2, 2] });
 });

@@ -25,7 +25,7 @@ async function milestones(appId) {
 }
 
 async function stats() {
-  return (await run(milestoneStatsStatement()))[0];
+  return (await run(milestoneStatsStatement(null)))[0];
 }
 
 test("created in a pipeline lane and never moved: sent at creation, no reply", async () => {

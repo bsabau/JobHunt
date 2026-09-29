@@ -54,6 +54,14 @@ export interface SankeyPayload {
 }
 
 export interface StatsPayload {
+  // The date range the ranged figures follow (null is all time), and how many
+  // applications they cover: every card under all time, those sent in the
+  // range otherwise.
+  range: 30 | 90 | null;
+  scopeTotal: number;
+  // How many days after its Sunday a week in "Results by week" stays open, and
+  // whether that comes from the all-time median days to a first reply.
+  openWeeks: { days: number; fromMedian: boolean };
   totals: {
     applications: number;
     activeStages: number;

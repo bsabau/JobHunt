@@ -24,7 +24,7 @@ A single-owner job application tracker. The owner adds applications, drags them 
 
 | Path | File | Data | Client component |
 |---|---|---|---|
-| `/` | `src/app/page.tsx` | `getStatsData(timeZone)` | `StatsCharts` |
+| `/` | `src/app/page.tsx` | `getStatsData(timeZone, { now, range })`; `?range=30` or `?range=90` limits the ranged figures to applications sent in that period, anything else is all time (`parseStatsRange()`) | `StatsCharts` |
 | `/board` | `src/app/board/page.tsx` | `listApplications(session.role)`, `listStages()` | `KanbanBoard` |
 | `/sankey` | `src/app/sankey/page.tsx` | `getSankeyData()` | `SankeyChart` |
 | `/login` | `src/app/login/page.tsx` | none | client page |
@@ -236,6 +236,7 @@ A rename is refused (409) when another lane has the name in any case. Charts gro
 | Ghosted | Share of the sent applications currently in a `closed` lane |
 | Open count | Total minus applications in a resolved lane |
 | Days to first reply, to rejection | Medians of `responded_at - applied_at` and `rejected_at - applied_at` (`percentile_cont(0.5)`) over the sent applications where both times are known; shown from 5 applications (`MEDIAN_MIN_SAMPLE`), "—" below |
+| Date range | `?range=30` or `90`: applications whose applied date is within that many days of the page's `now`. Rates, medians, funnel, outcomes, weekly figures, sources and repeat companies follow it; lane counts, upcoming interviews, stale applications and time in the current lane always show the present. How long a week stays open uses the all-time median |
 | Sent per week | Applications by the week of their applied date, weeks from Monday in the viewer's zone; cards not sent yet are in no week |
 | Results by source | Sent applications grouped by the host of their job link (lower-cased, no leading `www.`; sub-domains stay separate), with replied, interview and offer counts; hosts with fewer than 3 go into "Other", no usable link into "Unknown" (`groupBySource()` in `src/lib/sources.ts`, on the server) |
 | Results by week | For each week sent, how many of its applications replied, reached an interview, got an offer (`application_milestones`). A week is still open for the median days to a first reply (rounded up) after its Sunday, or 14 days while that median has fewer than 5 applications (`isWeekOpen()`) |
@@ -276,6 +277,7 @@ src/
     board-filter.ts    the board filter's match and hidden-lane rules
     weeks.ts           week arithmetic on YYYY-MM-DD strings; fills empty weeks; which weeks are still open
     sources.ts         results by source: job-link hosts and their groups
+    stats-range.ts     the stats page's date range: allowlist, start, labels
     funnel.ts          the stats funnel: lanes in rank, and per lane the share of its cards that went further
     sankey.ts          builds the Sankey graph as a DAG
     auth.ts            tokens, credentials, requireSession
@@ -305,10 +307,11 @@ src/
 | `timeline` | The timeline statement on PGlite after real moves: rewinds, renamed and deleted lanes |
 | `board-filter` | The filter matches company and role only; only rejected and closed lanes hide |
 | `weeks` | Monday week starts, month and year ends, empty weeks up to the current one, when a week stops being open |
+| `stats-range` | Only `30` and `90` are ranges (not `7`, `-1`, padded values or arrays); a range's start |
 | `sources` | Host extraction (case, `www.`, port, bad links) and the Other and Unknown groups |
 | `funnel` | Rank order with outcome lanes last; the share counted per card, not from lane totals (cards added mid-pipeline, skipped lanes) |
 | `milestones` | The milestones view on PGlite after real moves: replies, interviews, wishlist cards, rewinds, deleted lanes, kind changes |
-| `stats-statements` | The stats page's statements on PGlite: the rates, weekly counts by zone and across a clock change, the medians to a reply and to a rejection, results by week, each sent application's link and flags. Shares its board setup with `milestones` through `tests/helpers/pglite-board.mjs` |
+| `stats-statements` | The stats page's statements on PGlite: the rates, weekly counts by zone and across a clock change, the medians to a reply and to a rejection, results by week, each sent application's link and flags, the funnel's visits, repeat companies and outcomes, each with and without a date range. Shares its board setup with `milestones` through `tests/helpers/pglite-board.mjs` |
 
 ## Known limitations
 

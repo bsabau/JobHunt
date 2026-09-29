@@ -4,7 +4,7 @@ Kanban-style job application tracker built with Next.js, TypeScript, Tailwind CS
 
 ## Features
 
-- Stats dashboard (`/`): response, interview, offer and ghosted rates, median days to a reply and to a rejection, a funnel with the share of each lane's cards that went further, applications sent per week and what became of each week's, results by job site, outcomes, upcoming interviews, stale applications
+- Stats dashboard (`/`), for all time or the last 30 or 90 days: response, interview, offer and ghosted rates, median days to a reply and to a rejection, a funnel with the share of each lane's cards that went further, applications sent per week and what became of each week's, results by job site, outcomes, upcoming interviews, stale applications
 - Kanban board (`/board`) with drag and drop, search, a filter with "hide outcome lanes", and stale markers; each card's dialog shows its history (the lanes it passed through, with dates and time in each)
 - Drag cards to recycle bin to delete
 - Add/reorder/delete stages (stage delete blocked when not empty)
