@@ -208,12 +208,16 @@ test("source applications: each sent application's link and flags; unsent cards 
   const withLink = await createApp("Applied");
   await sql`UPDATE applications SET source_url = 'https://jobs.example.com/1' WHERE id = ${withLink}`;
   await move(withLink, "Interview");
+  const repliedOnly = await createApp("Applied");
+  await sql`UPDATE applications SET source_url = 'https://jobs.example.com/3' WHERE id = ${repliedOnly}`;
+  await move(repliedOnly, "Screening"); // a reply, no interview
   await createApp("Applied"); // no link
   const unsent = await createApp("Wishlist");
   await sql`UPDATE applications SET source_url = 'https://jobs.example.com/2' WHERE id = ${unsent}`;
   const rows = (await run(sourceApplicationsStatement())).sort((a, b) => String(a.source_url).localeCompare(String(b.source_url)));
   assert.deepEqual(rows, [
     { source_url: "https://jobs.example.com/1", responded: true, interviewed: true, offered: false },
+    { source_url: "https://jobs.example.com/3", responded: true, interviewed: false, offered: false },
     { source_url: null, responded: false, interviewed: false, offered: false }
   ]);
 });

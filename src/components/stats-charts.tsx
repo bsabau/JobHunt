@@ -128,7 +128,18 @@ const cellTooltipItemStyle = { color: "hsl(var(--popover-foreground))" };
 
 // `now` is the server's clock at render time, so "upcoming" is decided the
 // same way on the server and during hydration.
-export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZone: string; now: number }) {
+// `readOnly` is the guest: the page offers it nothing to act on.
+export function StatsCharts({
+  data,
+  timeZone,
+  now,
+  readOnly = false
+}: {
+  data: StatsPayload;
+  timeZone: string;
+  now: number;
+  readOnly?: boolean;
+}) {
   const upcomingInterviews = useMemo(
     () => data.upcomingInterviews.filter((row) => isTodayOrFuture(row.interviewDate, timeZone, now)),
     [data.upcomingInterviews, timeZone, now]
@@ -561,8 +572,8 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
                 <p className="py-6 text-center text-sm text-muted-foreground">No application sent yet.</p>
               ) : data.sources.every((row) => row.source === UNKNOWN_SOURCE) ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  None of the sent applications has a job link yet. Add one in a card&apos;s dialog to see which sites lead
-                  to replies.
+                  None of the sent applications has a job link yet.
+                  {readOnly ? null : " Add one in a card's dialog to see which sites lead to replies."}
                 </p>
               ) : (
                 <div className="overflow-x-auto">
@@ -579,7 +590,11 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
                     <tbody>
                       {data.sources.map((row) => (
                         <tr key={row.source} className="border-t border-border/40">
-                          <th scope="row" className="max-w-[16rem] truncate py-2 pr-4 text-left font-normal" title={row.source}>
+                          <th
+                            scope="row"
+                            className="max-w-[9rem] truncate py-2 pr-4 text-left font-normal sm:max-w-[16rem]"
+                            title={row.source}
+                          >
                             {row.source}
                           </th>
                           <td className="py-2 pr-4 text-right tabular-nums">{row.sent}</td>

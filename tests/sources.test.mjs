@@ -6,6 +6,7 @@ test("the host is lower-cased, without www., port or path", () => {
   assert.equal(sourceHost("https://WWW.Example-Jobs.com/job/123?x=1"), "example-jobs.com");
   assert.equal(sourceHost("http://careers.northwind.test:8080/apply"), "careers.northwind.test");
   assert.equal(sourceHost("https://www2.example.com/"), "www2.example.com", "only a leading 'www.' goes");
+  assert.equal(sourceHost("https://my-www.example.com/"), "my-www.example.com", "a 'www.' inside the host stays");
 });
 
 test("no link, a link without a host, or one that does not parse has no host", () => {
