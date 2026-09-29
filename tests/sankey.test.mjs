@@ -118,4 +118,36 @@ assert.deepEqual(
   ["New:-", "Applied:active", "Screening:active", "Rejected at screening:rejected", "Ghosting:closed"]
 );
 
+// Nodes are keyed by lane id. A lane deleted and re-created under the same
+// name gets its own node, labelled "(deleted)", and does not collect the new
+// lane's flows; a rename shows the current name.
+const recreated = buildSankeyPayload({
+  stages: [
+    { id: 1, name: "Applied", sortOrder: 0, kind: "active" },
+    { id: 7, name: "Screening", sortOrder: 1, kind: "active" },
+    { id: 3, name: "Phone call", sortOrder: 2, kind: "active" }
+  ],
+  transitions: [
+    { fromStatus: "Applied", fromStageId: 1, toStatus: "Screening", toStageId: null, company: "Old" },
+    { fromStatus: "Applied", fromStageId: 1, toStatus: "Screening", toStageId: 7, company: "New" },
+    { fromStatus: "Applied", fromStageId: 1, toStatus: "Call", toStageId: 3, company: "Renamed" }
+  ],
+  entries: [
+    { entryStage: "Applied", entryStageId: 1, company: "Old" },
+    { entryStage: "Applied", entryStageId: 1, company: "New" },
+    { entryStage: "Applied", entryStageId: 1, company: "Renamed" }
+  ],
+  current: [
+    { stageName: "Applied", stageId: 1, company: "Old" },
+    { stageName: "Screening", stageId: 7, company: "New" },
+    { stageName: "Phone call", stageId: 3, company: "Renamed" }
+  ]
+});
+
+assertAcyclic(recreated, "re-created lane");
+assert.deepEqual(
+  recreated.nodes.map((node) => `${node.name}:${node.companies.join("+")}`),
+  ["New:Old+New+Renamed", "Applied:Old+New+Renamed", "Screening:New", "Phone call:Renamed", "Screening (deleted):Old"]
+);
+
 console.log("Sankey DAG checks passed.");

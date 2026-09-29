@@ -244,10 +244,24 @@ describe("stage move statement", () => {
 
     // The old edge keeps its name but loses its id, so it is not the new lane.
     assert.deepEqual(idShape(await history(app))[0], `Applied#${await idOf("Applied")}->Screening#-`);
-    // The twin agrees on the rewind (checked inside move), and no self-loop
-    // edge "Screening -> Screening" is written.
+    // The twin agrees on the rewind (checked inside move). The path runs from
+    // the deleted lane into the new one, so the card has an edge into its lane.
     await move(app, "Screening");
-    assert.equal(await currentStage(app), "Screening");
+    assert.deepEqual(idShape(await history(app)), [
+      `Applied#${await idOf("Applied")}->Screening#-`,
+      `Screening#-->Screening#${await idOf("Screening")}`
+    ]);
+  });
+
+  test("a rewind whose boundary cannot be resolved leaves the history alone", async () => {
+    // Rows as the previous code wrote them (names only), e.g. during a deploy.
+    const app = await createApp("Offer");
+    await sql`
+      INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at) VALUES
+        (${app}, 'Applied', 'Screening', '2026-01-01T00:00:00Z'),
+        (${app}, 'Screening', 'Offer', '2026-01-02T00:00:00Z')`;
+    const { after: path } = await move(app, "Interview");
+    assert.deepEqual(shape(path), ["Applied->Screening", "Screening->Offer"]);
   });
 });
 
@@ -284,15 +298,14 @@ describe("stage update statement", () => {
     await assert.rejects(update("Screening", { name: "interview" }), (error) => error.code === "23505");
   });
 
-  test("a rename onto a deleted neighbour's name is rejected by the no-self-loop check", async () => {
+  test("a rename onto a deleted neighbour's name is allowed: they are different lanes", async () => {
     const app = await createApp("Applied");
     await moveAll(app, "Screening", "Interview");
     // Screening is deleted; its edge into Interview keeps the name "Screening".
     await sql`DELETE FROM stages WHERE name = 'Screening'`;
-    await assert.rejects(
-      update("Interview", { name: "Screening" }),
-      (error) => error.code === "23514" && /application_transitions_no_self_loop/.test(error.message)
-    );
+    const interview = await idOf("Interview");
+    await update("Interview", { name: "Screening" });
+    assert.deepEqual(idShape(await history(app)).slice(1), [`Screening#-->Screening#${interview}`]);
   });
 
   test("an unknown lane returns no row", async () => {

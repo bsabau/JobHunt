@@ -12,7 +12,10 @@ export async function up(sql) {
 
   // Lane names are unique, so a name identifies at most one current lane.
   // Names with no lane any more stay NULL, which the queries treat as history
-  // of a deleted lane. Only unset ids are touched, so a re-run is harmless.
+  // of a deleted lane. Only unset ids are touched, so an immediate re-run
+  // changes nothing; but once a lane has been deleted and another created
+  // under its name, re-running this would attach the old history to the new
+  // lane. schema_migrations makes sure it runs once.
   await sql`
     UPDATE application_transitions t
     SET from_stage_id = s.id

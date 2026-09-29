@@ -37,6 +37,13 @@ beforeEach(async () => {
   await sql`INSERT INTO stages (name, sort_order, kind) VALUES ('Applied', 0, 'active'), ('Interview', 1, 'interview')`;
 });
 
+// Forgets every migration from `filename` on and applies them again, so the
+// schema always ends in its final state and later tests are unaffected.
+async function rerunFrom(filename, log = () => {}) {
+  await sql`DELETE FROM schema_migrations WHERE filename >= ${filename}`;
+  await runMigrations(sql, log);
+}
+
 const applied = async () => (await sql`SELECT id FROM stages WHERE name = 'Applied'`)[0].id;
 
 describe("schema built by the migrations", () => {
@@ -76,13 +83,18 @@ describe("schema built by the migrations", () => {
     await rejectsWith(sql`INSERT INTO stages (name, sort_order) VALUES ('Offer', -1)`, "23514", "stages_sort_order_non_negative");
   });
 
-  test("a transition cannot go from a lane to itself", async () => {
-    const [app] = await sql`INSERT INTO applications (company, role, stage_id) VALUES ('Acme', 'Engineer', ${await applied()}) RETURNING id`;
+  test("a transition cannot go from a lane to itself; a deleted namesake is another lane", async () => {
+    const id = await applied();
+    const [app] = await sql`INSERT INTO applications (company, role, stage_id) VALUES ('Acme', 'Engineer', ${id}) RETURNING id`;
     await rejectsWith(
-      sql`INSERT INTO application_transitions (application_id, from_status, to_status) VALUES (${app.id}, 'Applied', 'Applied')`,
+      sql`INSERT INTO application_transitions (application_id, from_status, from_stage_id, to_status, to_stage_id)
+          VALUES (${app.id}, 'Applied', ${id}, 'Applied', ${id})`,
       "23514",
-      "application_transitions_no_self_loop"
+      "application_transitions_distinct_lanes"
     );
+    // A deleted "Applied" (NULL id) into the live one is a real move.
+    await sql`INSERT INTO application_transitions (application_id, from_status, from_stage_id, to_status, to_stage_id)
+              VALUES (${app.id}, 'Applied', NULL, 'Applied', ${id})`;
   });
 
   test("legacy 'created' rows are removed, and re-running the migration is harmless", async () => {
@@ -91,37 +103,37 @@ describe("schema built by the migrations", () => {
       INSERT INTO application_transitions (application_id, from_status, to_status) VALUES
         (${app.id}, 'Created', 'Applied'),
         (${app.id}, 'Applied', 'Interview')`;
-    await sql`DELETE FROM schema_migrations WHERE filename = '1730000010000_remove-legacy-created-transitions.mjs'`;
-    await runMigrations(sql, () => {});
+    await rerunFrom("1730000010000");
     const rows = await sql`SELECT from_status, to_status FROM application_transitions WHERE application_id = ${app.id}`;
     assert.deepEqual(rows, [{ from_status: "Applied", to_status: "Interview" }]);
   });
 
   test("the phase 2 and 3 migrations re-run cleanly on a migrated database", async () => {
-    await sql`DELETE FROM schema_migrations WHERE filename >= '1730000006000' AND filename < '1730000012000'`;
     const logged = [];
-    await runMigrations(sql, (line) => logged.push(line));
-    assert.equal(logged.length, 6);
-    const [{ count }] = await sql`
-      SELECT COUNT(*)::int AS count FROM pg_constraint
+    await rerunFrom("1730000006000", (line) => logged.push(line));
+    assert.equal(logged.length, 7);
+    const rows = await sql`
+      SELECT conname FROM pg_constraint
       WHERE conname IN ('applications_company_not_blank', 'applications_role_not_blank', 'stages_name_not_blank',
-                        'stages_sort_order_non_negative', 'application_transitions_no_self_loop')`;
-    assert.equal(count, 5, "each constraint exists exactly once");
+                        'stages_sort_order_non_negative', 'application_transitions_distinct_lanes',
+                        'application_transitions_no_self_loop')
+      ORDER BY conname`;
+    assert.deepEqual(rows.map((row) => row.conname), [
+      "application_transitions_distinct_lanes",
+      "applications_company_not_blank",
+      "applications_role_not_blank",
+      "stages_name_not_blank",
+      "stages_sort_order_non_negative"
+    ], "each constraint exists exactly once, and the name-based self-loop check is gone");
   });
 
   test("a legacy 'created -> created' row does not stop the migrations", async () => {
-    // The state of a copy that predates the self-loop check.
-    await sql`ALTER TABLE application_transitions DROP CONSTRAINT application_transitions_no_self_loop`;
+    // The state of a copy that predates migration 1730000010000.
+    await sql`ALTER TABLE application_transitions DROP CONSTRAINT IF EXISTS application_transitions_no_self_loop`;
     const [app] = await sql`INSERT INTO applications (company, role, stage_id) VALUES ('Acme', 'Engineer', ${await applied()}) RETURNING id`;
     await sql`INSERT INTO application_transitions (application_id, from_status, to_status) VALUES (${app.id}, 'created', 'created')`;
-    await sql`DELETE FROM schema_migrations WHERE filename >= '1730000009000' AND filename < '1730000011000'`;
-    await runMigrations(sql, () => {});
+    await rerunFrom("1730000009000");
     assert.deepEqual(await sql`SELECT id FROM application_transitions WHERE application_id = ${app.id}`, []);
-    await rejectsWith(
-      sql`INSERT INTO application_transitions (application_id, from_status, to_status) VALUES (${app.id}, 'Applied', 'Applied')`,
-      "23514",
-      "application_transitions_no_self_loop"
-    );
   });
 
   test("a run that read a stale list re-checks each file under the lock", async () => {
@@ -141,8 +153,7 @@ describe("schema built by the migrations", () => {
       INSERT INTO application_transitions (application_id, from_status, to_status) VALUES
         (${app.id}, 'Applied', 'Interview'),
         (${app.id}, 'Interview', 'Gone lane')`;
-    await sql`DELETE FROM schema_migrations WHERE filename = '1730000011000_reference-lanes-by-id.mjs'`;
-    await runMigrations(sql, () => {});
+    await rerunFrom("1730000011000");
     const rows = await sql`
       SELECT t.from_status, fs.name AS from_lane, t.to_status, ts.name AS to_lane
       FROM application_transitions t

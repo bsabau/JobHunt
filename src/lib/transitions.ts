@@ -88,9 +88,8 @@ export function rewindTransitionPath(
   } else {
     const last = prefix[prefix.length - 1];
     const from = last ? { name: last.toStatus, id: last.toStageId } : entry;
-    // A deleted lane that shared the target's name counts as the target too,
-    // as in the SQL, whose no-self-loop check compares names.
-    if (!isLane(from.id, from.name, target) && from.name !== target.name) {
+    // A deleted lane that shared the target's name is a different lane.
+    if (!isLane(from.id, from.name, target)) {
       result.push({
         id: boundary.id,
         fromStatus: from.name,

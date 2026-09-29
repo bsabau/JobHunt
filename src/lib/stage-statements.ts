@@ -176,19 +176,20 @@ export function stageMoveStatement(
       RETURNING id
     ),
     backward_insert AS (
-      -- The reconnect edge from the last kept lane to the target. The name
-      -- check also skips a deleted lane that shared the target's name, which
-      -- the no-self-loop constraint (on names) would reject.
+      -- The reconnect edge from the last kept lane to the target. Without a
+      -- boundary nothing was cut, so nothing is reconnected either (as in
+      -- rewindTransitionPath). A deleted lane that shared the target's name is
+      -- a different lane, so the edge from it is written.
       INSERT INTO application_transitions (application_id, from_status, from_stage_id, to_status, to_stage_id, transitioned_at)
       SELECT ${applicationId}, rf.name, rf.id, tg.name, tg.id, NOW()
       FROM moved m, target tg, rewind_from rf
       WHERE EXISTS (SELECT 1 FROM is_rewind)
         AND NOT (SELECT should_clear FROM clear_history)
+        AND EXISTS (SELECT 1 FROM rewind_boundary)
         AND NOT EXISTS (
           SELECT 1 FROM rewind_boundary b WHERE b.to_stage_id = tg.id
         )
         AND rf.id IS DISTINCT FROM tg.id
-        AND rf.name <> tg.name
       RETURNING id
     )
     SELECT

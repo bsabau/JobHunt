@@ -105,9 +105,9 @@ application_transitions
   id              SERIAL PK
   application_id  INTEGER NOT NULL -> applications(id) ON DELETE CASCADE
   from_status     TEXT NOT NULL     -- a stage NAME, not an id
-  to_status       TEXT NOT NULL     -- the lane's name; <> from_status
+  to_status       TEXT NOT NULL     -- the lane's name
   from_stage_id   INTEGER -> stages(id) ON DELETE SET NULL
-  to_stage_id     INTEGER -> stages(id) ON DELETE SET NULL
+  to_stage_id     INTEGER -> stages(id) ON DELETE SET NULL   -- <> from_stage_id when both are set
   transitioned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
 schema_migrations
@@ -126,7 +126,8 @@ Migration notes:
 - `1730000002000` rewrote history using raw `sort_order`, before outcome lanes ranked last. It must never run again on current data, which `schema_migrations` guarantees.
 - `1730000007000` dropped `application_transitions_backup` and `pgmigrations`; production's rows were exported first to a local, uncommitted `backups/` file.
 - `1730000010000` deletes legacy `created` rows and any self-loop rows before adding the no-self-loop check.
-- `1730000011000` adds `from_stage_id` / `to_stage_id` and fills them by name; names with no lane stay `NULL`.
+- `1730000011000` adds `from_stage_id` / `to_stage_id` and fills them by name; names with no lane stay `NULL`. It must run only once: after a lane is deleted and another created under its name, a re-run would attach the old history to the new lane.
+- `1730000012000` replaces the name-based no-self-loop check with `application_transitions_distinct_lanes`, which compares ids, so a move from a deleted lane into a new lane of the same name can be stored.
 - The runner serialises concurrent runs with `pg_advisory_xact_lock` inside each migration's transaction, then re-checks `schema_migrations`. A session-level lock would not survive Neon's transaction pooler.
 
 ### Lane kinds
@@ -177,7 +178,7 @@ The reference implementation is `rewindTransitionPath()` in `src/lib/transitions
 
 Transitions reference lanes by id. The name columns are kept in step: `stageUpdateStatement()` renames the lane and rewrites `from_status` / `to_status` of its edges in one statement, so the stored name always equals the live lane's name. Deleting a lane sets its ids in history to `NULL` and keeps the last name; the charts show such names without a kind. A lane deleted and re-created under the same name gets a new id and does not inherit the old history.
 
-A rename is refused (409) when another lane has the name in any case, or when a deleted lane with that name sits next to this lane in a card's history, since that edge would become `X -> X`.
+A rename is refused (409) when another lane has the name in any case. Charts group history by lane id and label it with the current name; history of a deleted lane is shown as `<name> (deleted)`, apart from any live lane that took the name.
 
 ### Derived values
 
@@ -185,7 +186,7 @@ A rename is refused (409) when another lane has the name in any case, or when a 
 |---|---|
 | Stage entered at | Latest transition into the current lane, else `created_at` |
 | Stale | In a lane that can go stale for 14 days or more since it was entered (`STALE_THRESHOLD_DAYS`) |
-| Reached (funnel) | Distinct applications whose entry lane or any `to_status` is the lane |
+| Reached (funnel) | Distinct applications whose entry lane or any lane moved into is the lane, by lane id |
 | Days to interview | First transition into any `interview` lane minus `created_at` |
 | Open count | Total minus applications in a resolved lane |
 
