@@ -61,7 +61,7 @@ There is no stats endpoint; the stats page is server-rendered only.
    - Guests are blocked from every non-GET API call.
 2. The route handler or page calls `requireSession()` / `requirePageSession()` again. The proxy is an early gate, not the authority.
 3. Input goes through the helpers in `src/lib/api-validation.ts`.
-4. `src/lib/db.ts` runs the query.
+4. `src/lib/db/` runs the query.
 5. `errorResponse()` in `src/lib/api-errors.ts` maps typed errors to status codes and hides everything else behind a generic 500.
 
 ## Authentication
@@ -152,7 +152,7 @@ The kind carries a lane's meaning. Its position on the board is layout only. All
 Two groupings are in use and they differ on `offer`:
 
 - **Terminal** (`TERMINAL_KINDS`): `rejected`, `closed`. Drives pipeline rank and the "average days in current stage" figure.
-- **Resolved**: `offer`, `rejected`, `closed`. Drives the "Where applications ended" chart and `openCount`. This set is written out by hand in `db.ts` and in `stats-charts.tsx` rather than named in `stage-kinds.ts`.
+- **Resolved**: `offer`, `rejected`, `closed`. Drives the "Where applications ended" chart and `openCount`. This set is written out by hand in `db/stats.ts` and in `stats-charts.tsx` rather than named in `stage-kinds.ts`.
 
 ### Pipeline rank
 
@@ -220,7 +220,8 @@ src/
   app/                 pages and API routes
   components/          client components; ui/ holds the primitives
   lib/
-    db.ts              every query
+    db/                every query: index.ts (public API), client.ts, rows.ts,
+                       stages.ts, applications.ts, sankey.ts, stats.ts
     stage-statements.ts  the move and rename statements (no runtime imports)
     stage-kinds.ts     lane kinds, rank, chart colours (no runtime imports)
     transitions.ts     reference rewind implementation

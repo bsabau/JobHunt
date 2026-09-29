@@ -202,7 +202,7 @@ Only if the owner wants to answer questions about undone moves. Two separate opt
 
 The entry event is cheap and recommended. The append-only log is a product decision; leave it out unless there is a concrete question it would answer.
 
-Done differently, with the owner's agreement: an `entry_stage_id` column would lose the lane's name when the lane is deleted, which phase 3 keeps, and would need updating on every move and rename. Migration `1730000013000` instead adds the view `application_entry_stage` (4.2's second view), and the move statement, the Sankey and the funnel read it instead of three copies of the derivation. On `dev` it matches the old derivation for all 30 applications. The append-only log stays out (decision 3).
+Done differently, with the owner's agreement: an `entry_stage_id` column would lose the lane's name when the lane is deleted, which phase 3 keeps, and would need updating on every move and rename. Migration `1730000013000` instead adds the view `application_entry_stage` (4.2's second view), and the move statement, the Sankey and the funnel read it instead of three copies of the derivation. On `dev` it matches the old derivation for all 30 applications. The append-only log stays out (decision 3). Applied to production on 2026-09-29 (`migrate:prod`, then PR #14 merged); there too the view matched the old derivation for all 30 applications.
 
 **Done when:** a lane can be renamed from the board and the stats, Sankey and staleness figures are unchanged by the rename.
 
@@ -236,6 +236,8 @@ src/lib/db/
 ```
 
 Move only; no behaviour change in this step.
+
+Done in PR 4A: `src/lib/db/` holds `client.ts`, `rows.ts`, `stages.ts`, `applications.ts`, `sankey.ts`, `stats.ts` and `index.ts`, all under 300 lines. The move helper (`applyStageMove`) stayed in `applications.ts`; the statement itself already lives in `src/lib/stage-statements.ts`.
 
 ### 4.2 Define derived values once (SQL-3)
 

@@ -40,12 +40,12 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 1. `src/proxy.ts` (Next 16's middleware) checks the session, rejects cross-site writes and blocks guest writes.
 2. Every route handler calls `requireSession()` and every page calls `requirePageSession()` **before** any database access. The proxy is not the authority. New routes and pages must do the same; pass `{ write: true }` for anything that changes data.
 3. Parse input with the helpers in `src/lib/api-validation.ts`.
-4. Query through `src/lib/db.ts`.
+4. Query through `src/lib/db/` (imported as `@/lib/db`).
 5. Return errors through `errorResponse()` from `src/lib/api-errors.ts`. Throw `NotFoundError`, `ConflictError` or `InvalidInputError` for expected failures.
 
 ### Key modules
 
-- `src/lib/db.ts`: all database access, through Neon's `sql` tagged template.
+- `src/lib/db/`: all database access, through Neon's `sql` tagged template. `index.ts` is the public API; `client.ts` (connection, `transaction()`, error helpers, `ensureSchema`), `rows.ts` (mappers), `stages.ts`, `applications.ts`, `sankey.ts`, `stats.ts`.
 - `src/lib/stage-kinds.ts`: lane kinds, pipeline rank, chart colours. No runtime imports, so the verify scripts can load it directly.
 - `src/lib/stage-statements.ts`: the SQL that moves cards and renames lanes, compiled to text and parameters. No runtime imports, so the tests run it on PGlite.
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
@@ -77,7 +77,7 @@ Tables: `stages`, `applications`, `application_transitions`, plus `schema_migrat
 - Migrations are timestamp-prefixed `.mjs` files in `migrations/` that export `up(sql)`. They are forward-only; there is no `down`.
 - Never edit a migration that has been applied. Add a new one.
 - Write migrations so that running them twice is harmless (`IF NOT EXISTS`, guarded updates).
-- The runner wraps each migration in a transaction over a WebSocket client. The HTTP driver used by the app cannot hold a transaction across statements; in app code use `transaction()` from `db.ts`, which sends a fixed list of statements in one request.
+- The runner wraps each migration in a transaction over a WebSocket client. The HTTP driver used by the app cannot hold a transaction across statements; in app code use `transaction()` from `db/client.ts`, which sends a fixed list of statements in one request.
 
 ## Keeping these docs current
 
@@ -110,7 +110,7 @@ Use Node 24 LTS. The repo pins `24.16.0` in `.nvmrc` and `.node-version`, and `p
 
 - Tailwind CSS v4 through the PostCSS plugin, not the older config file.
 - UI components follow shadcn/ui patterns and use `cn()` from `src/lib/utils.ts`.
-- Database columns are snake_case and TypeScript is camelCase. Queries alias columns unquoted (`AS interviewDate`), Postgres folds them to lowercase, and the mappers in `db.ts` read the lowercase key (`row.interviewdate`). Follow the existing pattern when adding a column.
+- Database columns are snake_case and TypeScript is camelCase. Queries alias columns unquoted (`AS interviewDate`), Postgres folds them to lowercase, and the mappers in `db/rows.ts` read the lowercase key (`row.interviewdate`). Follow the existing pattern when adding a column.
 - Neon's `sql` tagged template parameterizes values. Never build SQL by string interpolation. Statements that tests must run on PGlite (see `stage-statements.ts`) are built with `sqlFragment` and `compileSql` instead, which parameterize the same way and nest.
 - Use the kind sets exported from `stage-kinds.ts` (`TERMINAL_KINDS`, `STALE_EXCLUDED_KINDS`) in queries instead of writing the literals.
 - Comments explain why a thing is done, not what the code does.
