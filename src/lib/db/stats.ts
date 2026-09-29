@@ -1,6 +1,7 @@
 import { STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
-import { INTERVIEW_KIND, RESOLVED_KINDS, STALE_EXCLUDED_KINDS, TERMINAL_KINDS, StageKind } from "@/lib/stage-kinds";
+import { RESOLVED_KINDS, STALE_EXCLUDED_KINDS, TERMINAL_KINDS, StageKind } from "@/lib/stage-kinds";
+import { MilestoneStatsRow, milestoneStatsStatement } from "@/lib/stats-statements";
 import { StatsPayload } from "@/lib/types";
 import { ensureSchema, transaction } from "./client";
 import { StageRow, mapStage } from "./rows";
@@ -9,11 +10,8 @@ import { StageRow, mapStage } from "./rows";
 // driver returns as a string.
 type StatsRows = [
   (StageRow & { count: number })[],
-  { count: number }[],
+  MilestoneStatsRow[],
   { days: string }[],
-  { days: string }[],
-  { days: string | null; count: number }[],
-  { day: string; count: number }[],
   { day: string; count: number }[],
   { company: string; count: number }[],
   { stage_id: number; count: number }[],
@@ -33,14 +31,12 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
 
   // One request and one snapshot: the totals, lists and charts cannot disagree
   // because a write landed between two of these queries.
+  const milestones = milestoneStatsStatement();
   const [
     stageCountRows,
-    transitionCountRows,
-    avgDaysRows,
+    milestoneRows,
     avgCurrentStageRows,
-    avgInterviewRows,
     createdByDayRows,
-    transitionsByDayRows,
     topCompanyRows,
     reachedRows,
     stagePairRows,
@@ -55,14 +51,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       GROUP BY s.id, s.name, s.sort_order, s.kind
       ORDER BY s.sort_order ASC, s.id ASC;
     `,
-    tx`
-      SELECT COUNT(*)::int AS count
-      FROM application_transitions;
-    `,
-    tx`
-      SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0), 0) AS days
-      FROM applications;
-    `,
+    tx.query(milestones.text, milestones.params),
     tx`
       SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - e.entered_at)) / 86400.0), 0) AS days
       FROM applications a
@@ -71,37 +60,8 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       WHERE s.kind <> ALL(${[...TERMINAL_KINDS]}::text[]);
     `,
     tx`
-      -- Counted from when the application was sent, not when the card was made
-      -- (a card can sit in a wishlist for weeks first).
-      SELECT
-        AVG(
-          EXTRACT(EPOCH FROM (first_interview.transitioned_at - p.applied_at)) / 86400.0
-        ) AS days,
-        COUNT(first_interview.transitioned_at)::int AS count
-      FROM applications a
-      JOIN application_applied_at p ON p.application_id = a.id AND p.applied_at IS NOT NULL
-      JOIN LATERAL (
-        SELECT MIN(t.transitioned_at) AS transitioned_at
-        FROM application_transitions t
-        WHERE t.application_id = a.id
-          AND EXISTS (
-            SELECT 1 FROM stages interview_stage
-            WHERE interview_stage.id = t.to_stage_id AND interview_stage.kind = ${INTERVIEW_KIND}
-          )
-      ) first_interview ON true;
-    `,
-    tx`
       SELECT to_char(day, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
       FROM (SELECT (created_at AT TIME ZONE ${zone})::date AS day FROM applications) buckets
-      GROUP BY day
-      ORDER BY day ASC;
-    `,
-    tx`
-      SELECT to_char(day, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
-      FROM (
-        SELECT (transitioned_at AT TIME ZONE ${zone})::date AS day
-        FROM application_transitions
-      ) buckets
       GROUP BY day
       ORDER BY day ASC;
     `,
@@ -201,13 +161,12 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
 
   const totalApps = stageCounts.reduce((sum, row) => sum + row.count, 0);
   const activeStages = stageCounts.filter((row) => row.count > 0).length;
-  const totalTransitions = transitionCountRows[0]?.count ?? 0;
-  const avgDaysSinceCreated = Math.round(Number(avgDaysRows[0]?.days ?? 0) * 10) / 10;
   const avgDaysInCurrentStage = Math.round(Number(avgCurrentStageRows[0]?.days ?? 0) * 10) / 10;
-  const interviewReachedCount = avgInterviewRows[0]?.count ?? 0;
+  const milestone = milestoneRows[0];
+  const interviewReachedCount = milestone?.interview_count ?? 0;
   const avgDaysToInterview =
     interviewReachedCount > 0
-      ? Math.round(Number(avgInterviewRows[0]?.days ?? 0) * 10) / 10
+      ? Math.round(Number(milestone?.avg_days_to_interview ?? 0) * 10) / 10
       : null;
 
   let cumulative = 0;
@@ -220,8 +179,6 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       cumulative
     };
   });
-
-  const transitionsByDay = transitionsByDayRows.map((row) => ({ date: row.day, count: row.count }));
 
   const topCompanies = topCompanyRows.map((row) => ({ company: row.company, count: row.count }));
 
@@ -265,16 +222,21 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     totals: {
       applications: totalApps,
       activeStages,
-      transitions: totalTransitions,
-      avgDaysSinceCreated,
       avgDaysInCurrentStage,
       avgDaysToInterview,
       interviewReachedCount,
       staleCount: staleApplications.length
     },
     stageCounts,
+    // Shares of the applications that were sent (application_milestones).
+    rates: {
+      applied: milestone?.applied ?? 0,
+      responded: milestone?.responded ?? 0,
+      interviewed: milestone?.interviewed ?? 0,
+      offered: milestone?.offered ?? 0,
+      ghosted: milestone?.ghosted ?? 0
+    },
     applicationsOverTime,
-    transitionsByDay,
     topCompanies,
     funnel,
     stagePairs,

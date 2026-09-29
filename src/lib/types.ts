@@ -57,16 +57,17 @@ export interface StatsPayload {
   totals: {
     applications: number;
     activeStages: number;
-    transitions: number;
-    avgDaysSinceCreated: number;
     avgDaysInCurrentStage: number;
     avgDaysToInterview: number | null;
     interviewReachedCount: number;
     staleCount: number;
   };
   stageCounts: { stage: string; count: number; sortOrder: number; kind: StageKind }[];
+  // Counts over the applications that were sent (applied_at set): the
+  // denominator `applied` and how many of them got a reply, reached an
+  // interview, got an offer, or sit in a closed lane now.
+  rates: { applied: number; responded: number; interviewed: number; offered: number; ghosted: number };
   applicationsOverTime: { date: string; created: number; cumulative: number }[];
-  transitionsByDay: { date: string; count: number }[];
   topCompanies: { company: string; count: number }[];
   funnel: { stage: string; reached: number; sortOrder: number; kind: StageKind }[];
   stagePairs: { from: string; to: string; count: number }[];

@@ -9,8 +9,6 @@ import {
   CartesianGrid,
   Cell,
   Legend,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -52,6 +50,18 @@ function SummaryTile({ label, value, hint }: SummaryTileProps) {
         {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
       </CardContent>
     </Card>
+  );
+}
+
+// A share of the applications that were sent, with the counts behind it:
+// with few applications a percentage alone says little.
+function RateTile({ label, count, of, hint }: { label: string; count: number; of: number; hint?: string }) {
+  return (
+    <SummaryTile
+      label={label}
+      value={of > 0 ? `${Math.round((count / of) * 100)}%` : "—"}
+      hint={of > 0 ? `${count} of ${of} sent${hint ? `, ${hint}` : ""}` : "Nothing sent yet"}
+    />
   );
 }
 
@@ -130,11 +140,6 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
     [data.applicationsOverTime]
   );
 
-  const transitionsData = useMemo(
-    () => data.transitionsByDay.map((row) => ({ ...row, label: formatDate(row.date) })),
-    [data.transitionsByDay]
-  );
-
   const funnelData = useMemo(
     () => rankedFunnel.map((row) => ({ ...row, fill: colorFor(row.stage, row.kind) })),
     [rankedFunnel]
@@ -211,14 +216,12 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <SummaryTile label="Total Applications" value={data.totals.applications} />
-        <SummaryTile label="Stage Transitions" value={data.totals.transitions} />
-        <SummaryTile
-          label="Avg Days Since Created"
-          value={data.totals.avgDaysSinceCreated}
-          hint="Across all applications"
-        />
+        <RateTile label="Response Rate" count={data.rates.responded} of={data.rates.applied} />
+        <RateTile label="Interview Rate" count={data.rates.interviewed} of={data.rates.applied} />
+        <RateTile label="Offer Rate" count={data.rates.offered} of={data.rates.applied} />
+        <RateTile label="Ghosted" count={data.rates.ghosted} of={data.rates.applied} hint="now in a closed lane" />
         <SummaryTile
           label="Avg Days in Current Stage"
           value={data.totals.avgDaysInCurrentStage}
@@ -239,6 +242,11 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
           hint="14+ days in Applied or middle stages"
         />
       </div>
+      {data.rates.applied > 0 ? (
+        <p className="-mt-3 text-xs text-muted-foreground">
+          Rates count applications that were sent, where they stand now: a card moved back loses the steps it undid.
+        </p>
+      ) : null}
 
       {!hasApps && (
         <Card>
@@ -538,72 +546,41 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
             </CardContent>
           </Card>
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Funnel: Stages Visited</CardTitle>
-              </CardHeader>
-              <CardContent className="h-[320px]">
-                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
-                  <BarChart
-                    data={funnelData}
-                    layout="vertical"
-                    margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
-                  >
-                    <CartesianGrid stroke="rgba(148,163,184,0.15)" horizontal={false} />
-                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
-                    <YAxis
-                      type="category"
-                      dataKey="stage"
-                      width={90}
-                      tick={{ fontSize: 12, fill: "#94a3b8" }}
-                    />
-                    <Tooltip
-                      cursor={{ fill: "rgba(148,163,184,0.08)" }}
-                      contentStyle={tooltipStyle}
-                      itemStyle={cellTooltipItemStyle}
-                    />
-                    <Bar dataKey="reached" radius={[0, 6, 6, 0]}>
-                      {funnelData.map((row) => (
-                        <Cell key={row.stage} fill={row.fill} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Funnel: Stages Visited</CardTitle>
+            </CardHeader>
+            <CardContent className="h-[320px]">
+              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
+                <BarChart
+                  data={funnelData}
+                  layout="vertical"
+                  margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
+                >
+                  <CartesianGrid stroke="rgba(148,163,184,0.15)" horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
+                  <YAxis
+                    type="category"
+                    dataKey="stage"
+                    width={90}
+                    tick={{ fontSize: 12, fill: "#94a3b8" }}
+                  />
+                  <Tooltip
+                    cursor={{ fill: "rgba(148,163,184,0.08)" }}
+                    contentStyle={tooltipStyle}
+                    itemStyle={cellTooltipItemStyle}
+                  />
+                  <Bar dataKey="reached" radius={[0, 6, 6, 0]}>
+                    {funnelData.map((row) => (
+                      <Cell key={row.stage} fill={row.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Daily Stage Transitions</CardTitle>
-              </CardHeader>
-              <CardContent className="h-[320px]">
-                {transitionsData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
-                    <LineChart data={transitionsData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
-                      <CartesianGrid stroke="rgba(148,163,184,0.15)" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#94a3b8" }} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
-                      <Tooltip contentStyle={tooltipStyle} />
-                      <Line
-                        type="monotone"
-                        dataKey="count"
-                        name="Transitions"
-                        stroke="#a78bfa"
-                        strokeWidth={2}
-                        dot={{ r: 3, fill: "#a78bfa" }}
-                        activeDot={{ r: 5 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    No transitions recorded yet.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+
 
           {data.topCompanies.some((row) => row.count > 1) && (
             <Card>

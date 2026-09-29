@@ -14,7 +14,7 @@ A single-owner job application tracker with three views: pipeline stats (`/`), a
 - `npm run build`: production build
 - `npm run check`: lint, typecheck and every test. Run it before every commit; CI runs it on every push.
 - `npm run lint`, `npm run typecheck`, `npm test`: the three parts on their own
-- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`)
+- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`, `milestones`)
 - `npm run migrate:up`: apply migrations to `DATABASE_URL`. Refuses when that is production.
 - `npm run migrate:prod`: apply migrations to `PRODUCTION_DATABASE_URL`. Asks for the endpoint id; only run it when the user asks.
 - `npm run migrate:create -- <name>`: scaffold a migration
@@ -50,6 +50,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/stage-statements.ts`: the SQL that moves cards and renames lanes, compiled to text and parameters. No runtime imports, so the tests run it on PGlite.
 - `src/lib/application-statements.ts`: read statements about one application (its timeline), built with `sqlFragment`. Its only runtime import is `./stage-statements.ts`, by relative path with the extension, so the tests still load it from Node and run it on PGlite.
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
+- `src/lib/stats-statements.ts`: statements for the stats page (the rates over `application_milestones`), run inside the page's snapshot with `tx.query()`.
 - `src/lib/board-filter.ts`: the board filter's rules (company and role only, never notes; outcome lanes hidden by kind).
 - `src/lib/sankey.ts`: builds the Sankey graph as a DAG.
 - `src/lib/auth.ts`: session tokens, credential check, `requireSession()`.
@@ -72,6 +73,7 @@ These are easy to break and not obvious from any single file.
 - **The entry lane comes from the view `application_entry_stage`.** Read it instead of deriving "first edge's start, else current lane" again. The only other copy is the TypeScript twin in `transitions.ts`; change both together.
 - **When a card entered its current lane comes from the view `application_stage_entry`.** Use it for staleness and time in lane instead of another "latest move into the lane, else created_at" subquery.
 - **When an application was sent comes from the view `application_applied_at`, not `created_at`.** A card that starts in an `intake` lane is not sent until it leaves intake.
+- **Whether and when an application got a reply, an interview or an offer comes from the view `application_milestones`.** Rates use the sent applications as their denominator.
 - **Transitions reference lanes by id** (`from_stage_id`, `to_stage_id`); join history to lanes by id, never by name. `from_status` / `to_status` hold the lane's name: a rename rewrites them in the same statement (`stageUpdateStatement()`), and after a lane is deleted its id becomes `NULL` and the name is all that remains. `new` and `created` are reserved names.
 - **Stage moves need `expectedStageId`.** It is the concurrency guard; a mismatch returns 409.
 - **Notes are owner-only.** `listApplications(viewer)` leaves them out for a guest viewer, through `mapApplication()` in `db/rows.ts`. Pass the session's role; never read applications for a guest another way.
@@ -121,7 +123,7 @@ Use Node 24 LTS. The repo pins `24.16.0` in `.nvmrc` and `.node-version`, and `p
 - Database columns are snake_case and TypeScript is camelCase. Queries return columns under their snake_case names (never alias to camelCase: Postgres folds unquoted aliases to lowercase), each query casts its result once to a row type (`ApplicationRow`, `StageRow` in `db/rows.ts`, or an inline type), and the mappers convert to camelCase. The Neon driver returns `numeric` (for example `AVG`) as a string.
 - Neon's `sql` tagged template parameterizes values. Never build SQL by string interpolation. Statements that tests must run on PGlite (see `stage-statements.ts`) are built with `sqlFragment` and `compileSql` instead, which parameterize the same way and nest.
 - Modules the tests load straight from Node (`stage-statements.ts`, `application-statements.ts`, `stage-kinds.ts`, `timezone.ts`, `db/rows.ts` and the like) may import only types through `@/`, and other such modules only by relative path with the `.ts` extension (`allowImportingTsExtensions` is on; nothing is emitted).
-- Use the kind names exported from `stage-kinds.ts` (`TERMINAL_KINDS`, `STALE_EXCLUDED_KINDS`, `RESOLVED_KINDS`, `INTERVIEW_KIND`, `DEFAULT_CREATE_KIND`) in queries and components instead of writing the literals.
+- Use the kind names exported from `stage-kinds.ts` (`TERMINAL_KINDS`, `STALE_EXCLUDED_KINDS`, `RESOLVED_KINDS`, `INTERVIEW_KIND`, `CLOSED_KIND`, `DEFAULT_CREATE_KIND`) in queries and components instead of writing the literals.
 - Comments explain why a thing is done, not what the code does.
 
 <!-- BEGIN:nextjs-agent-rules -->
