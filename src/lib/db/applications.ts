@@ -68,13 +68,35 @@ export async function listApplications(viewer: Role): Promise<Application[]> {
   return rows.map((row) => mapApplication(row, viewer));
 }
 
+// The stored company name, or null for an unknown application. The edit route
+// uses it to tell whether a logo lookup is due.
+export async function getApplicationCompany(id: number): Promise<string | null> {
+  await ensureSchema();
+
+  const rows = (await sql`SELECT company FROM applications WHERE id = ${id};`) as { company: string }[];
+  return rows[0]?.company ?? null;
+}
+
+// Stores a looked-up logo. The lookup runs after the response, so it only
+// writes while the application still has the company it was looked up for,
+// and it leaves updated_at alone: a logo is not an edit and must not reorder
+// the board.
+export async function setApplicationLogo(id: number, company: string, logoUrl: string | null): Promise<void> {
+  await ensureSchema();
+
+  await sql`
+    UPDATE applications
+    SET logo_url = ${logoUrl}
+    WHERE id = ${id} AND company = ${company} AND logo_url IS DISTINCT FROM ${logoUrl};
+  `;
+}
+
 interface CreateApplicationInput {
   company: string;
   role: string;
   notes?: string;
   interviewDate?: string | null;
   sourceUrl?: string;
-  logoUrl?: string | null;
   stageId?: number;
 }
 
@@ -110,7 +132,6 @@ export async function createApplication(input: CreateApplicationInput): Promise<
         notes,
         interview_date,
         source_url,
-        logo_url,
         stage_id,
         created_at,
         updated_at
@@ -120,7 +141,6 @@ export async function createApplication(input: CreateApplicationInput): Promise<
         ${input.notes?.trim() || null},
         ${input.interviewDate ? input.interviewDate : null},
         ${input.sourceUrl?.trim() || null},
-        ${input.logoUrl || null},
         ${stage.id},
         NOW(),
         NOW()

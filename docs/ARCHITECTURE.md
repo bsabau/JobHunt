@@ -40,7 +40,7 @@ All bodies are JSON and must be sent with `Content-Type: application/json` (415 
 | `POST /api/auth/login` | `user`, `pass` | Sets the `session` cookie. 401 on bad credentials, 429 after 5 failures per minute per IP |
 | `POST /api/auth/logout` | none | Clears the cookie; works without a session |
 | `GET /api/applications` | | Returns `{ applications, stages }`; `notes` is `null` for guests (redacted in the data layer) |
-| `POST /api/applications` | `company`, `role`, optional `notes`, `interviewDate`, `sourceUrl`, `stageId` | Looks up a logo first. Default lane is the first `active` lane |
+| `POST /api/applications` | `company`, `role`, optional `notes`, `interviewDate`, `sourceUrl`, `stageId` | Returns at once; the logo is looked up after the response. Default lane is the first `active` lane |
 | `PUT /api/applications/:id` | all editable fields, `stageId`, `expectedStageId` | Full replacement. 409 if the card moved |
 | `DELETE /api/applications/:id` | | Transitions cascade. `{ ok: true }` |
 | `PATCH /api/applications/:id/status` | `stageId`, `expectedStageId` | The drag-and-drop move. 409 if the card moved |
@@ -208,7 +208,7 @@ Timestamps are stored as `TIMESTAMPTZ`; `interview_date` is a plain `DATE`. The 
 
 ## Logo lookup
 
-`findCompanyLogo()` queries Clearbit's autocomplete endpoint for a domain and stores a Google S2 favicon URL for it. It runs inside `POST /api/applications` with a 3 second timeout and only on creation. Stored URLs are restricted to an allowlist of hosts and rendered with a plain `<img>` and `referrerPolicy="no-referrer"`; the Next image optimizer is disabled.
+`findCompanyLogo()` queries Clearbit's autocomplete endpoint for a domain and stores a Google S2 favicon URL for it, with a 3 second timeout. `scheduleLogoLookup()` (`src/lib/logo-lookup.ts`) runs it with `after()`, once the response is sent: on creation, and on an edit that changes the company. The card shows its initial until the next load. The write (`setApplicationLogo()`) only applies while the card still has the company that was looked up and does not touch `updated_at`; a lookup that finds nothing after a rename clears the old logo. Stored URLs are restricted to an allowlist of hosts and rendered with a plain `<img>` and `referrerPolicy="no-referrer"`; the Next image optimizer is disabled.
 
 ## Source layout
 
@@ -233,6 +233,8 @@ src/
     transitions.ts     reference rewind implementation
     sankey.ts          builds the Sankey graph as a DAG
     auth.ts            tokens, credentials, requireSession
+    logo.ts            company logo lookup (Clearbit, S2 favicons)
+    logo-lookup.ts     runs the lookup after the response
     api-validation.ts  input parsing
     api-errors.ts      typed errors and the response mapper
     timezone.ts        zone validation and date-only arithmetic
@@ -255,6 +257,7 @@ src/
 
 ## Known limitations
 
+- Error pages: `src/app/error.tsx` (a page failed to render; offers `retry()` and shows the error digest), `global-error.tsx` (the root layout failed), `not-found.tsx` (unknown URLs, 404).
 - The login throttle is an in-memory map per server instance; it resets on cold start and is not shared between instances.
 - Cards can only be moved by mouse drag or through the edit dialog, which opens on double-click.
 - Reordering lanes or changing a lane's kind changes rank, so older history can contain edges that now point backwards. The Sankey drops those and reports the count.

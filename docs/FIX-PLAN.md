@@ -310,6 +310,12 @@ Insert the application first and return it. Resolve the logo afterwards with `af
 
 Add `src/app/error.tsx`, `src/app/global-error.tsx` and `src/app/not-found.tsx` with the page header and a retry button.
 
+Done in PR #18 (5.1 and 5.2):
+
+- 5.1: `POST /api/applications` inserts and answers at once (68 ms on `dev`, previously up to 3 s); `scheduleLogoLookup()` runs the lookup with `after()` and writes through `setApplicationLogo()`, guarded by the company name and without touching `updated_at`. `PUT` schedules a lookup only when the company changed; a rename with no logo found clears the old one.
+- 5.2: the three pages exist; `error.tsx` uses this Next version's `retry()`. Checked against a production build with an unreachable database: the error page renders inside the normal header with its digest, and an unknown URL returns 404 with the not-found page.
+- 5.6 moves to the next PR, which adds the toast it needs.
+
 ### 5.3 Moving cards without a mouse (UI-2)
 
 - Make cards focusable, open the edit dialog on Enter, and add a "Move to" menu on each card.

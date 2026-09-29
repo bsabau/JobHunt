@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deleteApplication, updateApplication } from "@/lib/db";
+import { deleteApplication, getApplicationCompany, updateApplication } from "@/lib/db";
+import { scheduleLogoLookup } from "@/lib/logo-lookup";
 import { errorResponse } from "@/lib/api-errors";
 import { requireSession } from "@/lib/auth";
 import {
@@ -24,6 +25,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     await requireSession({ write: true });
     const applicationId = positiveInteger(id, "id");
     const payload = await readJsonObject(request);
+    const previousCompany = await getApplicationCompany(applicationId);
     const updated = await updateApplication(applicationId, {
       company: requiredString(payload, "company", { maxLength: TEXT_LIMITS.company }),
       role: requiredString(payload, "role", { maxLength: TEXT_LIMITS.role }),
@@ -37,6 +39,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     if (!updated) {
       return NextResponse.json({ message: "Application not found" }, { status: 404 });
+    }
+
+    // A renamed company needs its own logo; the old one no longer applies.
+    if (updated.company !== previousCompany) {
+      scheduleLogoLookup(updated.id, updated.company);
     }
 
     return NextResponse.json(updated);

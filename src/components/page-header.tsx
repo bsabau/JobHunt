@@ -3,7 +3,9 @@ import { LogoutButton } from "@/components/logout-button";
 import { Button } from "@/components/ui/button";
 
 interface PageHeaderProps {
-  active: "board" | "stats" | "sankey";
+  // The current view, left out of the navigation. Omitted on error pages,
+  // which link to every view.
+  active?: "board" | "stats" | "sankey";
   readOnly?: boolean;
 }
 

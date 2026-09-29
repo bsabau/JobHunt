@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createApplication, listApplications, listStages } from "@/lib/db";
-import { findCompanyLogo } from "@/lib/logo";
+import { scheduleLogoLookup } from "@/lib/logo-lookup";
 import { errorResponse } from "@/lib/api-errors";
 import { requireSession } from "@/lib/auth";
 import {
@@ -34,7 +34,6 @@ export async function POST(request: NextRequest) {
     const interviewDate = optionalDateOnly(payload, "interviewDate");
     const sourceUrl = optionalHttpUrl(payload, "sourceUrl");
     const stageId = optionalPositiveInteger(payload, "stageId");
-    const logoUrl = await findCompanyLogo(company);
 
     const application = await createApplication({
       company,
@@ -42,9 +41,9 @@ export async function POST(request: NextRequest) {
       notes,
       interviewDate,
       sourceUrl,
-      stageId,
-      logoUrl
+      stageId
     });
+    scheduleLogoLookup(application.id, application.company);
 
     return NextResponse.json(application, { status: 201 });
   } catch (error) {
