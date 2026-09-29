@@ -96,7 +96,7 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
       onUpdated(updated);
       trackApplicationUpdated({
         stageChanged: form.stageId !== application.stageId,
-        stageName: stages.find((stage) => stage.id === form.stageId)?.name ?? "unknown",
+        stageKind: updated.stageKind,
         hasInterviewDate: Boolean(form.interviewDate)
       });
       onOpenChange(false);

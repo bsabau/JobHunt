@@ -414,7 +414,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
       }
 
       if (fromStage && toStage && fromStage.id !== toStage.id) {
-        trackApplicationMoved({ fromStageName: fromStage.name, toStageName: toStage.name });
+        trackApplicationMoved({ fromStageKind: fromStage.kind, toStageKind: toStage.kind });
       }
     } finally {
       pendingMoveIdsRef.current.delete(id);
@@ -437,7 +437,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   function onStageSaved(stage: Stage, mode: "add" | "edit") {
     if (mode === "add") {
       setStages((current) => [...current, stage]);
-      trackStageAdded({ stageName: stage.name });
+      trackStageAdded({ stageKind: stage.kind });
       return;
     }
 
