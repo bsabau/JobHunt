@@ -14,7 +14,7 @@ A single-owner job application tracker with three views: pipeline stats (`/`), a
 - `npm run build`: production build
 - `npm run check`: lint, typecheck and every test. Run it before every commit; CI runs it on every push.
 - `npm run lint`, `npm run typecheck`, `npm test`: the three parts on their own
-- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`)
+- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`)
 - `npm run migrate:up`: apply migrations to `DATABASE_URL`. Refuses when that is production.
 - `npm run migrate:prod`: apply migrations to `PRODUCTION_DATABASE_URL`. Asks for the endpoint id; only run it when the user asks.
 - `npm run migrate:create -- <name>`: scaffold a migration
@@ -37,7 +37,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 
 ### Request pipeline
 
-1. `src/proxy.ts` (Next 16's middleware) checks the session, rejects cross-site writes and blocks guest writes.
+1. `src/proxy.ts` (Next 16's middleware) checks the session, rejects cross-site writes and blocks guest writes. It also gives every page a CSP nonce (`src/lib/csp.ts`, report-only for now). A new external host for scripts, images or requests must be added there.
 2. Every route handler calls `requireSession()` and every page calls `requirePageSession()` **before** any database access. The proxy is not the authority. New routes and pages must do the same; pass `{ write: true }` for anything that changes data.
 3. Parse input with the helpers in `src/lib/api-validation.ts`.
 4. Query through `src/lib/db/` (imported as `@/lib/db`).
@@ -54,6 +54,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/logo.ts`: company logo lookup (Clearbit, Google S2 favicons, host allowlist); `src/lib/logo-lookup.ts` runs it with `after()` once the response is sent.
 - `src/lib/types.ts`: shared interfaces (`Stage`, `Application`, `SankeyPayload`, `StatsPayload`).
 - `src/lib/limits.ts`: text length limits used by both the forms and the API.
+- `src/lib/analytics.ts`: Vercel Analytics events. They carry lane kinds, never lane names or other text the owner typed.
 - `src/components/ui/`: shadcn/ui-style primitives (Radix and Tailwind).
 - `src/components/feedback.tsx`: `useFeedback()` gives `toast()` and a promise-based `confirm()`. Use them instead of `window.alert()` / `window.confirm()`.
 

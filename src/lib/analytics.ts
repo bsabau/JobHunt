@@ -1,4 +1,9 @@
 import { track } from "@vercel/analytics";
+import type { StageKind } from "@/lib/stage-kinds";
+
+// Events carry lane kinds, never lane names: a name is free text the owner
+// typed (it can name a company or a person) and would leave the app with
+// every event.
 
 export function trackLogin(success: boolean) {
   track(success ? "login_success" : "login_failure");
@@ -9,7 +14,7 @@ export function trackLogout() {
 }
 
 export function trackApplicationCreated(props: {
-  stageName: string;
+  stageKind: StageKind;
   hasSourceUrl: boolean;
   hasInterviewDate: boolean;
   hasNotes: boolean;
@@ -19,13 +24,13 @@ export function trackApplicationCreated(props: {
 
 export function trackApplicationUpdated(props: {
   stageChanged: boolean;
-  stageName: string;
+  stageKind: StageKind;
   hasInterviewDate: boolean;
 }) {
   track("application_updated", props);
 }
 
-export function trackApplicationMoved(props: { fromStageName: string; toStageName: string }) {
+export function trackApplicationMoved(props: { fromStageKind: StageKind; toStageKind: StageKind }) {
   track("application_moved", props);
 }
 
@@ -33,7 +38,7 @@ export function trackApplicationDeleted() {
   track("application_deleted");
 }
 
-export function trackStageAdded(props: { stageName: string }) {
+export function trackStageAdded(props: { stageKind: StageKind }) {
   track("stage_added", props);
 }
 

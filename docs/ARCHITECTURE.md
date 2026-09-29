@@ -61,6 +61,7 @@ There is no stats endpoint; the stats page is server-rendered only. It reads eve
    - Non-GET requests are rejected when `Origin` or `Sec-Fetch-Site` shows a cross-site caller.
    - Requests without a valid session get a 401 (API) or a redirect to `/login` (pages).
    - Guests are blocked from every non-GET API call.
+   - Pages get a fresh nonce and a policy built by `src/lib/csp.ts`. The request carries it as `Content-Security-Policy`, overwriting any the client sent: Next reads the nonce from it and puts it on its scripts, and the root layout passes it to the theme script through `x-nonce`. The response carries it as `Content-Security-Policy-Report-Only`. API responses get neither.
 2. The route handler or page calls `requireSession()` / `requirePageSession()` again. The proxy is an early gate, not the authority.
 3. Input goes through the helpers in `src/lib/api-validation.ts`.
 4. `src/lib/db/` runs the query.
@@ -78,6 +79,14 @@ Configured entirely by environment variables; there is no users table.
 | `AUTH_GUEST_PASS` | Guest password; the guest username is always `guest` |
 
 The token is `role:expires:version:signature`. `version` is an HMAC over the role's credentials, so changing a password or disabling guest access invalidates every token issued for that role. Sessions last 7 days. Tokens are stateless: logging out clears the cookie but cannot revoke a copied token before it expires.
+
+### Response headers
+
+`next.config.ts` sets on every response: `X-Frame-Options: DENY` and an enforced `Content-Security-Policy: frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
+
+The full policy is report-only for now, so violations show in the browser console and nothing is blocked. Scripts need the request's nonce (`'strict-dynamic'` trusts what they load, such as Vercel Analytics). Styles allow `'unsafe-inline'` because Radix and Recharts set style attributes. Images are limited to the logo hosts: `www.google.com`, `*.gstatic.com` (where Google's favicon service redirects) and `logo.clearbit.com`. A test fails when `ALLOWED_LOGO_HOSTS` in `logo.ts` names a host the policy does not allow. A new external host for scripts, images or requests must be added to `src/lib/csp.ts`. Before switching the header to enforcing, check a production build for violations.
+
+Analytics events (`src/lib/analytics.ts`) carry lane kinds, never lane names, since a name is free text.
 
 ## Domain model
 
@@ -230,7 +239,7 @@ scripts/
   reset-neon-db.mjs    DESTRUCTIVE, guarded: empties the tables, reseeds lanes
 tests/                 node --test files; stage-statements runs the SQL on PGlite
 src/
-  proxy.ts             auth gate, CSRF check, guest write block
+  proxy.ts             auth gate, CSRF check, guest write block, CSP nonce
   app/                 pages and API routes
   components/          client components; ui/ holds the primitives
   lib/
@@ -246,6 +255,7 @@ src/
     api-validation.ts  input parsing
     api-errors.ts      typed errors and the response mapper
     timezone.ts        zone validation, date-only arithmetic, relative ages from a given now
+    csp.ts             the Content-Security-Policy for pages (no runtime imports)
     limits.ts          text length limits shared by client and server
 ```
 
@@ -257,6 +267,7 @@ src/
 |---|---|
 | `auth` | Token signing, expiry, tampering, guest revocation |
 | `timezone` | Date-only arithmetic, relative ages from a fixed `now` |
+| `csp` | Script nonce, no eval in production, framing and plugins refused |
 | `sankey` | Graph is acyclic |
 | `transitions` | Rewind rule, TypeScript version |
 | `stage-kinds` | Rank ordering, stale kinds, colours |

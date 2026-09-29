@@ -7,7 +7,8 @@ const LOGO_LOOKUP_TIMEOUT_MS = 3000;
 
 // The third-party logo value is stored and later rendered to every viewer, so
 // only hosts we trust to serve images may reach the <img> src.
-const ALLOWED_LOGO_HOSTS = new Set(["logo.clearbit.com", "www.google.com"]);
+// The page CSP allows the same hosts for images (tests/csp.test.mjs checks).
+export const ALLOWED_LOGO_HOSTS = new Set(["logo.clearbit.com", "www.google.com"]);
 
 function asAllowedLogoUrl(value: string | undefined): string | null {
   if (!value) {

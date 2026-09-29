@@ -72,7 +72,7 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
       const created = (await response.json()) as Application;
       onCreated(created);
       trackApplicationCreated({
-        stageName: stages.find((stage) => stage.id === selectedStageId)?.name ?? "unknown",
+        stageKind: created.stageKind,
         hasSourceUrl: Boolean(form.sourceUrl.trim()),
         hasInterviewDate: Boolean(form.interviewDate),
         hasNotes: Boolean(form.notes.trim())

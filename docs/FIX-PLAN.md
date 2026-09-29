@@ -368,6 +368,11 @@ Add `Permissions-Policy: camera=(), microphone=(), geolocation=()`. Introduce a 
 
 Send the lane kind instead of the lane name in every `track*` call.
 
+Done in PR #22 (6.2 and 6.3):
+
+- 6.2: `Permissions-Policy` is added in `next.config.ts`. The proxy gives every page a fresh nonce and a `Content-Security-Policy-Report-Only` header built by `src/lib/csp.ts`. Next reads the nonce from that header and puts it on its scripts, and the root layout passes it to the `next-themes` script. The enforced `frame-ancestors 'none'` stays. Images need `*.gstatic.com` as well, because Google's favicon service redirects there. On a production build, login, stats, board, Sankey and the add dialog log no violations and all 26 logos load. Next step: switch to enforcing once a manual pass through every page on the production deployment (not a preview: the Vercel toolbar there adds its own violations), with the console open, shows none. The policy has no report endpoint. At that point also: check that the `next.config.ts` and proxy `Content-Security-Policy` headers coexist, add `upgrade-insecure-requests`, and include the error and not-found pages in the pass.
+- 6.3: analytics events carry `stageKind` / `fromStageKind` / `toStageKind` instead of lane names.
+
 ### 6.4 Documents (DOC-1)
 
 - Move the three root-level audit reports to `docs/audits/` with their dates in the filenames.
