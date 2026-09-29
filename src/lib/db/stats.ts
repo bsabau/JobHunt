@@ -2,7 +2,7 @@ import { STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
 import { RESOLVED_KINDS, STALE_EXCLUDED_KINDS, TERMINAL_KINDS, StageKind } from "@/lib/stage-kinds";
 import { buildFunnel } from "@/lib/funnel";
-import { MilestoneStatsRow, milestoneStatsStatement } from "@/lib/stats-statements";
+import { MilestoneStatsRow, milestoneStatsStatement, weeklySentStatement } from "@/lib/stats-statements";
 import { StatsPayload } from "@/lib/types";
 import { ensureSchema, transaction } from "./client";
 import { StageRow, mapStage } from "./rows";
@@ -13,7 +13,7 @@ type StatsRows = [
   (StageRow & { count: number })[],
   MilestoneStatsRow[],
   { days: string }[],
-  { day: string; count: number }[],
+  { week_start: string; sent: number }[],
   { company: string; count: number }[],
   { application_id: number; stage_id: number }[],
   { company: string; role: string; interview_date: string; stage_name: string }[],
@@ -32,11 +32,12 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
   // One request and one snapshot: the totals, lists and charts cannot disagree
   // because a write landed between two of these queries.
   const milestones = milestoneStatsStatement();
+  const weeklySent = weeklySentStatement(zone);
   const [
     stageCountRows,
     milestoneRows,
     avgCurrentStageRows,
-    createdByDayRows,
+    weeklySentRows,
     topCompanyRows,
     visitRows,
     upcomingInterviewRows,
@@ -58,12 +59,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       JOIN application_stage_entry e ON e.application_id = a.id
       WHERE s.kind <> ALL(${[...TERMINAL_KINDS]}::text[]);
     `,
-    tx`
-      SELECT to_char(day, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
-      FROM (SELECT (created_at AT TIME ZONE ${zone})::date AS day FROM applications) buckets
-      GROUP BY day
-      ORDER BY day ASC;
-    `,
+    tx.query(weeklySent.text, weeklySent.params),
     tx`
       -- Grouped the way the duplicate warning compares names (trimmed, any
       -- case), shown with the most common spelling. On a tie MODE() takes the
@@ -158,16 +154,9 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       ? Math.round(Number(milestone?.avg_days_to_interview ?? 0) * 10) / 10
       : null;
 
-  let cumulative = 0;
-  const applicationsOverTime = createdByDayRows.map((row) => {
-    const created = row.count;
-    cumulative += created;
-    return {
-      date: row.day,
-      created,
-      cumulative
-    };
-  });
+  // Weeks without applications are filled in by the page, which knows the
+  // current week (fillWeeks() with its `now`).
+  const applicationsOverTime = weeklySentRows.map((row) => ({ weekStart: row.week_start, sent: row.sent }));
 
   const topCompanies = topCompanyRows.map((row) => ({ company: row.company, count: row.count }));
 

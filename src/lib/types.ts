@@ -67,7 +67,9 @@ export interface StatsPayload {
   // denominator `applied` and how many of them got a reply, reached an
   // interview, got an offer, or sit in a closed lane now.
   rates: { applied: number; responded: number; interviewed: number; offered: number; ghosted: number };
-  applicationsOverTime: { date: string; created: number; cumulative: number }[];
+  // Applications sent per week (by applied date, weeks from Monday in the
+  // viewer's zone); weeks without any are absent.
+  applicationsOverTime: { weekStart: string; sent: number }[];
   topCompanies: { company: string; count: number }[];
   // In pipeline rank, from buildFunnel(): `advanced` is the percent of the
   // lane's applications that reached a later pipeline lane (null where none).

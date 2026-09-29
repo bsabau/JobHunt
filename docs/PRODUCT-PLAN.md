@@ -332,6 +332,14 @@ Done in PR #33:
 - The production data has no intake lane, so the total equals the old chart's total there.
 - Changing the `tz` cookie moves an application sent near midnight on Sunday to the other week.
 
+Done in PR #34:
+
+- `weeklySentStatement(zone)` in `src/lib/stats-statements.ts` counts applications by the week of their applied date, `date_trunc('week', applied_at AT TIME ZONE zone)`, returned as a `YYYY-MM-DD` Monday. It replaces the daily `created_at` buckets; `applicationsOverTime` is now `{ weekStart, sent }[]`.
+- `fillWeeks()` in the new `src/lib/weeks.ts` fills the gaps on the page, where `now` is known, and runs on to the current week, so a quiet stretch shows as empty weeks (an addition to the plan).
+- "Applications Sent per Week": bars per week and a "Total sent" line on a second axis; the tooltip reads "Week of Sep 28".
+- Tests: `tests/weeks.test.mjs` (Monday starts, month and year ends, gap filling, the current week, one and no weeks), and in `tests/milestones.test.mjs` the statement for a Sunday-night application east of UTC, across Berlin's clock change, and a card not sent yet.
+- On `dev` the running total ends at 30, the number of sent applications, over 13 weeks with applications between February and September.
+
 ---
 
 ## Phase 3: new metrics

@@ -2,21 +2,22 @@
 
 import { useMemo } from "react";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   LabelList,
   Legend,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { StatsPayload } from "@/lib/types";
-import { daysUntil } from "@/lib/timezone";
+import { daysUntil, formatDateOnly, todayInTimeZone } from "@/lib/timezone";
+import { fillWeeks, weekStartOf } from "@/lib/weeks";
 import { KIND_COLORS, KIND_LABELS, RESOLVED_KINDS, ResolvedKind, colorFor } from "@/lib/stage-kinds";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -112,10 +113,19 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
     [rankedFunnel]
   );
 
-  const timeSeriesData = useMemo(
-    () => data.applicationsOverTime.map((row) => ({ ...row, label: formatDate(row.date) })),
-    [data.applicationsOverTime]
-  );
+  // Every week up to the current one in the viewer's zone, so a quiet stretch
+  // shows as empty weeks. `now` is the page's clock, so server and browser agree.
+  // The axis shows the year only when the weeks span more than one; the
+  // tooltip always does.
+  const weeklyData = useMemo(() => {
+    const weeks = fillWeeks(data.applicationsOverTime, weekStartOf(todayInTimeZone(timeZone, new Date(now))));
+    const years = new Set(weeks.map((week) => week.weekStart.slice(0, 4)));
+    return weeks.map((row) => ({
+      ...row,
+      label: years.size > 1 ? `${formatDate(row.weekStart)} '${row.weekStart.slice(2, 4)}` : formatDate(row.weekStart),
+      fullLabel: formatDateOnly(row.weekStart)
+    }));
+  }, [data.applicationsOverTime, timeZone, now]);
 
   // The label beside each bar: the count, and for a pipeline lane the share
   // that went on to the next one.
@@ -393,48 +403,39 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
 
           <Card>
             <CardHeader>
-              <CardTitle>Applications Over Time</CardTitle>
+              <CardTitle>Applications Sent per Week</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                By the date each was sent, weeks from Monday, with the running total.
+              </p>
             </CardHeader>
             <CardContent className="h-[320px]">
-              {timeSeriesData.length > 0 ? (
+              {weeklyData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
-                  <AreaChart data={timeSeriesData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
-                    <defs>
-                      <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.5} />
-                        <stop offset="100%" stopColor="#60a5fa" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="createdGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#34d399" stopOpacity={0.5} />
-                        <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
+                  <ComposedChart data={weeklyData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
                     <CartesianGrid stroke="rgba(148,163,184,0.15)" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#94a3b8" }} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
-                    <Tooltip contentStyle={tooltipStyle} />
+                    <YAxis yAxisId="week" allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
+                    <YAxis yAxisId="total" orientation="right" allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
+                    <Tooltip
+                      contentStyle={tooltipStyle}
+                      labelFormatter={(_label, payload) => `Week of ${payload?.[0]?.payload?.fullLabel ?? _label}`}
+                    />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Area
+                    <Bar yAxisId="week" dataKey="sent" name="Sent that week" fill="#34d399" radius={[4, 4, 0, 0]} />
+                    <Line
+                      yAxisId="total"
                       type="monotone"
                       dataKey="cumulative"
-                      name="Cumulative"
+                      name="Total sent"
                       stroke="#60a5fa"
                       strokeWidth={2}
-                      fill="url(#cumGrad)"
+                      dot={false}
                     />
-                    <Area
-                      type="monotone"
-                      dataKey="created"
-                      name="Added that day"
-                      stroke="#34d399"
-                      strokeWidth={2}
-                      fill="url(#createdGrad)"
-                    />
-                  </AreaChart>
+                  </ComposedChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  No data.
+                  No application sent yet.
                 </div>
               )}
             </CardContent>
