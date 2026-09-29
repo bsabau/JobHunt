@@ -36,6 +36,12 @@ test("a card added mid-pipeline does not inflate the share of the lanes before i
   assert.equal(shares(funnel).Applied, 0);
 });
 
+test("the order of a card's visits does not matter (the query returns them unordered)", () => {
+  const inOrder = buildFunnel(BOARD, visits({ 1: [1, 3, 4], 2: [1, 3], 3: [1] }));
+  const reversed = buildFunnel(BOARD, visits({ 1: [4, 3, 1], 2: [3, 1], 3: [1] }));
+  assert.deepEqual(shares(reversed), shares(inOrder));
+});
+
 test("a skipped lane still counts as going further", () => {
   const funnel = buildFunnel(BOARD, visits({ 1: [1, 4] }));
   assert.equal(shares(funnel).Applied, 100);

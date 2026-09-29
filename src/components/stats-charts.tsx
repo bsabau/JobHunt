@@ -363,7 +363,7 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
               </CardHeader>
               <CardContent className="h-[320px]">
                 <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
-                  <BarChart data={funnelData} layout="vertical" margin={{ top: 8, right: 96, left: 8, bottom: 8 }}>
+                  <BarChart data={funnelData} layout="vertical" margin={{ top: 8, right: 132, left: 8, bottom: 8 }}>
                     <CartesianGrid stroke="rgba(148,163,184,0.15)" horizontal={false} />
                     <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
                     <YAxis type="category" dataKey="stage" width={90} tick={{ fontSize: 12, fill: "#94a3b8" }} />
