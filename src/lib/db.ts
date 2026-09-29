@@ -49,10 +49,10 @@ function transaction(queries: (tx: TransactionSql) => TransactionQuery[]) {
   return getSql().transaction((tx) => queries(tx));
 }
 
-// "created" is a synthetic marker on legacy entry-transition rows and "New"
-// labels the Sankey entry node, so neither may be used to name a real stage.
-const LEGACY_CREATED_STAGE = "created";
-const RESERVED_STAGE_NAMES = new Set([LEGACY_CREATED_STAGE, "new"]);
+// "New" labels the Sankey entry node, and "created" marked creation in early
+// history rows (removed by migration 1730000010000); neither may name a real
+// stage, since the analytics would merge it with those.
+const RESERVED_STAGE_NAMES = new Set(["created", "new"]);
 
 // Label for applications that were created straight into an outcome lane.
 const OUTCOME_DIRECT_ENTRY = "Added directly";
@@ -232,9 +232,7 @@ export async function addStage(name: string, kind: StageKind = "active"): Promis
     throw new InvalidInputError("Stage name is required");
   }
 
-  // "New" labels the Sankey entry node and "created" is reserved by legacy
-  // transition rows, so a real stage using either name would be merged or
-  // filtered out of the analytics.
+  // Reserved names: see RESERVED_STAGE_NAMES.
   if (RESERVED_STAGE_NAMES.has(trimmed.toLowerCase())) {
     throw new InvalidInputError(`"${trimmed}" is a reserved stage name`);
   }
@@ -627,8 +625,7 @@ export async function getSankeyData(): Promise<SankeyPayload> {
     sql`
       SELECT t.from_status AS fromStatus, t.to_status AS toStatus, a.company
       FROM application_transitions t
-      JOIN applications a ON a.id = t.application_id
-      WHERE LOWER(t.from_status) <> LOWER(${LEGACY_CREATED_STAGE}) AND LOWER(t.to_status) <> LOWER(${LEGACY_CREATED_STAGE});
+      JOIN applications a ON a.id = t.application_id;
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT
@@ -698,9 +695,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT COUNT(*)::int AS count
-      FROM application_transitions
-      WHERE LOWER(from_status) <> LOWER(${LEGACY_CREATED_STAGE})
-        AND LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE});
+      FROM application_transitions;
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400.0), 0) AS days
@@ -747,8 +742,6 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       FROM (
         SELECT (transitioned_at AT TIME ZONE ${zone})::date AS day
         FROM application_transitions
-        WHERE LOWER(from_status) <> LOWER(${LEGACY_CREATED_STAGE})
-          AND LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE})
       ) buckets
       GROUP BY day
       ORDER BY day ASC;
@@ -774,7 +767,6 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
         UNION ALL
         SELECT application_id, to_status AS stage
         FROM application_transitions
-        WHERE LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE})
       ) visits
       GROUP BY stage;
     ` as Promise<Record<string, unknown>[]>,
@@ -782,8 +774,6 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       SELECT from_status AS from_stage, to_status AS to_stage,
              COUNT(DISTINCT application_id)::int AS count
       FROM application_transitions
-      WHERE LOWER(from_status) <> LOWER(${LEGACY_CREATED_STAGE})
-        AND LOWER(to_status) <> LOWER(${LEGACY_CREATED_STAGE})
       GROUP BY from_status, to_status;
     ` as Promise<Record<string, unknown>[]>,
     sql`
@@ -823,7 +813,6 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
         FROM application_transitions t
         WHERE t.application_id = a.id
           AND t.to_status = s.name
-          AND LOWER(t.from_status) <> LOWER(${LEGACY_CREATED_STAGE})
         ORDER BY t.transitioned_at DESC, t.id DESC
         LIMIT 1
       ) last_move ON true

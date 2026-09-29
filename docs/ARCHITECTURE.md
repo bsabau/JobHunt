@@ -84,15 +84,15 @@ The token is `role:expires:version:signature`. `version` is an HMAC over the rol
 ```
 stages
   id          SERIAL PK
-  name        TEXT NOT NULL UNIQUE          -- case-sensitive
-  sort_order  INTEGER NOT NULL UNIQUE       -- DEFERRABLE INITIALLY DEFERRED
+  name        TEXT NOT NULL UNIQUE          -- also unique on LOWER(name); not blank
+  sort_order  INTEGER NOT NULL UNIQUE       -- DEFERRABLE INITIALLY DEFERRED; >= 0
   kind        TEXT NOT NULL DEFAULT 'active'
               CHECK (kind IN ('intake','active','interview','offer','rejected','closed'))
 
 applications
   id              SERIAL PK
-  company         TEXT NOT NULL
-  role            TEXT NOT NULL
+  company         TEXT NOT NULL     -- not blank
+  role            TEXT NOT NULL     -- not blank
   notes           TEXT
   interview_date  DATE
   source_url      TEXT
@@ -105,7 +105,7 @@ application_transitions
   id              SERIAL PK
   application_id  INTEGER NOT NULL -> applications(id) ON DELETE CASCADE
   from_status     TEXT NOT NULL     -- a stage NAME, not an id
-  to_status       TEXT NOT NULL     -- a stage NAME, not an id
+  to_status       TEXT NOT NULL     -- a stage NAME, not an id; <> from_status
   transitioned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
 schema_migrations
@@ -113,9 +113,18 @@ schema_migrations
   applied_at  TIMESTAMPTZ
 ```
 
-The live database also holds two leftovers that no code reads: `application_transitions_backup` (written once by migration `1730000002000`) and `pgmigrations` (from an earlier migration tool).
+Indexes beyond the primary keys and unique constraints: `application_transitions (application_id, transitioned_at, id)`, which serves the first/latest-transition subqueries in both directions, and `applications (stage_id)`.
 
-The only indexes are the primary keys and the two unique constraints on `stages`. Neither foreign key column is indexed.
+"Not blank" means `CHECK (btrim(col) <> '')`. The constraints repeat what the API validates, so a script cannot store what the app would not.
+
+Migration notes:
+
+- Migrations are forward-only; an applied file is never edited.
+- `1730000001000` (adds `interview_date`) is a no-op on a fresh database, because the first migration was later edited to create the column.
+- `1730000002000` rewrote history using raw `sort_order`, before outcome lanes ranked last. It must never run again on current data, which `schema_migrations` guarantees.
+- `1730000007000` dropped `application_transitions_backup` and `pgmigrations`; production's rows were exported first to a local, uncommitted `backups/` file.
+- `1730000010000` deletes legacy `created` rows and any self-loop rows before adding the no-self-loop check.
+- The runner serialises concurrent runs with `pg_advisory_xact_lock` inside each migration's transaction, then re-checks `schema_migrations`. A session-level lock would not survive Neon's transaction pooler.
 
 ### Lane kinds
 
@@ -221,6 +230,7 @@ src/
 | `transitions` | Rewind rule, TypeScript version |
 | `stage-kinds` | Rank ordering, stale kinds, colours |
 | `stage-move` | The production move SQL on PGlite, checked against the TypeScript version |
+| `schema` | Indexes, constraints and cleanup built by the real migrations on PGlite; migrations re-run safely |
 
 ## Known limitations
 

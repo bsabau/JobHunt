@@ -13,3 +13,6 @@ pnpm-debug.log*
 *.sqlite-wal
 tsconfig.tsbuildinfo
 next-env.d.ts
+
+# Local exports of production data (personal data; never commit)
+/backups/
