@@ -196,6 +196,18 @@ describe("schema built by the migrations", () => {
       { application_id: moved.id, stage_id: screening.id, stage_name: "Screening" }
     ]);
 
+    // Equal timestamps: the edge with the lower id is the first one, even when
+    // it was inserted second, as in the move statement's ordering.
+    const [tied] = await sql`INSERT INTO applications (company, role, stage_id) VALUES ('Tied', 'Engineer', ${appliedId}) RETURNING id`;
+    const [late] = await sql`
+      INSERT INTO application_transitions (application_id, from_status, from_stage_id, to_status, to_stage_id, transitioned_at)
+      VALUES (${tied.id}, 'Applied', ${appliedId}, 'Screening', ${screening.id}, '2026-01-05T00:00:00Z') RETURNING id`;
+    await sql`
+      INSERT INTO application_transitions (id, application_id, from_status, from_stage_id, to_status, to_stage_id, transitioned_at)
+      VALUES (${late.id - 1000}, ${tied.id}, 'Screening', ${screening.id}, 'Applied', ${appliedId}, '2026-01-05T00:00:00Z')`;
+    const [tiedEntry] = await sql`SELECT stage_name FROM application_entry_stage WHERE application_id = ${tied.id}`;
+    assert.equal(tiedEntry.stage_name, "Screening");
+
     // A deleted entry lane keeps its name.
     await sql`DELETE FROM stages WHERE id = ${screening.id}`;
     assert.deepEqual((await entries())[1], { application_id: moved.id, stage_id: null, stage_name: "Screening" });

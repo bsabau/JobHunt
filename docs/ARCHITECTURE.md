@@ -133,7 +133,7 @@ Migration notes:
 - `1730000010000` deletes legacy `created` rows and any self-loop rows before adding the no-self-loop check. It must run only once: since `1730000012000`, an edge from a deleted lane into a new lane of the same name is legitimate, and a re-run would delete it.
 - `1730000011000` adds `from_stage_id` / `to_stage_id` and fills them by name; names with no lane stay `NULL`. It must run only once: after a lane is deleted and another created under its name, a re-run would attach the old history to the new lane.
 - `1730000012000` replaces the name-based no-self-loop check with `application_transitions_distinct_lanes`, which compares ids, so a move from a deleted lane into a new lane of the same name can be stored.
-- `1730000013000` creates the view `application_entry_stage`. It reads `applications.stage_id` and the transitions' `from_stage_id`, `from_status`, `transitioned_at`; a migration that drops or retypes one of those must drop and re-create the view.
+- `1730000013000` creates the view `application_entry_stage`. It reads `applications.id` and `.stage_id`, `stages.id` and `.name`, and the transitions' `id`, `application_id`, `from_stage_id`, `from_status` and `transitioned_at`; Postgres refuses to drop or retype any of those while the view exists, so such a migration must drop and re-create the view. `CREATE OR REPLACE VIEW` can only append columns: renaming or retyping a view column also needs `DROP VIEW` first.
 - The runner serialises concurrent runs with `pg_advisory_xact_lock` inside each migration's transaction, then re-checks `schema_migrations`. A session-level lock would not survive Neon's transaction pooler.
 
 ### Lane kinds

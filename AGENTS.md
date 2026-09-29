@@ -64,7 +64,7 @@ These are easy to break and not obvious from any single file.
 - **The rank rule exists twice**: `compareStageRank()` in `stage-kinds.ts` and the `ranked_stages` CTE in `stageMoveStatement()` in `stage-statements.ts`. Change both together.
 - **The rewind rule exists twice**: `rewindTransitionPath()` in `transitions.ts` and `stageMoveStatement()` in `stage-statements.ts`. `tests/stage-statements.test.mjs` runs the SQL on PGlite and fails when the two disagree; add a scenario there when you change either.
 - **`application_transitions` is the current path, not an audit log.** Backward moves delete and rewrite rows.
-- **The entry lane comes from the view `application_entry_stage`.** Read it instead of deriving "first edge's start, else current lane" again.
+- **The entry lane comes from the view `application_entry_stage`.** Read it instead of deriving "first edge's start, else current lane" again. The only other copy is the TypeScript twin in `transitions.ts`; change both together.
 - **Transitions reference lanes by id** (`from_stage_id`, `to_stage_id`); join history to lanes by id, never by name. `from_status` / `to_status` hold the lane's name: a rename rewrites them in the same statement (`stageUpdateStatement()`), and after a lane is deleted its id becomes `NULL` and the name is all that remains. `new` and `created` are reserved names.
 - **Stage moves need `expectedStageId`.** It is the concurrency guard; a mismatch returns 409.
 - **Notes are owner-only.** `listApplications()` returns them to any caller, so every caller that serves a guest must set `notes` to `null`.

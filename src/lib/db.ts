@@ -111,7 +111,12 @@ async function ensureSchema(): Promise<void> {
             SELECT 1
             FROM information_schema.columns
             WHERE table_schema = 'public' AND table_name = 'stages' AND column_name = 'kind'
-          ) AS has_stage_kind;
+          ) AS has_stage_kind,
+          EXISTS (
+            SELECT 1
+            FROM information_schema.views
+            WHERE table_schema = 'public' AND table_name = 'application_entry_stage'
+          ) AS has_entry_stage_view;
       `) as Record<string, unknown>[];
 
       const row = checks[0];
@@ -119,7 +124,8 @@ async function ensureSchema(): Promise<void> {
         !row.has_stages ||
         !row.has_applications ||
         !row.has_application_transitions ||
-        !row.has_stage_kind
+        !row.has_stage_kind ||
+        !row.has_entry_stage_view
       ) {
         throw new Error("Database schema is missing or outdated. Run `npm run migrate:up`.");
       }

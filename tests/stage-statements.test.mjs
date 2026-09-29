@@ -253,6 +253,19 @@ describe("stage move statement", () => {
     ]);
   });
 
+  test("rewinds after the entry lane was deleted still match the twin", async () => {
+    const app = await createApp("Applied");
+    await moveAll(app, "Screening", "Interview");
+    await sql`DELETE FROM stages WHERE name = 'Applied'`;
+    // Onto a visited lane: the edge into Screening is kept.
+    const { after: kept } = await move(app, "Screening");
+    assert.deepEqual(idShape(kept), [`Applied#-->Screening#${await idOf("Screening")}`]);
+    // Below every lane on the path: with the entry lane gone nothing is
+    // cleared, and the path reconnects from the deleted entry lane.
+    const { after: reconnected } = await move(app, "Wishlist");
+    assert.deepEqual(idShape(reconnected), [`Applied#-->Wishlist#${await idOf("Wishlist")}`]);
+  });
+
   test("a rewind whose boundary cannot be resolved leaves the history alone", async () => {
     // Rows as the previous code wrote them (names only), e.g. during a deploy.
     const app = await createApp("Offer");
