@@ -233,9 +233,9 @@ A rename is refused (409) when another lane has the name in any case. Charts gro
 | Replied | The first edge after the application was sent whose target is not `intake` or `closed` (a deleted lane counts); for a card that entered in intake, after the edge that sent it, compared by `(transitioned_at, id)`. Also true, with no time, for a card that entered in an `interview`, `offer` or `rejected` lane, and for any card that reached an interview or an offer (view `application_milestones`) |
 | Response, interview, offer rates | Shares of the sent applications (applied at set) that replied, reached an `interview` lane (or entered in one), reached an `offer` lane (or entered in one). On the current path: a card moved back out of an interview lane no longer counts as interviewed |
 | Ghosted | Share of the sent applications currently in a `closed` lane |
+| Open count | Total minus applications in a resolved lane |
 
 A deleted entry lane has no kind, so its cards count as sent at creation (as in `application_applied_at`); for a card that entered in a since-deleted wishlist lane, the edge that sent it then counts as its reply.
-| Open count | Total minus applications in a resolved lane |
 
 ## Time zones
 
