@@ -1,12 +1,12 @@
 // Statements for the stats page, loadable straight from Node so the tests can
 // run the exact text against an in-process Postgres
-// (tests/stats-statements.test.mjs). src/lib/db/stats.ts runs them inside the
+// (tests/milestones.test.mjs). src/lib/db/stats.ts runs them inside the
 // page's one read-only snapshot with `tx.query()`.
 
 import { type SqlStatement, compileSql, sqlFragment } from "./stage-statements.ts";
 import { CLOSED_KIND } from "./stage-kinds.ts";
 
-// Numeric aggregates arrive from the driver as strings; see MilestoneStatsRow.
+// The driver returns numeric aggregates (AVG) as strings.
 export interface MilestoneStatsRow {
   applied: number;
   responded: number;

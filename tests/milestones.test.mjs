@@ -134,6 +134,7 @@ test("from the wishlist, the reply is the edge after the one that sent it", asyn
   assert.equal(m.appliedAt, await edgeAt(app, 0));
   assert.equal(m.respondedAt, await edgeAt(app, 1));
   assert.equal(m.firstInterviewAt, await edgeAt(app, 1));
+  assert.deepEqual([m.offered, m.offeredAt], [false, null], "an interview is not an offer");
 });
 
 test("from the wishlist straight to a rejection: never sent, never counted", async () => {
@@ -161,6 +162,52 @@ test("created directly in an offer lane: offered and responded", async () => {
   const app = await createApp("Offer");
   const m = await milestones(app);
   assert.deepEqual([m.responded, m.offered, m.offeredAt], [true, true, null]);
+});
+
+test("created directly in a rejected lane: responded", async () => {
+  const app = await createApp("Rejected");
+  assert.equal((await milestones(app)).responded, true);
+});
+
+test("from the wishlist straight to an offer: the offer implies a reply", async () => {
+  const app = await createApp("Wishlist");
+  await move(app, "Offer");
+  const m = await milestones(app);
+  assert.deepEqual([m.responded, m.respondedAt, m.offered], [true, null, true]);
+  assert.equal(m.offeredAt, await edgeAt(app, 0));
+});
+
+test("the first interview is the earliest edge into any interview lane", async () => {
+  const change = stageUpdateStatement(await idOf("Screening"), { kind: "interview" });
+  await pg.query(change.text, change.params);
+  const app = await createApp("Applied");
+  await move(app, "Screening", "Interview");
+  assert.equal((await milestones(app)).firstInterviewAt, await edgeAt(app, 0));
+});
+
+test("a move into an intake lane is not a reply", async () => {
+  // An intake lane placed after the pipeline, so moving into it is forward.
+  await sql`INSERT INTO stages (name, sort_order, kind) VALUES ('Later', 7, 'intake')`;
+  const app = await createApp("Applied");
+  await move(app, "Later");
+  assert.equal((await milestones(app)).responded, false);
+});
+
+test("an edge sharing the sent edge's time is compared by id, so it is still the reply", async () => {
+  const app = await createApp("Wishlist");
+  await move(app, "Applied", "Screening");
+  await sql`UPDATE application_transitions SET transitioned_at = '2026-02-01T00:00:00Z' WHERE application_id = ${app}`;
+  const m = await milestones(app);
+  assert.deepEqual([m.appliedAt, m.responded, m.respondedAt], ["2026-02-01T00:00:00.000Z", true, "2026-02-01T00:00:00.000Z"]);
+});
+
+test("a deleted entry lane leaves the flags false, never NULL", async () => {
+  await sql`INSERT INTO stages (name, sort_order, kind) VALUES ('Temporary', 7, 'active')`;
+  const app = await createApp("Temporary");
+  await move(app, "Ghosted");
+  await sql`DELETE FROM stages WHERE name = 'Temporary'`;
+  const [row] = await sql`SELECT responded, interviewed, offered FROM application_milestones WHERE application_id = ${app}`;
+  assert.deepEqual(row, { responded: false, interviewed: false, offered: false });
 });
 
 test("a rewind out of the interview lane clears 'interviewed'", async () => {
@@ -198,10 +245,13 @@ test("the stats statement: counts over sent applications, and the average days t
   await move(ghosted, "Ghosted");
   await createApp("Applied");
   await createApp("Wishlist");
+  // Interviewed, but with no known interview time: counts in the rate, not in
+  // the average's base.
+  await createApp("Interview");
   const row = await stats();
   assert.deepEqual(
     [row.applied, row.responded, row.interviewed, row.offered, row.ghosted, row.interview_count],
-    [4, 2, 1, 1, 1, 1]
+    [5, 3, 2, 1, 1, 1]
   );
   const expected = (Date.parse(await edgeAt(interviewed, 0)) - Date.parse(CREATED)) / 86_400_000;
   assert.ok(Math.abs(Number(row.avg_days_to_interview) - expected) < 1e-6);

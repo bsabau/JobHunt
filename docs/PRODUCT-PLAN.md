@@ -255,12 +255,12 @@ Details the migration must get right:
 
 Done in PR #32:
 
-- Migration `1730000017000` adds the view `application_milestones` as planned, with one addition: an interview or an offer also counts as a reply, so a card sent from a wishlist straight into an interview lane (whose only edge is the one that sent it) is not "interviewed but no reply". Its `responded_at` stays `NULL`.
+- Migrations `1730000017000` and `1730000018000` add the view `application_milestones` as planned (18 keeps the three flags from being `NULL` when the entry lane was deleted), with one addition: an interview or an offer also counts as a reply, so a card sent from a wishlist straight into an interview lane (whose only edge is the one that sent it) is not "interviewed but no reply". Its `responded_at` stays `NULL`.
 - `milestoneStatsStatement()` in the new `src/lib/stats-statements.ts` returns the counts and the average days to an interview in one row, inside the page's snapshot (`tx.query()`). `StatsPayload.rates` carries the counts; the page computes the percentages.
 - Tiles: total, response, interview, offer, ghosted, average days in current stage, average days to interview, stale; two rows of four. Each rate shows "N of M sent", and a line under the tiles says the rates describe the current path. "Stage Transitions", "Avg Days Since Created" and the "Daily Stage Transitions" chart are gone with their queries; the funnel now spans the row.
 - `CLOSED_KIND` joins the named kinds in `stage-kinds.ts`.
 - On `dev`, before and after: every number that stays is identical ("Avg Days to Interview" 17.6 on 3 applications), and the rates (30 sent, 14 replied, 3 interviewed, 0 offers, 11 ghosted) match a hand count made without the view.
-- `tests/milestones.test.mjs` covers the plan's scenarios plus the wishlist-to-interview case and a card created in an offer lane; breaking the closed-lane exclusion, the "after the sent edge" comparison, the interview implication, the entry-lane cases or the intake condition fails it.
+- `tests/milestones.test.mjs` covers the plan's scenarios plus: wishlist to interview and to offer, cards created in offer and rejected lanes, two interview lanes, a move into an intake lane placed after the pipeline, two edges with the same time, and a deleted entry lane (flags strictly `false`). Thirteen deliberate breaks of the view and the rates statement each fail it. It also holds the rates statement's tests; later steps add their statement tests there or start `tests/stats-statements.test.mjs`.
 
 ### 2.2 One funnel chart (R-1)
 

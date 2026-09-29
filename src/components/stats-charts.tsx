@@ -580,8 +580,6 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
             </CardContent>
           </Card>
 
-
-
           {data.topCompanies.some((row) => row.count > 1) && (
             <Card>
               <CardHeader>
