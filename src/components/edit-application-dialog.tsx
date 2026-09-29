@@ -19,6 +19,7 @@ import { trackApplicationUpdated } from "@/lib/analytics";
 import { TEXT_LIMITS } from "@/lib/limits";
 import { applicationsForCompany, duplicateCompanyWarning } from "@/lib/utils";
 import { useFeedback } from "@/components/feedback";
+import { ApplicationTimeline } from "@/components/application-timeline";
 
 interface EditApplicationDialogProps {
   open: boolean;
@@ -27,6 +28,10 @@ interface EditApplicationDialogProps {
   applications: Application[];
   stages: Stage[];
   onUpdated: (application: Application) => void;
+  timeZone: string;
+  now: number;
+  // Where focus goes on close; the dialog has no trigger element to return to.
+  onCloseAutoFocus?: (event: Event) => void;
 }
 
 function normalizeDateForInput(value: string | null): string {
@@ -191,15 +196,27 @@ export function EditApplicationDialog({
   application,
   applications,
   stages,
-  onUpdated
+  onUpdated,
+  timeZone,
+  now,
+  onCloseAutoFocus
 }: EditApplicationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>Edit application</DialogTitle>
           <DialogDescription>Update details and interview planning for this application.</DialogDescription>
         </DialogHeader>
+        {application ? (
+          <ApplicationTimeline
+            // A moved or edited card loads its path again.
+            key={`${application.id}-${application.stageId}-${application.updatedAt}`}
+            applicationId={application.id}
+            timeZone={timeZone}
+            now={now}
+          />
+        ) : null}
         {application ? (
           <EditApplicationForm
             key={application.id}

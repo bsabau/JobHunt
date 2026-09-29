@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { AddApplicationDialog } from "@/components/add-application-dialog";
 import { ApplicationSearch } from "@/components/application-search";
 import { EditApplicationDialog } from "@/components/edit-application-dialog";
+import { ApplicationDetailsDialog } from "@/components/application-details-dialog";
 import { StageDialog } from "@/components/stage-dialog";
 import { useFeedback } from "@/components/feedback";
 import {
@@ -123,7 +124,8 @@ interface KanbanApplicationCardProps {
   now: number;
   onDragStart: () => void;
   onDragEnd: () => void;
-  onEdit: () => void;
+  // Opens the edit dialog for the owner, the read-only details for the guest.
+  onOpen: () => void;
   // Lanes for the "Move to" menu; a keyboard and touch alternative to dragging.
   stages: Stage[];
   onMove: (stageId: number) => void;
@@ -141,7 +143,7 @@ function KanbanApplicationCard({
   now,
   onDragStart,
   onDragEnd,
-  onEdit,
+  onOpen,
   stages,
   onMove
 }: KanbanApplicationCardProps) {
@@ -174,6 +176,17 @@ function KanbanApplicationCard({
     }, 80);
   }
 
+  // The card's blur does not reliably hide the tooltip once a dialog takes
+  // focus, and it would sit on top of the dialog, so opening hides it first.
+  function openCard() {
+    if (hideTimerRef.current !== null) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    setNotesVisible(false);
+    onOpen();
+  }
+
   return (
     <>
       <div
@@ -186,24 +199,20 @@ function KanbanApplicationCard({
       >
         <Card
           // Focusable so the board works from the keyboard: Tab to a card, Enter
-          // to edit it, or the "Move to" menu to change its lane.
+          // to open it, or the "Move to" menu to change its lane.
           tabIndex={0}
           role="group"
           aria-label={`${app.company}, ${app.role}, in ${app.stageName}`}
-          onKeyDown={
-            readOnly
-              ? undefined
-              : (event) => {
-                  if (event.key === "Enter" && event.target === event.currentTarget) {
-                    event.preventDefault();
-                    onEdit();
-                  }
-                }
-          }
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && event.target === event.currentTarget) {
+              event.preventDefault();
+              openCard();
+            }
+          }}
           draggable={!readOnly && !pending}
           onDragStart={readOnly || pending ? undefined : onDragStart}
           onDragEnd={readOnly || pending ? undefined : onDragEnd}
-          onDoubleClick={readOnly ? undefined : onEdit}
+          onDoubleClick={openCard}
           className={`${
             readOnly ? "cursor-default" : pending ? "cursor-wait opacity-60" : "cursor-move"
           } border-border/70 bg-card/80 backdrop-blur transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
@@ -299,6 +308,19 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   const [stages, setStages] = useState<Stage[]>(initialStages);
   const [editingApplication, setEditingApplication] = useState<Application | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  // The card dialogs open without a trigger element, so Radix has nowhere to
+  // return focus; put it back on the card so the keyboard user keeps their place.
+  function focusEditedCard(event: Event) {
+    const card = editingApplication
+      ? document.querySelector<HTMLElement>(`[data-application-id="${editingApplication.id}"] [role="group"]`)
+      : null;
+    if (card) {
+      event.preventDefault();
+      card.focus();
+    }
+  }
   const [draggedItem, setDraggedItem] = useState<DragItem>(null);
   const [stageDropTargetId, setStageDropTargetId] = useState<number | null>(null);
   const [binHover, setBinHover] = useState(false);
@@ -682,9 +704,13 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                         now={now}
                         onDragStart={() => setDraggedItem({ type: "application", id: app.id })}
                         onDragEnd={onAnyDragEnd}
-                        onEdit={() => {
+                        onOpen={() => {
                           setEditingApplication(app);
-                          setEditOpen(true);
+                          if (readOnly) {
+                            setDetailsOpen(true);
+                          } else {
+                            setEditOpen(true);
+                          }
                         }}
                         stages={stages}
                         onMove={(stageId) => void moveCard(app.id, stageId, { refocus: true })}
@@ -737,8 +763,21 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
               setApplications((current) => current.map((item) => (item.id === updated.id ? updated : item)));
               setEditingApplication(updated);
             }}
+            timeZone={timeZone}
+            now={now}
+            onCloseAutoFocus={focusEditedCard}
           />
         </>
+      )}
+      {readOnly && (
+        <ApplicationDetailsDialog
+          application={editingApplication}
+          open={detailsOpen}
+          onOpenChange={setDetailsOpen}
+          timeZone={timeZone}
+          now={now}
+          onCloseAutoFocus={focusEditedCard}
+        />
       )}
     </section>
   );

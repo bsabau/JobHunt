@@ -119,6 +119,14 @@ These repeat `AGENTS.md` where a product step is likely to trip over it.
 - The guest can open the details dialog by keyboard and mouse, sees no notes field and no edit controls.
 - An unknown id returns 404; a request without a session returns 401.
 
+Done in PR #30:
+
+- `GET /api/applications/:id/timeline` returns `{ lanes }`: the entry lane first, entered at `created_at`, then every lane moved into. This is flatter than the planned `{ entry, steps }`: the path is contiguous, so each step's "from" is the lane before it. One statement (`applicationTimelineStatement()` in the new `src/lib/application-statements.ts`) returns the steps as JSON, so the path is one round trip.
+- The edit dialog shows a "History" section: each lane with the date entered and the days spent there ("so far" for the current lane, "ago" for an outcome lane). It reloads when the card moves or is saved. The dialog now scrolls when it is taller than the screen.
+- The guest opens a read-only details dialog with Enter or a double-click: company, role, lane, applied date, interview date, link and history, and no notes field (decision 4).
+- Fixed on the way: the card's notes tooltip stayed on top of an opened dialog, and closing a card dialog left focus nowhere. Focus now returns to the card.
+- `tests/timeline.test.mjs` (PGlite, moves made with `stageMoveStatement()`) covers a card with no moves, forward moves, a rewind onto a visited lane (original time kept), a rewind below the entry lane, renamed and deleted lanes (entry lane included) and an unknown id.
+
 ### 1.2 Board filter (F-4)
 
 **Goal:** narrow the board instead of jumping to one card.

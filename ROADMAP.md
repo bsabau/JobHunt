@@ -7,24 +7,18 @@ Feature backlog, in priority order. The app is in daily use, so these are the ne
 - **Board search**: find a card by company or role and jump to it.
 - **Stats page** (`/`): pipeline totals, funnel and drop-off, applications and transitions over time, outcomes, upcoming interviews.
 - **Stale alerts**: cards that have sat for 14 days or more in a lane that can go stale (not a wishlist, offer or outcome lane) are flagged on the board and listed on the stats page.
+- **Application timeline**: the card dialog shows the lanes a card passed through, with dates and time in each; the guest gets a read-only version.
 - **Sankey flow** (`/sankey`), lane types that carry the meaning of each lane, the applied date, and moving cards by keyboard.
 
 ## Next
 
 In the order of `docs/PRODUCT-PLAN.md`.
 
-### 1. Application timeline (F-3)
-
-**Why:** see how one application moved and how long it sat in each lane.
-
-- Show the path with dates in the card dialog. The rows are already in `application_transitions`; the dialog needs an endpoint that returns them for one card, owner and guest alike (no notes involved).
-- The path shows where the application stands, not every move ever made: rewinds rewrite it.
-
-### 2. Board filter (F-4)
+### 1. Board filter (F-4)
 
 The search jumps to a card; a filter would narrow the board instead. A text filter over company and role, and a toggle that hides `rejected` and `closed` lanes. Client side only.
 
-### 3. A stats page that says each thing once
+### 2. A stats page that says each thing once
 
 Response, interview, offer and ghosted rates; one funnel chart instead of three; applications per week (M-1, R-1 to R-4).
 

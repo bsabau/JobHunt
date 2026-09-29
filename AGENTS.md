@@ -14,7 +14,7 @@ A single-owner job application tracker with three views: pipeline stats (`/`), a
 - `npm run build`: production build
 - `npm run check`: lint, typecheck and every test. Run it before every commit; CI runs it on every push.
 - `npm run lint`, `npm run typecheck`, `npm test`: the three parts on their own
-- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`)
+- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`)
 - `npm run migrate:up`: apply migrations to `DATABASE_URL`. Refuses when that is production.
 - `npm run migrate:prod`: apply migrations to `PRODUCTION_DATABASE_URL`. Asks for the endpoint id; only run it when the user asks.
 - `npm run migrate:create -- <name>`: scaffold a migration
@@ -45,9 +45,10 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 
 ### Key modules
 
-- `src/lib/db/`: all database access, through Neon's `sql` tagged template. `index.ts` is the public API; `client.ts` (connection, `transaction()`, error helpers, `ensureSchema`), `schema-version.ts` (`LATEST_MIGRATION`), `rows.ts` (mappers), `stages.ts`, `applications.ts`, `sankey.ts`, `stats.ts`.
+- `src/lib/db/`: all database access, through Neon's `sql` tagged template. `index.ts` is the public API; `client.ts` (connection, `transaction()`, error helpers, `ensureSchema`), `schema-version.ts` (`LATEST_MIGRATION`), `rows.ts` (mappers), `stages.ts`, `applications.ts`, `sankey.ts`, `stats.ts`, `timeline.ts`.
 - `src/lib/stage-kinds.ts`: lane kinds, pipeline rank, chart colours. No runtime imports, so the verify scripts can load it directly.
 - `src/lib/stage-statements.ts`: the SQL that moves cards and renames lanes, compiled to text and parameters. No runtime imports, so the tests run it on PGlite.
+- `src/lib/application-statements.ts`: read statements about one application (its timeline), as text and parameters. No runtime imports, so the tests run them on PGlite.
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
 - `src/lib/sankey.ts`: builds the Sankey graph as a DAG.
 - `src/lib/auth.ts`: session tokens, credential check, `requireSession()`.

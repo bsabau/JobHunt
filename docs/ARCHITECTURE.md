@@ -46,6 +46,7 @@ All bodies are JSON and must be sent with `Content-Type: application/json` (415 
 | `PUT /api/applications/:id` | all editable fields, `stageId`, `expectedStageId` | Full replacement. 409 if the card moved |
 | `DELETE /api/applications/:id` | | Transitions cascade. `{ ok: true }` |
 | `PATCH /api/applications/:id/status` | `stageId`, `expectedStageId` | The drag-and-drop move. 409 if the card moved |
+| `GET /api/applications/:id/timeline` | | The card's current path: `{ lanes: [{ stageId, stageName, stageKind, enteredAt }] }`, the entry lane first (entered at creation), then every lane moved into. A deleted lane has `null` id and kind and its name ends in ` (deleted)`. Owner and guest; no notes. 404 for an unknown card |
 | `GET /api/stages` | | |
 | `POST /api/stages` | `name`, optional `kind` | 409 on duplicate name. `new` and `created` are reserved |
 | `PATCH /api/stages/:id` | `name` and/or `kind` | A rename also rewrites the lane's names in history. 409 on a duplicate name (case-insensitive) |
@@ -244,8 +245,9 @@ src/
   components/          client components; ui/ holds the primitives
   lib/
     db/                every query: index.ts (public API), client.ts, rows.ts,
-                       stages.ts, applications.ts, sankey.ts, stats.ts
+                       stages.ts, applications.ts, sankey.ts, stats.ts, timeline.ts
     stage-statements.ts  the move and rename statements (no runtime imports)
+    application-statements.ts  read statements about one application, e.g. its timeline (no runtime imports)
     stage-kinds.ts     lane kinds, rank, chart colours (no runtime imports)
     transitions.ts     reference rewind implementation
     sankey.ts          builds the Sankey graph as a DAG
@@ -273,6 +275,7 @@ src/
 | `stage-kinds` | Rank ordering, stale kinds, colours |
 | `stage-statements` | The production move and rename SQL on PGlite, the move checked against the TypeScript version |
 | `schema` | Indexes, constraints and cleanup built by the real migrations on PGlite; migrations re-run safely |
+| `timeline` | The timeline statement on PGlite after real moves: rewinds, renamed and deleted lanes |
 
 ## Known limitations
 
