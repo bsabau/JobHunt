@@ -1,6 +1,6 @@
 # Roadmap
 
-Feature backlog, in priority order. The app is in daily use, so these are the next things worth building. Measured ideas for the stats page, and more features, are in `docs/PRODUCT-AUDIT-2026-09-29.md` (IDs such as F-3 refer to it).
+Feature backlog, in priority order. The app is in daily use, so these are the next things worth building. Measured ideas for the stats page, and more features, are in `docs/PRODUCT-AUDIT-2026-09-29.md` (IDs such as F-3 refer to it). The steps, their order and the open decisions are in `docs/PRODUCT-PLAN.md`.
 
 ## Shipped
 
