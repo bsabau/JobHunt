@@ -123,6 +123,7 @@ Migration notes:
 - `1730000001000` (adds `interview_date`) is a no-op on a fresh database, because the first migration was later edited to create the column.
 - `1730000002000` rewrote history using raw `sort_order`, before outcome lanes ranked last. It must never run again on current data, which `schema_migrations` guarantees.
 - `1730000007000` dropped `application_transitions_backup` and `pgmigrations`; production's rows were exported first to a local, uncommitted `backups/` file.
+- `1730000010000` deletes legacy `created` rows and any self-loop rows before adding the no-self-loop check.
 - The runner serialises concurrent runs with `pg_advisory_xact_lock` inside each migration's transaction, then re-checks `schema_migrations`. A session-level lock would not survive Neon's transaction pooler.
 
 ### Lane kinds
@@ -229,6 +230,7 @@ src/
 | `transitions` | Rewind rule, TypeScript version |
 | `stage-kinds` | Rank ordering, stale kinds, colours |
 | `stage-move` | The production move SQL on PGlite, checked against the TypeScript version |
+| `schema` | Indexes, constraints and cleanup built by the real migrations on PGlite; migrations re-run safely |
 
 ## Known limitations
 

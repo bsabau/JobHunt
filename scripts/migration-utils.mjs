@@ -148,7 +148,9 @@ async function inLockedTransaction(sql, work) {
     await sql`COMMIT`;
     return result;
   } catch (error) {
-    await sql`ROLLBACK`;
+    // A failed ROLLBACK (say, on a dropped connection) must not replace the
+    // error that caused it; the server discards the transaction either way.
+    await sql`ROLLBACK`.catch(() => {});
     throw error;
   }
 }

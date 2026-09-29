@@ -14,7 +14,7 @@ A single-owner job application tracker with three views: pipeline stats (`/`), a
 - `npm run build`: production build
 - `npm run check`: lint, typecheck and every test. Run it before every commit; CI runs it on every push.
 - `npm run lint`, `npm run typecheck`, `npm test`: the three parts on their own
-- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-move`)
+- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-move`, `schema`)
 - `npm run migrate:up`: apply migrations to `DATABASE_URL`. Refuses when that is production.
 - `npm run migrate:prod`: apply migrations to `PRODUCTION_DATABASE_URL`. Asks for the endpoint id; only run it when the user asks.
 - `npm run migrate:create -- <name>`: scaffold a migration

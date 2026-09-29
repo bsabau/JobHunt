@@ -232,9 +232,7 @@ export async function addStage(name: string, kind: StageKind = "active"): Promis
     throw new InvalidInputError("Stage name is required");
   }
 
-  // "New" labels the Sankey entry node and "created" is reserved by legacy
-  // transition rows, so a real stage using either name would be merged or
-  // filtered out of the analytics.
+  // Reserved names: see RESERVED_STAGE_NAMES.
   if (RESERVED_STAGE_NAMES.has(trimmed.toLowerCase())) {
     throw new InvalidInputError(`"${trimmed}" is a reserved stage name`);
   }

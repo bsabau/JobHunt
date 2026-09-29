@@ -97,6 +97,43 @@ describe("schema built by the migrations", () => {
     assert.deepEqual(rows, [{ from_status: "Applied", to_status: "Interview" }]);
   });
 
+  test("the phase 2 migrations re-run cleanly on a migrated database", async () => {
+    await sql`DELETE FROM schema_migrations WHERE filename >= '1730000006000' AND filename < '1730000011000'`;
+    const logged = [];
+    await runMigrations(sql, (line) => logged.push(line));
+    assert.equal(logged.length, 5);
+    const [{ count }] = await sql`
+      SELECT COUNT(*)::int AS count FROM pg_constraint
+      WHERE conname IN ('applications_company_not_blank', 'applications_role_not_blank', 'stages_name_not_blank',
+                        'stages_sort_order_non_negative', 'application_transitions_no_self_loop')`;
+    assert.equal(count, 5, "each constraint exists exactly once");
+  });
+
+  test("a legacy 'created -> created' row does not stop the migrations", async () => {
+    // The state of a copy that predates the self-loop check.
+    await sql`ALTER TABLE application_transitions DROP CONSTRAINT application_transitions_no_self_loop`;
+    const [app] = await sql`INSERT INTO applications (company, role, stage_id) VALUES ('Acme', 'Engineer', ${await applied()}) RETURNING id`;
+    await sql`INSERT INTO application_transitions (application_id, from_status, to_status) VALUES (${app.id}, 'created', 'created')`;
+    await sql`DELETE FROM schema_migrations WHERE filename >= '1730000009000' AND filename < '1730000011000'`;
+    await runMigrations(sql, () => {});
+    assert.deepEqual(await sql`SELECT id FROM application_transitions WHERE application_id = ${app.id}`, []);
+    await rejectsWith(
+      sql`INSERT INTO application_transitions (application_id, from_status, to_status) VALUES (${app.id}, 'Applied', 'Applied')`,
+      "23514",
+      "application_transitions_no_self_loop"
+    );
+  });
+
+  test("a run that read a stale list re-checks each file under the lock", async () => {
+    // Simulates losing the race: the list read before locking says nothing is
+    // applied, so only the re-check inside the lock prevents a second apply.
+    const staleSql = (strings, ...values) =>
+      /SELECT filename\s+FROM schema_migrations;/.test(strings.join("?")) ? Promise.resolve([]) : sql(strings, ...values);
+    const logged = [];
+    await runMigrations(staleSql, (line) => logged.push(line));
+    assert.deepEqual(logged, []);
+  });
+
   test("a second run applies nothing", async () => {
     const logged = [];
     await runMigrations(sql, (line) => logged.push(line));
