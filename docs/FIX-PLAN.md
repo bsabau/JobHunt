@@ -229,7 +229,6 @@ src/lib/db/
   rows.ts           row types and mappers
   stages.ts         list, add, update, reorder, delete
   applications.ts   list, create, update, delete
-  stage-move.ts     the move statement and its outcome mapping
   stats.ts          getStatsData
   sankey.ts         getSankeyData
   index.ts          re-exports, so existing imports keep working
@@ -237,7 +236,7 @@ src/lib/db/
 
 Move only; no behaviour change in this step.
 
-Done in PR 4A: `src/lib/db/` holds `client.ts`, `rows.ts`, `stages.ts`, `applications.ts`, `sankey.ts`, `stats.ts` and `index.ts`, all under 300 lines. The move helper (`applyStageMove`) stayed in `applications.ts`; the statement itself already lives in `src/lib/stage-statements.ts`.
+Done in PR #15: `src/lib/db/` holds `client.ts`, `rows.ts`, `stages.ts`, `applications.ts`, `sankey.ts`, `stats.ts` and `index.ts`, all under 300 lines. The move helper (`applyStageMove`) stayed in `applications.ts`; the statement itself already lives in `src/lib/stage-statements.ts`.
 
 ### 4.2 Define derived values once (SQL-3)
 

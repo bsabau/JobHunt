@@ -2,7 +2,7 @@ import { Application } from "@/lib/types";
 
 // Maps database rows to the shared TypeScript types.
 
-export function toIsoString(value: unknown): string {
+function toIsoString(value: unknown): string {
   if (typeof value === "string") {
     return new Date(value).toISOString();
   }
