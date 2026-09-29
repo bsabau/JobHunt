@@ -1,6 +1,6 @@
 // Statements that change lanes and their history (moving a card, renaming a
 // lane), kept free of runtime imports so the tests can run the exact text
-// against an in-process Postgres (tests/stage-statements.test.mjs). db.ts
+// against an in-process Postgres (tests/stage-statements.test.mjs). src/lib/db
 // executes the compiled text through Neon's `sql.query()`.
 
 export interface SqlStatement {
