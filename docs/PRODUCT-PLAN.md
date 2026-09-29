@@ -369,6 +369,13 @@ All of them read `application_milestones` and count from `applied_at`. All of th
 
 **Acceptance:** the medians on `dev` match a hand calculation from a read-only query.
 
+Done in PR #35:
+
+- `timeToHearBackStatement()` in `src/lib/stats-statements.ts`: `percentile_cont(0.5)` of `responded_at - applied_at` and of `rejected_at - applied_at` in days, cast to `double precision`, with the count of each; cards whose reply time is unknown are left out.
+- Two tiles, "Days to First Reply" and "Days to Rejection", with "Median of N"; below 5 applications (`MEDIAN_MIN_SAMPLE` in `constants.ts`, decision 9) they show "—" and "Not enough data yet (N of 5)". The tiles are now two rows of five.
+- The statement tests moved to their own file, `tests/stats-statements.test.mjs` (`verify:stats-statements`), sharing the PGlite board with `tests/milestones.test.mjs` through `tests/helpers/pglite-board.mjs`. New: odd and even counts, an outlier, rejections as their own median and as replies, an unknown reply time, and no data giving `NULL`.
+- On `dev` both medians are 59.8 days over 14 applications (every reply there so far is a rejection), matching a hand calculation from the raw rows.
+
 ### 3.2 Results by application week (M-3)
 
 **Goal:** see whether a change of CV, target roles or approach made a difference.

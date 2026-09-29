@@ -235,6 +235,7 @@ A rename is refused (409) when another lane has the name in any case. Charts gro
 | Response, interview, offer rates | Shares of the sent applications (applied at set) that replied, reached an `interview` lane (or entered in one), reached an `offer` lane (or entered in one). On the current path: a card moved back out of an interview lane no longer counts as interviewed |
 | Ghosted | Share of the sent applications currently in a `closed` lane |
 | Open count | Total minus applications in a resolved lane |
+| Days to first reply, to rejection | Medians of `responded_at - applied_at` and `rejected_at - applied_at` (`percentile_cont(0.5)`) over the sent applications where both times are known; shown from 5 applications (`MEDIAN_MIN_SAMPLE`), "—" below |
 | Sent per week | Applications by the week of their applied date, weeks from Monday in the viewer's zone; cards not sent yet are in no week |
 
 A deleted entry lane has no kind, so its cards count as sent at creation (as in `application_applied_at`); for a card that entered in a since-deleted wishlist lane, the edge that sent it then counts as its reply.
@@ -302,7 +303,8 @@ src/
 | `board-filter` | The filter matches company and role only; only rejected and closed lanes hide |
 | `weeks` | Monday week starts, month and year ends, empty weeks up to the current one |
 | `funnel` | Rank order with outcome lanes last; the share counted per card, not from lane totals (cards added mid-pipeline, skipped lanes) |
-| `milestones` | The milestones view and the stats statements on PGlite after real moves: replies, interviews, wishlist cards, rewinds, deleted lanes, kind changes; weekly counts by zone and across a clock change |
+| `milestones` | The milestones view on PGlite after real moves: replies, interviews, wishlist cards, rewinds, deleted lanes, kind changes |
+| `stats-statements` | The stats page's statements on PGlite: the rates, weekly counts by zone and across a clock change, the medians to a reply and to a rejection. Shares its board setup with `milestones` through `tests/helpers/pglite-board.mjs` |
 
 ## Known limitations
 

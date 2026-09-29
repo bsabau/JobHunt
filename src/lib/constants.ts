@@ -4,6 +4,10 @@ import { daysSince } from "@/lib/timezone";
 
 export const STALE_THRESHOLD_DAYS = 14;
 
+// The fewest applications a median is shown for; below it the stats show "—"
+// (owner decision 9 of the product plan).
+export const MEDIAN_MIN_SAMPLE = 5;
+
 // Staleness is a pipeline concept: pre-application (Wishlist) and resolved
 // stages (Offer/Rejected/Closed) are not "going stale", whatever they are named.
 export function isStaleEligibleStage(kind: StageKind): boolean {
