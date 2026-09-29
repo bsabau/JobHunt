@@ -1,6 +1,6 @@
 import { Application, StageKind } from "@/lib/types";
 import { STALE_EXCLUDED_KINDS } from "@/lib/stage-kinds";
-import { daysBetweenDateOnly, todayInTimeZone } from "@/lib/timezone";
+import { daysSince } from "@/lib/timezone";
 
 export const STALE_THRESHOLD_DAYS = 14;
 
@@ -10,48 +10,15 @@ export function isStaleEligibleStage(kind: StageKind): boolean {
   return !STALE_EXCLUDED_KINDS.includes(kind);
 }
 
-export function daysSince(isoDate: string): number {
-  const then = new Date(isoDate).getTime();
-  if (Number.isNaN(then)) {
-    return 0;
-  }
-  return Math.floor((Date.now() - then) / 86_400_000);
-}
-
 export function stageEnteredAt(app: Application): string {
   return app.stageEnteredAt ?? app.updatedAt;
 }
 
-export function isApplicationStale(app: Application): boolean {
+export function isApplicationStale(app: Application, now: number): boolean {
   if (!isStaleEligibleStage(app.stageKind)) {
     return false;
   }
-  return daysSince(stageEnteredAt(app)) >= STALE_THRESHOLD_DAYS;
-}
-
-export function daysUntil(dateStr: string, timeZone?: string): number {
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
-  if (!dateOnly) {
-    const target = new Date(dateStr);
-    if (Number.isNaN(target.getTime())) {
-      return 0;
-    }
-    target.setHours(0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return Math.round((target.getTime() - today.getTime()) / 86_400_000);
-  }
-
-  const targetDate = `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}`;
-  const today = timeZone ? todayInTimeZone(timeZone) : localTodayDateOnly();
-  return daysBetweenDateOnly(today, targetDate);
-}
-
-function localTodayDateOnly(): string {
-  const today = new Date();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
-  return `${today.getFullYear()}-${month}-${day}`;
+  return daysSince(stageEnteredAt(app), now) >= STALE_THRESHOLD_DAYS;
 }
 
 export const STAGE_TONES = [

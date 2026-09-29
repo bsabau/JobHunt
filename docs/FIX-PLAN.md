@@ -330,6 +330,12 @@ Show the date the card first left an `intake` lane, falling back to `created_at`
 
 Compute `daysSince` on the server with a single `now` passed down as a prop, or render relative ages only after mount.
 
+Done in PR #20 (5.4 and 5.5):
+
+- 5.4: migrations `1730000015000` and `1730000016000` add the view `application_applied_at` (built on `application_entry_stage`, no stored column); a move from intake straight into a `rejected` or `closed` lane does not count as sending. Applications carry `appliedAt`; the card reads "Added <date>" while it has none and "Applied <date>" after, and "Avg days to interview" counts from it. The production data has no intake lane, so every value there equals `created_at` and no number changes.
+- 5.5: `daysSince`, `daysUntil` and `isApplicationStale` take `now` as a required argument. The two date helpers moved to `src/lib/timezone.ts`, where they are tested with a fixed `now`. The board and stats pages read the clock once on the server (`requestNow()`) and pass it down, so the server HTML and hydration compute the same ages.
+- Left for later: the rewind's reconnect edge is written with `NOW()` while the twin keeps the boundary's time, so a rewind onto a skipped lane can move the applied date (Fable's review of PR #20, finding 1; next PR). "Applications over time" still buckets by `created_at`.
+
 ### 5.6 Report refresh failures (UI-5)
 
 Show a message when `refreshBoard()` fails and offer a reload.

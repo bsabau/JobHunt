@@ -24,10 +24,12 @@ async function selectApplicationById(id: number): Promise<Application | null> {
       s.kind AS stage_kind,
       a.created_at,
       a.updated_at,
-      e.entered_at AS stage_entered_at
+      e.entered_at AS stage_entered_at,
+      p.applied_at
     FROM applications a
     JOIN stages s ON s.id = a.stage_id
     JOIN application_stage_entry e ON e.application_id = a.id
+    JOIN application_applied_at p ON p.application_id = a.id
     WHERE a.id = ${id};
   `) as ApplicationRow[];
 
@@ -58,10 +60,12 @@ export async function listApplications(viewer: Role): Promise<Application[]> {
       s.kind AS stage_kind,
       a.created_at,
       a.updated_at,
-      e.entered_at AS stage_entered_at
+      e.entered_at AS stage_entered_at,
+      p.applied_at
     FROM applications a
     JOIN stages s ON s.id = a.stage_id
     JOIN application_stage_entry e ON e.application_id = a.id
+    JOIN application_applied_at p ON p.application_id = a.id
     ORDER BY a.updated_at DESC, a.id DESC;
   `) as ApplicationRow[];
 

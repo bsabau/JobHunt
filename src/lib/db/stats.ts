@@ -71,12 +71,15 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       WHERE s.kind <> ALL(${[...TERMINAL_KINDS]}::text[]);
     `,
     tx`
+      -- Counted from when the application was sent, not when the card was made
+      -- (a card can sit in a wishlist for weeks first).
       SELECT
         AVG(
-          EXTRACT(EPOCH FROM (first_interview.transitioned_at - a.created_at)) / 86400.0
+          EXTRACT(EPOCH FROM (first_interview.transitioned_at - p.applied_at)) / 86400.0
         ) AS days,
         COUNT(first_interview.transitioned_at)::int AS count
       FROM applications a
+      JOIN application_applied_at p ON p.application_id = a.id AND p.applied_at IS NOT NULL
       JOIN LATERAL (
         SELECT MIN(t.transitioned_at) AS transitioned_at
         FROM application_transitions t

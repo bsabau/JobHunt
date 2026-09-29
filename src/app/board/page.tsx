@@ -2,7 +2,7 @@ import { KanbanBoard } from "@/components/kanban-board";
 import { PageHeader } from "@/components/page-header";
 import { listApplications, listStages } from "@/lib/db";
 import { requirePageSession } from "@/lib/page-auth";
-import { resolveRequestTimeZone } from "@/lib/request-timezone";
+import { requestNow, resolveRequestTimeZone } from "@/lib/request-timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +11,7 @@ export default async function BoardPage() {
   const readOnly = session.role === "guest";
 
   const timeZone = await resolveRequestTimeZone();
+  const now = requestNow();
   // listApplications leaves out the notes for a guest viewer.
   const [applications, stages] = await Promise.all([listApplications(session.role), listStages()]);
 
@@ -22,6 +23,7 @@ export default async function BoardPage() {
         initialStages={stages}
         readOnly={readOnly}
         timeZone={timeZone}
+        now={now}
       />
     </main>
   );

@@ -48,3 +48,39 @@ export function daysBetweenDateOnly(from: string, to: string): number {
 
   return Math.round((toMs - fromMs) / 86_400_000);
 }
+
+// Relative dates take `now` from the caller instead of reading the clock: a
+// page takes one timestamp on the server and passes it down, so the server
+// render and the browser's hydration compute the same ages and labels.
+export function daysSince(isoDate: string, now: number): number {
+  const then = new Date(isoDate).getTime();
+  if (Number.isNaN(then)) {
+    return 0;
+  }
+  return Math.floor((now - then) / 86_400_000);
+}
+
+export function daysUntil(dateStr: string, timeZone: string | undefined, now: number): number {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!dateOnly) {
+    const target = new Date(dateStr);
+    if (Number.isNaN(target.getTime())) {
+      return 0;
+    }
+    target.setHours(0, 0, 0, 0);
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  }
+
+  const targetDate = `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}`;
+  const today = timeZone ? todayInTimeZone(timeZone, new Date(now)) : localTodayDateOnly(now);
+  return daysBetweenDateOnly(today, targetDate);
+}
+
+function localTodayDateOnly(now: number): string {
+  const today = new Date(now);
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${today.getFullYear()}-${month}-${day}`;
+}

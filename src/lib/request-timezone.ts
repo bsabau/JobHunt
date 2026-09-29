@@ -13,3 +13,13 @@ export async function resolveRequestTimeZone(): Promise<string> {
       DEFAULT_TIME_ZONE
   );
 }
+
+// The clock reading a page passes to its client component for relative dates
+// (daysSince, daysUntil), so the server HTML and hydration compute the same
+// ages. A server component renders once per request, so reading the clock is
+// safe there. Call it only from a page or route handler: the purity lint rule
+// does not follow calls, so it would not flag this in a component that
+// re-renders.
+export function requestNow(): number {
+  return Date.now();
+}

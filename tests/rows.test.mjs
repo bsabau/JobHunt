@@ -15,7 +15,8 @@ const row = {
   stage_kind: "interview",
   created_at: "2026-09-01T10:00:00Z",
   updated_at: new Date("2026-09-02T10:00:00Z"),
-  stage_entered_at: "2026-09-02T10:00:00Z"
+  stage_entered_at: "2026-09-02T10:00:00Z",
+  applied_at: "2026-09-01T10:00:00Z"
 };
 
 test("the owner sees the notes; a guest never does", () => {
@@ -37,7 +38,8 @@ test("snake_case columns map to the Application shape", () => {
     stageKind: "interview",
     createdAt: "2026-09-01T10:00:00.000Z",
     updatedAt: "2026-09-02T10:00:00.000Z",
-    stageEnteredAt: "2026-09-02T10:00:00.000Z"
+    stageEnteredAt: "2026-09-02T10:00:00.000Z",
+    appliedAt: "2026-09-01T10:00:00.000Z"
   });
   assert.deepEqual(mapStage({ id: 3, name: "Interview", sort_order: 2, kind: "interview" }), {
     id: 3,
@@ -45,4 +47,8 @@ test("snake_case columns map to the Application shape", () => {
     sortOrder: 2,
     kind: "interview"
   });
+});
+
+test("a wishlist card that was never sent has no applied date", () => {
+  assert.equal(mapApplication({ ...row, applied_at: null }, "user").appliedAt, null);
 });

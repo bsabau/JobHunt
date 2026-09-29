@@ -296,6 +296,49 @@ describe("stage move statement", () => {
   });
 });
 
+describe("applied date through real moves", () => {
+  async function appliedAt(appId) {
+    const [row] = await sql`SELECT applied_at FROM application_applied_at WHERE application_id = ${appId}`;
+    return row.applied_at && new Date(row.applied_at).toISOString();
+  }
+  async function firstMoveInto(appId, stageName) {
+    const [row] = await sql`
+      SELECT t.transitioned_at FROM application_transitions t JOIN stages s ON s.id = t.to_stage_id
+      WHERE t.application_id = ${appId} AND s.name = ${stageName}
+      ORDER BY t.transitioned_at, t.id LIMIT 1`;
+    return new Date(row.transitioned_at).toISOString();
+  }
+
+  test("a wishlist card is sent when it leaves intake, and unsent again when rewound into it", async () => {
+    const app = await createApp("Wishlist");
+    assert.equal(await appliedAt(app), null);
+    await moveAll(app, "Applied", "Interview");
+    const sent = await firstMoveInto(app, "Applied");
+    assert.equal(await appliedAt(app), sent);
+    await move(app, "Applied");
+    assert.equal(await appliedAt(app), sent, "a rewind onto a visited lane keeps the date");
+    await move(app, "Wishlist");
+    assert.equal(await appliedAt(app), null);
+  });
+
+  test("a wishlist card dropped straight into an outcome lane was never sent", async () => {
+    const app = await createApp("Wishlist");
+    await move(app, "Ghosting");
+    assert.equal(await appliedAt(app), null);
+  });
+
+  // A known limit of deriving the date: moving below the entry lane clears the
+  // path, so the card now looks like it started in the wishlist and the date
+  // becomes the next move out of it.
+  test("a card created in the pipeline and moved back to the wishlist loses its creation date", async () => {
+    const app = await createApp("Applied");
+    const [{ created_at: created }] = await sql`SELECT created_at FROM applications WHERE id = ${app}`;
+    assert.equal(await appliedAt(app), new Date(created).toISOString());
+    await moveAll(app, "Wishlist", "Applied");
+    assert.equal(await appliedAt(app), await firstMoveInto(app, "Applied"));
+  });
+});
+
 describe("stage update statement", () => {
   async function update(stageName, changes) {
     const statement = stageUpdateStatement(await idOf(stageName), changes);
