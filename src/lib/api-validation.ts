@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
+import { ApiError } from "@/lib/api-errors";
 import { TEXT_LIMITS } from "@/lib/limits";
 
 export { TEXT_LIMITS };
 
-export class ApiValidationError extends Error {
-  constructor(message: string, readonly status = 400) {
-    super(message);
+// A malformed request body or parameter. An ApiError like every other
+// expected failure, so errorResponse() needs no special case for it.
+export class ApiValidationError extends ApiError {
+  constructor(message: string, status = 400) {
+    super(message, status);
     this.name = "ApiValidationError";
   }
 }

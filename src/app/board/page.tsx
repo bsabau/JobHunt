@@ -11,17 +11,14 @@ export default async function BoardPage() {
   const readOnly = session.role === "guest";
 
   const timeZone = await resolveRequestTimeZone();
-  const [applications, stages] = await Promise.all([listApplications(), listStages()]);
-  // Notes are owner-only; never ship them into the guest board payload.
-  const visibleApplications = readOnly
-    ? applications.map((application) => ({ ...application, notes: null }))
-    : applications;
+  // listApplications leaves out the notes for a guest viewer.
+  const [applications, stages] = await Promise.all([listApplications(session.role), listStages()]);
 
   return (
     <main className="min-h-screen px-6 py-10">
       <PageHeader active="board" readOnly={readOnly} />
       <KanbanBoard
-        initialApplications={visibleApplications}
+        initialApplications={applications}
         initialStages={stages}
         readOnly={readOnly}
         timeZone={timeZone}

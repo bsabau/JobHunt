@@ -222,6 +222,6 @@ export function stageUpdateStatement(
       WHERE t.to_stage_id = u.id AND t.to_status <> u.name
       RETURNING t.id
     )
-    SELECT id, name, sort_order AS sortOrder, kind FROM updated;
+    SELECT id, name, sort_order, kind FROM updated;
   `);
 }

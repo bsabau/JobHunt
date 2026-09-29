@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { isApiValidationError, validationErrorResponse } from "@/lib/api-validation";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -50,11 +49,9 @@ export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
 }
 
+// Expected failures (ApiError, including validation errors) become their own
+// status and message; anything else is logged and becomes a generic 500.
 export function errorResponse(error: unknown, fallbackMessage: string) {
-  if (isApiValidationError(error)) {
-    return validationErrorResponse(error);
-  }
-
   if (isApiError(error)) {
     return NextResponse.json({ message: error.message }, { status: error.status });
   }
