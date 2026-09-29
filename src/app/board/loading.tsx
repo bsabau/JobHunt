@@ -4,7 +4,8 @@ import { Skeleton } from "@/components/skeleton";
 export default function Loading() {
   return (
     <main className="min-h-screen px-6 py-10">
-      <PageHeader active="board" />
+      {/* Streams before the session is known, so no role-specific text. */}
+      <PageHeader active="board" description={null} />
       <div className="overflow-x-auto pb-3">
         <div className="inline-grid gap-4" style={{ gridTemplateColumns: "repeat(5, minmax(240px, 280px))" }}>
         {Array.from({ length: 5 }).map((_, i) => (

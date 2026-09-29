@@ -48,7 +48,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Everything except Next's static assets and the public app icon goes through
-  // the session check. The icon exclusion is anchored: an unanchored lookahead
-  // would also let "/icon.svgx" through to a page without a session.
-  matcher: ["/((?!_next/static|_next/image|icon\\.svg$).*)"],
+  // the session check. Each exclusion is exact: a bare prefix would also let
+  // "/icon.svgx" or "/_next/staticfoo" through without a session. There is no
+  // /_next/image route to exclude; the image optimizer is disabled.
+  matcher: ["/((?!_next/static/|icon\\.svg$).*)"],
 };

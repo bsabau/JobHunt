@@ -4,7 +4,8 @@ import { Skeleton } from "@/components/skeleton";
 export default function Loading() {
   return (
     <main className="mx-auto min-h-screen max-w-[1500px] px-6 py-10">
-      <PageHeader active="stats" />
+      {/* Streams before the session is known, so no role-specific text. */}
+      <PageHeader active="stats" description={null} />
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
