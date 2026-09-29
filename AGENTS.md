@@ -2,7 +2,7 @@
 
 Guidance for coding agents working in this repository. This is the single source; `CLAUDE.md` imports it.
 
-Deeper reference: `docs/ARCHITECTURE.md` (domain model, schema, API, auth). Open issues: `docs/AUDIT-2026-09-29.md`. Planned work: `docs/FIX-PLAN.md`.
+Deeper reference: `docs/ARCHITECTURE.md` (domain model, schema, API, auth). Open issues: `docs/AUDIT-2026-09-29.md`. Planned work: `docs/FIX-PLAN.md`. Product audit (charts and feature ideas, not yet planned): `docs/PRODUCT-AUDIT-2026-09-29.md`.
 
 ## What this is
 
