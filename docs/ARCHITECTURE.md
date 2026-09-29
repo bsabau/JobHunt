@@ -276,7 +276,7 @@ src/
 
 ## Known limitations
 
-- The login throttle is an in-memory map per server instance; it resets on cold start and is not shared between instances.
+- The in-app login throttle (5 failures per minute) is an in-memory map per server instance; it resets on cold start and is not shared between instances. A Vercel Firewall rule backs it up across instances: 10 `POST /api/auth/login` per minute per IP, then 429. The rule lives in the Vercel project, not in this repository.
 - Cards are moved by dragging, by the "Move to" menu on each card, or in the edit dialog (double-click, or Enter on a focused card). There is no touch drag (owner decision); on touch screens use the menu.
 - Reordering lanes or changing a lane's kind changes rank, so older history can contain edges that now point backwards. The Sankey drops those and reports the count.
-- See `docs/AUDIT-2026-09-29.md` for the full list and `docs/FIX-PLAN.md` for the planned fixes.
+- See `docs/AUDIT-2026-09-29.md` for the full list and `docs/FIX-PLAN.md` for the planned fixes. Reports from before 2026-09-29 are in `docs/audits/`.
