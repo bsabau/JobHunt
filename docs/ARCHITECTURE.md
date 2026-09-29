@@ -203,7 +203,7 @@ A rename is refused (409) when another lane has the name in any case. Charts gro
 
 | Value | Definition |
 |---|---|
-| Stage entered at | Latest transition into the current lane, else `created_at` (view `application_stage_entry`) |
+| Stage entered at | Latest transition into the current lane, else `created_at` (view `application_stage_entry`). A rewind is a correction, not an event: afterwards this is the time of the edge kept or reconnected, so a card reopened from an outcome lane long after counts from when it first left its last kept lane and can be stale at once |
 | Stale | In a lane that can go stale for 14 days or more since it was entered (`STALE_THRESHOLD_DAYS`) |
 | Reached (funnel) | Distinct applications whose entry lane or any lane moved into is the lane, by lane id |
 | Applied at | For a card whose entry lane is `intake`: its first move into a pipeline lane (not `intake`, `rejected` or `closed`; a deleted lane counts), `NULL` until then. Otherwise `created_at` (view `application_applied_at`). Derived, not stored: a card moved back below its entry lane into intake loses its original date, because that move clears the path |
