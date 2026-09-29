@@ -24,18 +24,25 @@ export function weekStartOf(date: string): string {
   return addDays(date, -((weekday + 6) % 7));
 }
 
-// Every week from the first one with applications through `untilWeekStart`
+// Every week from the first one with applications (or `fromWeekStart`)
+// through `untilWeekStart`
 // (the current week, so a quiet stretch shows as empty weeks), with a running
 // total. Nothing when no application was sent.
 export function fillWeeks(
   rows: readonly { weekStart: string; sent: number }[],
-  untilWeekStart: string
+  untilWeekStart: string,
+  // Under a date range, the range's first week: the chart starts there even
+  // when its first weeks are empty.
+  fromWeekStart?: string
 ): { weekStart: string; sent: number; cumulative: number }[] {
   if (rows.length === 0) {
     return [];
   }
   const sentByWeek = new Map(rows.map((row) => [row.weekStart, row.sent]));
-  const first = rows.reduce((min, row) => (row.weekStart < min ? row.weekStart : min), rows[0].weekStart);
+  const first = rows.reduce(
+    (min, row) => (row.weekStart < min ? row.weekStart : min),
+    fromWeekStart !== undefined && fromWeekStart < rows[0].weekStart ? fromWeekStart : rows[0].weekStart
+  );
   const last = rows.reduce((max, row) => (row.weekStart > max ? row.weekStart : max), untilWeekStart);
   const weeks: { weekStart: string; sent: number; cumulative: number }[] = [];
   let cumulative = 0;

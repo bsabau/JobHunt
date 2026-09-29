@@ -37,6 +37,16 @@ test("a row newer than the current week still ends the chart (clocks a moment ap
   assert.deepEqual(weeks.map((week) => week.weekStart), ["2026-10-05"]);
 });
 
+test("under a date range the weeks start at the range's first week", () => {
+  const weeks = fillWeeks([{ weekStart: "2026-09-21", sent: 2 }], "2026-09-28", "2026-09-07");
+  assert.deepEqual(weeks.map((week) => [week.weekStart, week.sent]), [
+    ["2026-09-07", 0],
+    ["2026-09-14", 0],
+    ["2026-09-21", 2],
+    ["2026-09-28", 0]
+  ]);
+});
+
 test("one week, and no weeks", () => {
   assert.deepEqual(fillWeeks([{ weekStart: "2026-09-28", sent: 4 }], "2026-09-28"), [{ weekStart: "2026-09-28", sent: 4, cumulative: 4 }]);
   assert.deepEqual(fillWeeks([], "2026-09-28"), []);

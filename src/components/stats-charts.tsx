@@ -16,10 +16,12 @@ import {
   YAxis,
 } from "recharts";
 import { StatsPayload } from "@/lib/types";
-import { MEDIAN_MIN_SAMPLE, STALE_THRESHOLD_DAYS } from "@/lib/constants";
+import { MEDIAN_MIN_SAMPLE } from "@/lib/constants";
 import { daysUntil, formatDateOnly, todayInTimeZone } from "@/lib/timezone";
 import { fillWeeks, isWeekOpen, weekStartOf } from "@/lib/weeks";
 import { SOURCE_MIN_GROUP, UNKNOWN_SOURCE } from "@/lib/sources";
+import { STATS_RANGES, StatsRange, rangeLabel } from "@/lib/stats-range";
+import Link from "next/link";
 import { KIND_COLORS, KIND_LABELS, RESOLVED_KINDS, ResolvedKind, colorFor } from "@/lib/stage-kinds";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -100,6 +102,45 @@ function ShareCell({ count, of, color, muted, last }: { count: number; of: numbe
   );
 }
 
+// The date range lives in the URL (?range=30), so these are plain links: a
+// reload or a shared link keeps the choice, and the server reads it.
+function RangeControl({ range }: { range: StatsRange }) {
+  const options: { value: StatsRange; href: string }[] = [
+    { value: null, href: "/" },
+    ...STATS_RANGES.slice()
+      .reverse()
+      .map((days) => ({ value: days, href: `/?range=${days}` }))
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <nav aria-label="Date range" className="flex rounded-lg border border-border/60 p-1">
+        {options.map((option) => (
+          <Link
+            key={option.href}
+            href={option.href}
+            aria-current={option.value === range ? "page" : undefined}
+            className={`rounded-md px-3 py-1 text-sm transition-colors ${
+              option.value === range ? "bg-sky-500/20 text-foreground" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {rangeLabel(option.value)}
+          </Link>
+        ))}
+      </nav>
+      {range !== null ? (
+        <p className="text-xs text-muted-foreground">
+          Applications sent in the last {range} days. Lanes, upcoming interviews and stale applications always show
+          the present.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function PresentNote() {
+  return <p className="text-xs text-muted-foreground">Now, whatever the date range</p>;
+}
+
 function OutcomeChip({ label, color, count, total }: { label: string; color: string; count: number; total: number }) {
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   return (
@@ -162,22 +203,22 @@ export function StatsCharts({
   // The axis shows the year only when the weeks span more than one; the
   // tooltip always does.
   const weeklyData = useMemo(() => {
-    const weeks = fillWeeks(data.weeks, weekStartOf(todayInTimeZone(timeZone, new Date(now))));
+    // Under a range the chart starts at the range's first week, not at the
+    // first week that has an application.
+    const from =
+      data.range === null ? undefined : weekStartOf(todayInTimeZone(timeZone, new Date(now - data.range * 86_400_000)));
+    const weeks = fillWeeks(data.weeks, weekStartOf(todayInTimeZone(timeZone, new Date(now))), from);
     const years = new Set(weeks.map((week) => week.weekStart.slice(0, 4)));
     return weeks.map((row) => ({
       ...row,
       label: years.size > 1 ? `${formatDate(row.weekStart)} '${row.weekStart.slice(2, 4)}` : formatDate(row.weekStart),
       fullLabel: formatDateOnly(row.weekStart)
     }));
-  }, [data.weeks, timeZone, now]);
+  }, [data.weeks, data.range, timeZone, now]);
 
-  // Each week's results, newest first. A week stays open for the median days
-  // to a first reply (rounded up) after it ends, or STALE_THRESHOLD_DAYS while
-  // that median rests on too few applications.
-  const openDays =
-    data.timeToHearBack.replyMedianDays !== null && data.timeToHearBack.replyCount >= MEDIAN_MIN_SAMPLE
-      ? Math.ceil(data.timeToHearBack.replyMedianDays)
-      : STALE_THRESHOLD_DAYS;
+  // Each week's results, newest first. How long a week stays open comes from
+  // the server (the all-time median days to a first reply, or 14 days).
+  const openDays = data.openWeeks.days;
   const weekResults = useMemo(() => {
     const today = todayInTimeZone(timeZone, new Date(now));
     return [...data.weeks]
@@ -237,8 +278,13 @@ export function StatsCharts({
 
   return (
     <div className="space-y-6">
+      <RangeControl range={data.range} />
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-        <SummaryTile label="Total Applications" value={data.totals.applications} />
+        {data.range === null ? (
+          <SummaryTile label="Total Applications" value={data.totals.applications} />
+        ) : (
+          <SummaryTile label={`Sent in the Last ${data.range} Days`} value={data.scopeTotal} />
+        )}
         <RateTile label="Response Rate" count={data.rates.responded} of={data.rates.applied} />
         <RateTile label="Interview Rate" count={data.rates.interviewed} of={data.rates.applied} />
         <RateTile label="Offer Rate" count={data.rates.offered} of={data.rates.applied} />
@@ -246,7 +292,7 @@ export function StatsCharts({
         <SummaryTile
           label="Avg Days in Current Stage"
           value={data.totals.avgDaysInCurrentStage}
-          hint="Excluding rejected and closed lanes"
+          hint={`Excluding rejected and closed lanes${data.range === null ? "" : "; now, any date"}`}
         />
         <SummaryTile
           label="Avg Days to Interview"
@@ -270,7 +316,7 @@ export function StatsCharts({
         <SummaryTile
           label="Stale Applications"
           value={data.totals.staleCount}
-          hint="14+ days in Applied or middle stages"
+          hint={`14+ days in Applied or middle stages${data.range === null ? "" : "; now, any date"}`}
         />
       </div>
       {data.rates.applied > 0 ? (
@@ -293,6 +339,7 @@ export function StatsCharts({
             <Card>
               <CardHeader>
                 <CardTitle>Upcoming Interviews</CardTitle>
+                {data.range !== null ? <PresentNote /> : null}
               </CardHeader>
               <CardContent>
                 {upcomingInterviews.length > 0 ? (
@@ -322,6 +369,7 @@ export function StatsCharts({
             <Card>
               <CardHeader>
                 <CardTitle>Stale Applications</CardTitle>
+                {data.range !== null ? <PresentNote /> : null}
               </CardHeader>
               <CardContent>
                 {data.staleApplications.length > 0 ? (
@@ -353,14 +401,14 @@ export function StatsCharts({
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
               <CardTitle>Where Applications Ended</CardTitle>
               <div className="flex flex-wrap gap-2 text-xs">
-                <OutcomeChip label="Open" color={KIND_COLORS.active} count={data.openCount} total={data.totals.applications} />
+                <OutcomeChip label="Open" color={KIND_COLORS.active} count={data.openCount} total={data.scopeTotal} />
                 {RESOLVED_KINDS.map((kind) => (
                   <OutcomeChip
                     key={kind}
                     label={KIND_LABELS[kind]}
                     color={KIND_COLORS[kind]}
                     count={outcomeTotals[kind]}
-                    total={data.totals.applications}
+                    total={data.scopeTotal}
                   />
                 ))}
               </div>
@@ -410,6 +458,7 @@ export function StatsCharts({
             <Card>
               <CardHeader>
                 <CardTitle>Applications by Stage</CardTitle>
+                {data.range !== null ? <PresentNote /> : null}
               </CardHeader>
               <CardContent className="h-[320px]">
                 <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
@@ -503,7 +552,7 @@ export function StatsCharts({
                 </ResponsiveContainer>
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  No application sent yet.
+                  {data.range === null ? "No application sent yet." : `No application sent in the last ${data.range} days.`}
                 </div>
               )}
             </CardContent>
@@ -514,9 +563,9 @@ export function StatsCharts({
               <CardTitle>Results by Week Sent</CardTitle>
               <p className="text-xs text-muted-foreground">
                 What became of each week&apos;s applications, where they stand now. A week stays open for {openDays} days
-                after it ends ({openDays === STALE_THRESHOLD_DAYS && data.timeToHearBack.replyCount < MEDIAN_MIN_SAMPLE
-                  ? "until there are enough replies for a median"
-                  : "the median time to a first reply"}
+                after it ends ({data.openWeeks.fromMedian
+                  ? "the median time to a first reply, over all time"
+                  : "until there are enough replies for a median"}
                 ); until then its figures can still rise.
               </p>
             </CardHeader>
@@ -554,7 +603,7 @@ export function StatsCharts({
                   </table>
                 </div>
               ) : (
-                <p className="py-6 text-center text-sm text-muted-foreground">No application sent yet.</p>
+                <p className="py-6 text-center text-sm text-muted-foreground">{data.range === null ? "No application sent yet." : `No application sent in the last ${data.range} days.`}</p>
               )}
             </CardContent>
           </Card>
@@ -569,7 +618,7 @@ export function StatsCharts({
             </CardHeader>
             <CardContent>
               {data.sources.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">No application sent yet.</p>
+                <p className="py-6 text-center text-sm text-muted-foreground">{data.range === null ? "No application sent yet." : `No application sent in the last ${data.range} days.`}</p>
               ) : data.sources.every((row) => row.source === UNKNOWN_SOURCE) ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
                   None of the sent applications has a job link yet.

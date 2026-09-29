@@ -488,6 +488,14 @@ Done in PR #37:
 - The denominators under "30 days" equal a hand count.
 - The stats page still makes one database request for any range.
 
+Done in PR #38:
+
+- `src/lib/stats-range.ts`: `parseStatsRange()` accepts exactly `"30"` and `"90"`; anything else, an array included, is all time. `rangeStart()` gives the instant `range` days before the page's `now`. The page reads `searchParams` (a promise in this Next version).
+- Every ranged statement takes `start` (`NULL` for all time) through one `sentSince()` fragment. The three queries still inline in `stats.ts` (visits, repeat companies, outcomes) moved to `stats-statements.ts` with it. Under all time they keep counting cards not sent yet, as before; under a range such a card drops out.
+- A second, all-time run of the median statement sets how long a week stays open (as Fable advised: a 30-day range rarely holds five replies), sent as `openWeeks`. `scopeTotal` is the number of applications the ranged figures cover, used by the first tile ("Sent in the Last 30 Days") and the outcome chips.
+- The control is three links above the tiles, with `aria-current` on the active one; while a range is on, a line explains it and the lane, upcoming and stale cards and tiles say "now, whatever the date range". The weekly chart starts at the range's first week.
+- On `dev`: all time is identical to before this step; the last 30 and 90 days hold 11 and 18 sent applications, matching a hand count; lane counts and stale applications are the same under every range; `?range=7` shows all time. The stats page still makes one request.
+
 ---
 
 ## Phase 4: acting on what the stats show
