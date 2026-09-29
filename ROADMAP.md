@@ -5,7 +5,7 @@ Feature backlog, in priority order. The app is in daily use, so these are the ne
 ## Shipped
 
 - **Board search**: find a card by company or role and jump to it.
-- **Stats page** (`/`): pipeline totals, funnel and drop-off, applications and transitions over time, outcomes, upcoming interviews.
+- **Stats page** (`/`): pipeline totals, funnel and drop-off, applications over time, outcomes, upcoming interviews.
 - **Stale alerts**: cards that have sat for 14 days or more in a lane that can go stale (not a wishlist, offer or outcome lane) are flagged on the board and listed on the stats page.
 - **Board filter**: narrows every lane by company or role, and a remembered toggle hides the rejected and closed lanes.
 - **Application timeline**: the card dialog shows the lanes a card passed through, with dates and time in each; the guest gets a read-only version.

@@ -53,6 +53,10 @@ export const INTERVIEW_KIND: StageKind = "interview";
 // Lanes for applications not sent yet; cards there show "Added", not "Applied".
 export const INTAKE_KIND: StageKind = "intake";
 
+// The lane kind for applications the owner gave up on (ghosted); the stats'
+// "ghosted" rate counts the cards currently in such a lane.
+export const CLOSED_KIND: StageKind = "closed";
+
 // New applications go to the first lane of this kind (by board position).
 export const DEFAULT_CREATE_KIND: StageKind = "active";
 

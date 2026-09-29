@@ -138,6 +138,17 @@ application_stage_entry            -- VIEW
 application_applied_at             -- VIEW
   application_id  INTEGER
   applied_at      TIMESTAMPTZ       -- NULL while a card that entered in an intake lane has not left intake
+
+application_milestones             -- VIEW
+  application_id      INTEGER
+  applied_at          TIMESTAMPTZ   -- from application_applied_at
+  responded           BOOLEAN       -- got a reply (see Derived values)
+  responded_at        TIMESTAMPTZ   -- NULL when the reply's time is unknown
+  interviewed         BOOLEAN
+  first_interview_at  TIMESTAMPTZ
+  offered             BOOLEAN
+  offered_at          TIMESTAMPTZ
+  rejected_at         TIMESTAMPTZ
 ```
 
 Indexes beyond the primary keys and unique constraints: `application_transitions (application_id, transitioned_at, id)`, which serves the first/latest-transition subqueries in both directions; `application_transitions (to_stage_id)` and `(from_stage_id)`; and `applications (stage_id)`.
@@ -156,6 +167,7 @@ Migration notes:
 - `1730000013000` creates the view `application_entry_stage`. It reads `applications.id` and `.stage_id`, `stages.id` and `.name`, and the transitions' `id`, `application_id`, `from_stage_id`, `from_status` and `transitioned_at`; Postgres refuses to drop or retype any of those while the view exists, so such a migration must drop and re-create the view. `CREATE OR REPLACE VIEW` can only append columns: renaming or retyping a view column also needs `DROP VIEW` first.
 - `1730000014000` creates the view `application_stage_entry`, which reads `applications.id`, `.stage_id` and `.created_at` and the transitions' `id`, `application_id`, `to_stage_id` and `transitioned_at`; the same drop-and-re-create rule applies.
 - `1730000015000` creates the view `application_applied_at` on top of `application_entry_stage`. It reads `applications.id` and `.created_at`, `stages.id` and `.kind`, and the transitions' `application_id`, `to_stage_id` and `transitioned_at`; the same rule applies, and dropping `application_entry_stage` now needs this view dropped first. `1730000016000` replaces it so that a move into a `rejected` or `closed` lane does not count as sending.
+- `1730000017000` creates the view `application_milestones` on top of `application_applied_at` and `application_entry_stage`. It reads `applications.id`, `stages.id` and `.kind`, and the transitions' `id`, `application_id`, `to_stage_id` and `transitioned_at`; the same rule applies, and dropping either view it builds on now needs this one dropped first. `1730000018000` replaces it with the same columns, so that `responded`, `interviewed` and `offered` are never `NULL` (they were when the entry lane had been deleted).
 - Every new migration also updates `LATEST_MIGRATION` in `src/lib/db/schema-version.ts`. `ensureSchema()` compares it with the newest row in `schema_migrations` once per process and refuses to query a database that is behind; a test fails when the constant falls behind the `migrations/` folder.
 - The runner serialises concurrent runs with `pg_advisory_xact_lock` inside each migration's transaction, then re-checks `schema_migrations`. A session-level lock would not survive Neon's transaction pooler.
 
@@ -217,8 +229,13 @@ A rename is refused (409) when another lane has the name in any case. Charts gro
 | Stale | In a lane that can go stale for 14 days or more since it was entered (`STALE_THRESHOLD_DAYS`) |
 | Reached (funnel) | Distinct applications whose entry lane or any lane moved into is the lane, by lane id |
 | Applied at | For a card whose entry lane is `intake`: its first move into a pipeline lane (not `intake`, `rejected` or `closed`; a deleted lane counts), `NULL` until then. Otherwise `created_at` (view `application_applied_at`). Derived, not stored: a card moved back below its entry lane into intake loses its original date, because that move clears the path |
-| Days to interview | First transition into any `interview` lane minus applied at, over cards that have one |
+| Days to interview | First transition into any `interview` lane minus applied at, over cards that have one (`application_milestones.first_interview_at`) |
+| Replied | The first edge after the application was sent whose target is not `intake` or `closed` (a deleted lane counts); for a card that entered in intake, after the edge that sent it, compared by `(transitioned_at, id)`. Also true, with no time, for a card that entered in an `interview`, `offer` or `rejected` lane, and for any card that reached an interview or an offer (view `application_milestones`) |
+| Response, interview, offer rates | Shares of the sent applications (applied at set) that replied, reached an `interview` lane (or entered in one), reached an `offer` lane (or entered in one). On the current path: a card moved back out of an interview lane no longer counts as interviewed |
+| Ghosted | Share of the sent applications currently in a `closed` lane |
 | Open count | Total minus applications in a resolved lane |
+
+A deleted entry lane has no kind, so its cards count as sent at creation (as in `application_applied_at`); for a card that entered in a since-deleted wishlist lane, the edge that sent it then counts as its reply.
 
 ## Time zones
 
@@ -247,6 +264,7 @@ src/
     db/                every query: index.ts (public API), client.ts, rows.ts,
                        stages.ts, applications.ts, sankey.ts, stats.ts, timeline.ts
     stage-statements.ts  the move and rename statements (no runtime imports)
+    stats-statements.ts  statements for the stats page, e.g. the rates (imports only other such modules)
     application-statements.ts  read statements about one application, e.g. its timeline (imports only ./stage-statements.ts)
     stage-kinds.ts     lane kinds, rank, chart colours (no runtime imports)
     transitions.ts     reference rewind implementation
@@ -278,6 +296,7 @@ src/
 | `schema` | Indexes, constraints and cleanup built by the real migrations on PGlite; migrations re-run safely |
 | `timeline` | The timeline statement on PGlite after real moves: rewinds, renamed and deleted lanes |
 | `board-filter` | The filter matches company and role only; only rejected and closed lanes hide |
+| `milestones` | The milestones view and the rates statement on PGlite after real moves: replies, interviews, wishlist cards, rewinds, deleted lanes, kind changes |
 
 ## Known limitations
 
