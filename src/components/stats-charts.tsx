@@ -19,6 +19,7 @@ import { StatsPayload } from "@/lib/types";
 import { MEDIAN_MIN_SAMPLE, STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { daysUntil, formatDateOnly, todayInTimeZone } from "@/lib/timezone";
 import { fillWeeks, isWeekOpen, weekStartOf } from "@/lib/weeks";
+import { SOURCE_MIN_GROUP, UNKNOWN_SOURCE } from "@/lib/sources";
 import { KIND_COLORS, KIND_LABELS, RESOLVED_KINDS, ResolvedKind, colorFor } from "@/lib/stage-kinds";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -543,6 +544,53 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
                 </div>
               ) : (
                 <p className="py-6 text-center text-sm text-muted-foreground">No application sent yet.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Results by Source</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Sent applications by the site in their job link. Sites with fewer than {SOURCE_MIN_GROUP} are summed
+                in &quot;Other&quot;; applications without a usable link are &quot;Unknown&quot;.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {data.sources.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">No application sent yet.</p>
+              ) : data.sources.every((row) => row.source === UNKNOWN_SOURCE) ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  None of the sent applications has a job link yet. Add one in a card&apos;s dialog to see which sites lead
+                  to replies.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+                        <th scope="col" className="py-2 pr-4 font-medium">Source</th>
+                        <th scope="col" className="py-2 pr-4 text-right font-medium">Sent</th>
+                        <th scope="col" className="py-2 pr-4 font-medium">Replied</th>
+                        <th scope="col" className="py-2 pr-4 font-medium">Interview</th>
+                        <th scope="col" className="py-2 font-medium">Offer</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.sources.map((row) => (
+                        <tr key={row.source} className="border-t border-border/40">
+                          <th scope="row" className="max-w-[16rem] truncate py-2 pr-4 text-left font-normal" title={row.source}>
+                            {row.source}
+                          </th>
+                          <td className="py-2 pr-4 text-right tabular-nums">{row.sent}</td>
+                          <ShareCell count={row.responded} of={row.sent} color={KIND_COLORS.active} muted={false} />
+                          <ShareCell count={row.interviewed} of={row.sent} color={KIND_COLORS.interview} muted={false} />
+                          <ShareCell count={row.offered} of={row.sent} color={KIND_COLORS.offer} muted={false} last />
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </CardContent>
           </Card>

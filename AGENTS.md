@@ -14,7 +14,7 @@ A single-owner job application tracker with three views: pipeline stats (`/`), a
 - `npm run build`: production build
 - `npm run check`: lint, typecheck and every test. Run it before every commit; CI runs it on every push.
 - `npm run lint`, `npm run typecheck`, `npm test`: the three parts on their own
-- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`, `milestones`, `funnel`, `weeks`, `stats-statements`)
+- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`, `milestones`, `funnel`, `weeks`, `stats-statements`, `sources`)
 - `npm run migrate:up`: apply migrations to `DATABASE_URL`. Refuses when that is production.
 - `npm run migrate:prod`: apply migrations to `PRODUCTION_DATABASE_URL`. Asks for the endpoint id; only run it when the user asks.
 - `npm run migrate:create -- <name>`: scaffold a migration
@@ -52,6 +52,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
 - `src/lib/stats-statements.ts`: statements for the stats page (the rates over `application_milestones`, the weekly results, the medians to a reply), run inside the page's snapshot with `tx.query()`. Their tests go in `tests/stats-statements.test.mjs`.
 - `src/lib/weeks.ts`: week arithmetic on `YYYY-MM-DD` strings (Monday week starts, empty weeks filled up to the current one, whether a week is still open).
+- `src/lib/sources.ts`: results by source (job-link host, the "Other" and "Unknown" groups), grouped on the server so only totals reach the page. Hosts are shown as text, never as links or images, so the CSP needs no new host.
 - `src/lib/funnel.ts`: the stats funnel (lanes in pipeline rank, and per lane the share of its cards that reached a later pipeline lane); it imports `compareStageRank()`, so the rank rule is not copied a third time.
 - `src/lib/board-filter.ts`: the board filter's rules (company and role only, never notes; outcome lanes hidden by kind).
 - `src/lib/sankey.ts`: builds the Sankey graph as a DAG.

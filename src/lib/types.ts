@@ -71,6 +71,9 @@ export interface StatsPayload {
   // viewer's zone), with how many of them got a reply, an interview, an offer;
   // weeks without any are absent.
   weeks: { weekStart: string; sent: number; responded: number; interviewed: number; offered: number }[];
+  // Sent applications by the host of their job link (groupBySource() in
+  // sources.ts): hosts with at least 3, then "Other" and "Unknown".
+  sources: { source: string; sent: number; responded: number; interviewed: number; offered: number }[];
   // Median days from sending to the first reply and to a rejection, over the
   // applications where both times are known, with how many there were.
   timeToHearBack: {

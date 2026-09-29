@@ -92,3 +92,22 @@ export function timeToHearBackStatement(): SqlStatement {
     WHERE m.applied_at IS NOT NULL;
   `);
 }
+
+export interface SourceApplicationRow {
+  source_url: string | null;
+  responded: boolean;
+  interviewed: boolean;
+  offered: boolean;
+}
+
+// Every sent application's job link with its three flags. groupBySource() in
+// sources.ts turns them into per-host counts on the server, so the page only
+// receives the totals.
+export function sourceApplicationsStatement(): SqlStatement {
+  return compileSql(sqlFragment`
+    SELECT a.source_url, m.responded, m.interviewed, m.offered
+    FROM application_milestones m
+    JOIN applications a ON a.id = m.application_id
+    WHERE m.applied_at IS NOT NULL;
+  `);
+}

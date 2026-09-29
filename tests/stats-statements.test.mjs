@@ -4,7 +4,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CREATED, setupBoard } from "./helpers/pglite-board.mjs";
-import { milestoneStatsStatement, timeToHearBackStatement, weeklyStatement } from "../src/lib/stats-statements.ts";
+import {
+  milestoneStatsStatement,
+  sourceApplicationsStatement,
+  timeToHearBackStatement,
+  weeklyStatement
+} from "../src/lib/stats-statements.ts";
 
 const { sql, idOf, createApp, move, edgeAt, run } = setupBoard();
 
@@ -196,5 +201,19 @@ test("weekly results: each week's applications with their replies, interviews an
     ["2026-08-31", 2, 1, 0, 0],
     ["2026-09-07", 3, 3, 2, 1],
     ["2026-09-14", 1, 0, 0, 0]
+  ]);
+});
+
+test("source applications: each sent application's link and flags; unsent cards left out", async () => {
+  const withLink = await createApp("Applied");
+  await sql`UPDATE applications SET source_url = 'https://jobs.example.com/1' WHERE id = ${withLink}`;
+  await move(withLink, "Interview");
+  await createApp("Applied"); // no link
+  const unsent = await createApp("Wishlist");
+  await sql`UPDATE applications SET source_url = 'https://jobs.example.com/2' WHERE id = ${unsent}`;
+  const rows = (await run(sourceApplicationsStatement())).sort((a, b) => String(a.source_url).localeCompare(String(b.source_url)));
+  assert.deepEqual(rows, [
+    { source_url: "https://jobs.example.com/1", responded: true, interviewed: true, offered: false },
+    { source_url: null, responded: false, interviewed: false, offered: false }
   ]);
 });

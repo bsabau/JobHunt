@@ -439,6 +439,13 @@ Done in PR #36:
 
 **Acceptance:** the group counts add up to the number of sent applications, and the rows match a hand count on `dev`.
 
+Done in PR #37:
+
+- `sourceApplicationsStatement()` returns each sent application's link and flags; `groupBySource()` in the new `src/lib/sources.ts` turns them into per-host counts in `getStatsData()`, so the page receives totals only (`StatsPayload.sources`).
+- "Results by Source": the same table as results by week (source, sent, replied, interview, offer), hosts as plain text.
+- Neither `dev` nor production has a job link on any application yet, so on the owner's data every card is "Unknown"; the card then says so and asks for links instead of showing one "Unknown" row. With four temporary cards on `dev` the table showed a host group of 3 and "Other", then the cards were removed.
+- Tests: `tests/sources.test.mjs` (host rules, the threshold on its boundary, ordering, totals, empty) and a statement test (unsent cards left out).
+
 ### 3.4 Date range filter (M-5)
 
 **Goal:** look at the last 30 or 90 days only.
