@@ -29,6 +29,8 @@ A single-owner job application tracker. The owner adds applications, drags them 
 | `/sankey` | `src/app/sankey/page.tsx` | `getSankeyData()` | `SankeyChart` |
 | `/login` | `src/app/login/page.tsx` | none | client page |
 
+Error pages: `src/app/error.tsx` when a page fails to render (header without the role text, the error digest, `retry()`); `global-error.tsx` when the root layout fails (its own `<html>`/`<body>`); `not-found.tsx` for unknown URLs (404, behind `requirePageSession()`).
+
 Every page calls `requirePageSession()` before touching the database and redirects to `/login` when there is no valid session.
 
 ### API
@@ -208,7 +210,7 @@ Timestamps are stored as `TIMESTAMPTZ`; `interview_date` is a plain `DATE`. The 
 
 ## Logo lookup
 
-`findCompanyLogo()` queries Clearbit's autocomplete endpoint for a domain and stores a Google S2 favicon URL for it, with a 3 second timeout. `scheduleLogoLookup()` (`src/lib/logo-lookup.ts`) runs it with `after()`, once the response is sent: on creation, and on an edit that changes the company. The card shows its initial until the next load. The write (`setApplicationLogo()`) only applies while the card still has the company that was looked up and does not touch `updated_at`; a lookup that finds nothing after a rename clears the old logo. Stored URLs are restricted to an allowlist of hosts and rendered with a plain `<img>` and `referrerPolicy="no-referrer"`; the Next image optimizer is disabled.
+`findCompanyLogo()` queries Clearbit's autocomplete endpoint for a domain and stores a Google S2 favicon URL for it, with a 3 second timeout. `scheduleLogoLookup()` (`src/lib/logo-lookup.ts`) runs it with `after()`, once the response is sent: on creation, and after an edit that leaves the card without a logo. An edit that changes the company (ignoring case and surrounding spaces) clears the logo in the same statement, so the response never pairs a new name with the old logo; the same rule retries cards whose earlier lookup found nothing. The card shows its initial until the next load. The write (`setApplicationLogo()`) only applies while the card still has the company that was looked up and does not touch `updated_at`. Stored URLs are restricted to an allowlist of hosts and rendered with a plain `<img>` and `referrerPolicy="no-referrer"`; the Next image optimizer is disabled.
 
 ## Source layout
 
@@ -257,7 +259,6 @@ src/
 
 ## Known limitations
 
-- Error pages: `src/app/error.tsx` (a page failed to render; offers `retry()` and shows the error digest), `global-error.tsx` (the root layout failed), `not-found.tsx` (unknown URLs, 404).
 - The login throttle is an in-memory map per server instance; it resets on cold start and is not shared between instances.
 - Cards can only be moved by mouse drag or through the edit dialog, which opens on double-click.
 - Reordering lanes or changing a lane's kind changes rank, so older history can contain edges that now point backwards. The Sankey drops those and reports the count.

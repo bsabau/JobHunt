@@ -51,6 +51,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
 - `src/lib/sankey.ts`: builds the Sankey graph as a DAG.
 - `src/lib/auth.ts`: session tokens, credential check, `requireSession()`.
+- `src/lib/logo.ts`: company logo lookup (Clearbit, Google S2 favicons, host allowlist); `src/lib/logo-lookup.ts` runs it with `after()` once the response is sent.
 - `src/lib/types.ts`: shared interfaces (`Stage`, `Application`, `SankeyPayload`, `StatsPayload`).
 - `src/lib/limits.ts`: text length limits used by both the forms and the API.
 - `src/components/ui/`: shadcn/ui-style primitives (Radix and Tailwind).

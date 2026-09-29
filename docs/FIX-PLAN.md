@@ -312,7 +312,7 @@ Add `src/app/error.tsx`, `src/app/global-error.tsx` and `src/app/not-found.tsx` 
 
 Done in PR #18 (5.1 and 5.2):
 
-- 5.1: `POST /api/applications` inserts and answers at once (68 ms on `dev`, previously up to 3 s); `scheduleLogoLookup()` runs the lookup with `after()` and writes through `setApplicationLogo()`, guarded by the company name and without touching `updated_at`. `PUT` schedules a lookup only when the company changed; a rename with no logo found clears the old one.
+- 5.1: `POST /api/applications` inserts and answers at once (68 ms on `dev`, previously up to 3 s); `scheduleLogoLookup()` runs the lookup with `after()` and writes through `setApplicationLogo()`, guarded by the company name and without touching `updated_at`. The update clears `logo_url` when the company changes (ignoring case and spacing), and `PUT` schedules a lookup whenever the card comes back without a logo, which also retries failed lookups.
 - 5.2: the three pages exist; `error.tsx` uses this Next version's `retry()`. Checked against a production build with an unreachable database: the error page renders inside the normal header with its digest, and an unknown URL returns 404 with the not-found page.
 - 5.6 moves to the next PR, which adds the toast it needs.
 

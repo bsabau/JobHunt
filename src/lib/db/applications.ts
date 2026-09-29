@@ -68,15 +68,6 @@ export async function listApplications(viewer: Role): Promise<Application[]> {
   return rows.map((row) => mapApplication(row, viewer));
 }
 
-// The stored company name, or null for an unknown application. The edit route
-// uses it to tell whether a logo lookup is due.
-export async function getApplicationCompany(id: number): Promise<string | null> {
-  await ensureSchema();
-
-  const rows = (await sql`SELECT company FROM applications WHERE id = ${id};`) as { company: string }[];
-  return rows[0]?.company ?? null;
-}
-
 // Stores a looked-up logo. The lookup runs after the response, so it only
 // writes while the application still has the company it was looked up for,
 // and it leaves updated_at alone: a logo is not an edit and must not reorder
@@ -255,7 +246,15 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
   // An unknown target lane fails the stage_id foreign key inside the move
   // statement, which applyStageMove maps to "Target stage not found".
   const outcome = await applyStageMove(
+    // SET expressions read the row as it was, so this compares the old
+    // company with the new one. A different company (not just different case
+    // or spacing) must not keep the old company's logo; the edit route then
+    // schedules a lookup for any card left without one.
     sqlFragment`
+      logo_url = CASE
+        WHEN LOWER(btrim(company)) = LOWER(${input.company.trim()}) THEN logo_url
+        ELSE NULL
+      END,
       company = ${input.company.trim()},
       role = ${input.role.trim()},
       notes = ${input.notes?.trim() || null},

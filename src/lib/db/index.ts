@@ -4,7 +4,6 @@ export { addStage, deleteStage, listStages, reorderStages, updateStage } from ".
 export {
   createApplication,
   deleteApplication,
-  getApplicationCompany,
   listApplications,
   setApplicationLogo,
   updateApplication,

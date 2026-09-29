@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 export default function Error({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
   return (
     <main className="mx-auto min-h-screen max-w-[1500px] px-6 py-10">
-      <PageHeader />
+      <PageHeader description={null} />
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle>Something went wrong</CardTitle>
