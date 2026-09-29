@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { safeVerifySessionToken, SESSION_COOKIE } from "@/lib/auth";
-import { CSP_HEADER, NONCE_HEADER, contentSecurityPolicy } from "@/lib/csp";
+import { CSP_HEADER, CSP_REQUEST_HEADER, NONCE_HEADER, contentSecurityPolicy } from "@/lib/csp";
 
 // Lets the request through. Pages get a fresh nonce and the policy that names
 // it, on the request (so Next can put the nonce on its scripts) and on the
@@ -13,7 +13,9 @@ function pass(request: NextRequest): NextResponse {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const policy = contentSecurityPolicy(nonce, { development: process.env.NODE_ENV === "development" });
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set(CSP_HEADER, policy);
+  // Next reads the nonce from the enforcing header name first, so that one
+  // is always set here, replacing any the client sent.
+  requestHeaders.set(CSP_REQUEST_HEADER, policy);
   requestHeaders.set(NONCE_HEADER, nonce);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set(CSP_HEADER, policy);

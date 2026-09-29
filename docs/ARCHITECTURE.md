@@ -61,7 +61,7 @@ There is no stats endpoint; the stats page is server-rendered only. It reads eve
    - Non-GET requests are rejected when `Origin` or `Sec-Fetch-Site` shows a cross-site caller.
    - Requests without a valid session get a 401 (API) or a redirect to `/login` (pages).
    - Guests are blocked from every non-GET API call.
-   - Pages get a fresh nonce and a `Content-Security-Policy-Report-Only` header built by `src/lib/csp.ts`, on the request (Next puts the nonce on its scripts; the root layout passes it to the theme script through `x-nonce`) and on the response. API responses get neither.
+   - Pages get a fresh nonce and a policy built by `src/lib/csp.ts`. The request carries it as `Content-Security-Policy`, overwriting any the client sent: Next reads the nonce from it and puts it on its scripts, and the root layout passes it to the theme script through `x-nonce`. The response carries it as `Content-Security-Policy-Report-Only`. API responses get neither.
 2. The route handler or page calls `requireSession()` / `requirePageSession()` again. The proxy is an early gate, not the authority.
 3. Input goes through the helpers in `src/lib/api-validation.ts`.
 4. `src/lib/db/` runs the query.
@@ -84,7 +84,7 @@ The token is `role:expires:version:signature`. `version` is an HMAC over the rol
 
 `next.config.ts` sets on every response: `X-Frame-Options: DENY` and an enforced `Content-Security-Policy: frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
 
-The full policy is report-only for now, so violations show in the browser console and nothing is blocked. Scripts need the request's nonce (`'strict-dynamic'` trusts what they load, such as Vercel Analytics). Styles allow `'unsafe-inline'` because Radix and Recharts set style attributes. Images are limited to the logo hosts: `www.google.com`, `*.gstatic.com` (where Google's favicon service redirects) and `logo.clearbit.com`. A new external host for scripts, images or requests must be added to `src/lib/csp.ts`. Before switching the header to enforcing, check a production build for violations.
+The full policy is report-only for now, so violations show in the browser console and nothing is blocked. Scripts need the request's nonce (`'strict-dynamic'` trusts what they load, such as Vercel Analytics). Styles allow `'unsafe-inline'` because Radix and Recharts set style attributes. Images are limited to the logo hosts: `www.google.com`, `*.gstatic.com` (where Google's favicon service redirects) and `logo.clearbit.com`. A test fails when `ALLOWED_LOGO_HOSTS` in `logo.ts` names a host the policy does not allow. A new external host for scripts, images or requests must be added to `src/lib/csp.ts`. Before switching the header to enforcing, check a production build for violations.
 
 Analytics events (`src/lib/analytics.ts`) carry lane kinds, never lane names, since a name is free text.
 

@@ -28,5 +28,9 @@ export function contentSecurityPolicy(nonce: string, options: { development: boo
 // production build shows none.
 export const CSP_HEADER = "Content-Security-Policy-Report-Only";
 
+// Request header Next reads the nonce from while rendering. It is checked
+// before the report-only name, so the proxy always overwrites it.
+export const CSP_REQUEST_HEADER = "Content-Security-Policy";
+
 // Request header that hands the nonce to the root layout.
 export const NONCE_HEADER = "x-nonce";

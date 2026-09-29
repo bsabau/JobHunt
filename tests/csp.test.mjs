@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { contentSecurityPolicy } from "../src/lib/csp.ts";
+import { ALLOWED_LOGO_HOSTS } from "../src/lib/logo.ts";
 
 const directives = (policy) => Object.fromEntries(policy.split("; ").map((part) => [part.split(" ")[0], part.split(" ").slice(1)]));
 
@@ -15,4 +16,11 @@ test("framing, plugins and foreign form targets are refused", () => {
   assert.deepEqual(policy["frame-ancestors"], ["'none'"]);
   assert.deepEqual(policy["object-src"], ["'none'"]);
   assert.deepEqual(policy["form-action"], ["'self'"]);
+});
+
+test("every logo host the lookup may store is allowed as an image source", () => {
+  const images = directives(contentSecurityPolicy("abc", { development: false }))["img-src"];
+  for (const host of ALLOWED_LOGO_HOSTS) {
+    assert.ok(images.includes(`https://${host}`), `${host} is missing from img-src`);
+  }
 });
