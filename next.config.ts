@@ -5,8 +5,9 @@ const securityHeaders = [
   // entirely rather than relying on the delete confirm() dialogs. No
   // Content-Security-Policy here: Vercel also applies these headers to the
   // incoming request, where it would replace the policy the proxy hands Next
-  // and leave Next's scripts without the nonce. The page policy
-  // (src/lib/csp.ts) carries frame-ancestors 'none'.
+  // and leave Next's scripts without the nonce (tests/csp.test.mjs checks).
+  // X-Frame-Options stays: the page policy's frame-ancestors only covers pages,
+  // and only once that policy is enforced.
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
