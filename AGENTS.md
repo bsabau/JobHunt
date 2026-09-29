@@ -14,7 +14,7 @@ A single-owner job application tracker with three views: pipeline stats (`/`), a
 - `npm run build`: production build
 - `npm run check`: lint, typecheck and every test. Run it before every commit; CI runs it on every push.
 - `npm run lint`, `npm run typecheck`, `npm test`: the three parts on their own
-- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`)
+- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`)
 - `npm run migrate:up`: apply migrations to `DATABASE_URL`. Refuses when that is production.
 - `npm run migrate:prod`: apply migrations to `PRODUCTION_DATABASE_URL`. Asks for the endpoint id; only run it when the user asks.
 - `npm run migrate:create -- <name>`: scaffold a migration
@@ -41,7 +41,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 2. Every route handler calls `requireSession()` and every page calls `requirePageSession()` **before** any database access. The proxy is not the authority. New routes and pages must do the same; pass `{ write: true }` for anything that changes data.
 3. Parse input with the helpers in `src/lib/api-validation.ts`.
 4. Query through `src/lib/db/` (imported as `@/lib/db`).
-5. Return errors through `errorResponse()` from `src/lib/api-errors.ts`. Throw `NotFoundError`, `ConflictError` or `InvalidInputError` for expected failures.
+5. Return errors through `errorResponse()` from `src/lib/api-errors.ts`. Throw `NotFoundError`, `ConflictError` or `InvalidInputError` for expected failures (and `ApiValidationError` for malformed input; it is an `ApiError` too). Success responses without a payload are `{ ok: true }`.
 
 ### Key modules
 
@@ -68,7 +68,7 @@ These are easy to break and not obvious from any single file.
 - **When a card entered its current lane comes from the view `application_stage_entry`.** Use it for staleness and time in lane instead of another "latest move into the lane, else created_at" subquery.
 - **Transitions reference lanes by id** (`from_stage_id`, `to_stage_id`); join history to lanes by id, never by name. `from_status` / `to_status` hold the lane's name: a rename rewrites them in the same statement (`stageUpdateStatement()`), and after a lane is deleted its id becomes `NULL` and the name is all that remains. `new` and `created` are reserved names.
 - **Stage moves need `expectedStageId`.** It is the concurrency guard; a mismatch returns 409.
-- **Notes are owner-only.** `listApplications()` returns them to any caller, so every caller that serves a guest must set `notes` to `null`.
+- **Notes are owner-only.** `listApplications(viewer)` leaves them out for a guest viewer, through `mapApplication()` in `db/rows.ts`. Pass the session's role; never read applications for a guest another way.
 - **Dates and zones.** `interview_date` is a `DATE` and must be handled as a `YYYY-MM-DD` string, never parsed with `new Date(string)`. Anything formatted on both server and client must pin locale and time zone.
 
 ## Database
@@ -112,7 +112,7 @@ Use Node 24 LTS. The repo pins `24.16.0` in `.nvmrc` and `.node-version`, and `p
 
 - Tailwind CSS v4 through the PostCSS plugin, not the older config file.
 - UI components follow shadcn/ui patterns and use `cn()` from `src/lib/utils.ts`.
-- Database columns are snake_case and TypeScript is camelCase. Queries alias columns unquoted (`AS interviewDate`), Postgres folds them to lowercase, and the mappers in `db/rows.ts` read the lowercase key (`row.interviewdate`). Follow the existing pattern when adding a column.
+- Database columns are snake_case and TypeScript is camelCase. Queries return columns under their snake_case names (never alias to camelCase: Postgres folds unquoted aliases to lowercase), each query casts its result once to a row type (`ApplicationRow`, `StageRow` in `db/rows.ts`, or an inline type), and the mappers convert to camelCase. The Neon driver returns `numeric` (for example `AVG`) as a string.
 - Neon's `sql` tagged template parameterizes values. Never build SQL by string interpolation. Statements that tests must run on PGlite (see `stage-statements.ts`) are built with `sqlFragment` and `compileSql` instead, which parameterize the same way and nest.
 - Use the kind names exported from `stage-kinds.ts` (`TERMINAL_KINDS`, `STALE_EXCLUDED_KINDS`, `RESOLVED_KINDS`, `INTERVIEW_KIND`, `DEFAULT_CREATE_KIND`) in queries and components instead of writing the literals.
 - Comments explain why a thing is done, not what the code does.

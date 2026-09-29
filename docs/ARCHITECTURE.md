@@ -25,7 +25,7 @@ A single-owner job application tracker. The owner adds applications, drags them 
 | Path | File | Data | Client component |
 |---|---|---|---|
 | `/` | `src/app/page.tsx` | `getStatsData(timeZone)` | `StatsCharts` |
-| `/board` | `src/app/board/page.tsx` | `listApplications()`, `listStages()` | `KanbanBoard` |
+| `/board` | `src/app/board/page.tsx` | `listApplications(session.role)`, `listStages()` | `KanbanBoard` |
 | `/sankey` | `src/app/sankey/page.tsx` | `getSankeyData()` | `SankeyChart` |
 | `/login` | `src/app/login/page.tsx` | none | client page |
 
@@ -33,21 +33,21 @@ Every page calls `requirePageSession()` before touching the database and redirec
 
 ### API
 
-All bodies are JSON and must be sent with `Content-Type: application/json` (415 otherwise). Errors are `{ "message": string }`.
+All bodies are JSON and must be sent with `Content-Type: application/json` (415 otherwise). Errors are `{ "message": string }`. Success responses without a payload are `{ ok: true }`.
 
 | Method and path | Body | Notes |
 |---|---|---|
 | `POST /api/auth/login` | `user`, `pass` | Sets the `session` cookie. 401 on bad credentials, 429 after 5 failures per minute per IP |
 | `POST /api/auth/logout` | none | Clears the cookie; works without a session |
-| `GET /api/applications` | | Returns `{ applications, stages }`; `notes` is `null` for guests |
+| `GET /api/applications` | | Returns `{ applications, stages }`; `notes` is `null` for guests (redacted in the data layer) |
 | `POST /api/applications` | `company`, `role`, optional `notes`, `interviewDate`, `sourceUrl`, `stageId` | Looks up a logo first. Default lane is the first `active` lane |
-| `PATCH /api/applications/:id` | all editable fields, `stageId`, `expectedStageId` | Full replacement, not a partial update. 409 if the card moved |
-| `DELETE /api/applications/:id` | | Transitions cascade |
+| `PUT /api/applications/:id` | all editable fields, `stageId`, `expectedStageId` | Full replacement. 409 if the card moved |
+| `DELETE /api/applications/:id` | | Transitions cascade. `{ ok: true }` |
 | `PATCH /api/applications/:id/status` | `stageId`, `expectedStageId` | The drag-and-drop move. 409 if the card moved |
 | `GET /api/stages` | | |
 | `POST /api/stages` | `name`, optional `kind` | 409 on duplicate name. `new` and `created` are reserved |
 | `PATCH /api/stages/:id` | `name` and/or `kind` | A rename also rewrites the lane's names in history. 409 on a duplicate name (case-insensitive) |
-| `DELETE /api/stages/:id` | | 409 while the lane holds applications |
+| `DELETE /api/stages/:id` | | `{ ok: true }`; 404 for an unknown lane, 409 while it holds applications |
 | `PATCH /api/stages/reorder` | `stageIds` | Must list every lane exactly once |
 | `GET /api/sankey` | | |
 

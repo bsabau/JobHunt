@@ -90,7 +90,7 @@ const idShape = (transitions) =>
 
 async function runMove(appId, toName, expectedName) {
   const toStageId = await idOf(toName);
-  const expectedStageId = expectedName === undefined ? null : await idOf(expectedName);
+  const expectedStageId = await idOf(expectedName);
   const statement = stageMoveStatement(
     sqlFragment`stage_id = ${toStageId}, updated_at = NOW()`,
     appId,

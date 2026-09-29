@@ -3,7 +3,7 @@ import { stageUpdateStatement } from "@/lib/stage-statements";
 import { DEFAULT_CREATE_KIND, StageKind } from "@/lib/stage-kinds";
 import { Stage } from "@/lib/types";
 import { ensureSchema, getSql, hasPgCode, pgConstraint, sql, transaction } from "./client";
-import { mapStage } from "./rows";
+import { StageRow, mapStage } from "./rows";
 
 // "New" labels the Sankey entry node, and "created" marked creation in early
 // history rows (removed by migration 1730000010000); neither may name a real
@@ -18,13 +18,13 @@ async function getFirstStage(): Promise<{ id: number; name: string }> {
     FROM stages
     ORDER BY sort_order ASC, id ASC
     LIMIT 1;
-  `) as Record<string, unknown>[];
+  `) as { id: number; name: string }[];
 
   if (rows.length === 0) {
     throw new Error("No stage available");
   }
 
-  return { id: Number(rows[0].id), name: String(rows[0].name) };
+  return rows[0];
 }
 
 export async function getDefaultCreateStage(): Promise<{ id: number; name: string }> {
@@ -36,10 +36,10 @@ export async function getDefaultCreateStage(): Promise<{ id: number; name: strin
     WHERE kind = ${DEFAULT_CREATE_KIND}
     ORDER BY sort_order ASC, id ASC
     LIMIT 1;
-  `) as Record<string, unknown>[];
+  `) as { id: number; name: string }[];
 
   if (appliedRows.length > 0) {
-    return { id: Number(appliedRows[0].id), name: String(appliedRows[0].name) };
+    return appliedRows[0];
   }
 
   return getFirstStage();
@@ -49,10 +49,10 @@ export async function listStages(): Promise<Stage[]> {
   await ensureSchema();
 
   const rows = (await sql`
-    SELECT id, name, sort_order AS sortOrder, kind
+    SELECT id, name, sort_order, kind
     FROM stages
     ORDER BY sort_order ASC, id ASC;
-  `) as Record<string, unknown>[];
+  `) as StageRow[];
 
   return rows.map(mapStage);
 }
@@ -70,15 +70,15 @@ export async function addStage(name: string, kind: StageKind = DEFAULT_CREATE_KI
     throw new InvalidInputError(`"${trimmed}" is a reserved stage name`);
   }
 
-  let inserted: Record<string, unknown>[];
+  let inserted: StageRow[];
 
   try {
     inserted = (await sql`
       INSERT INTO stages (name, sort_order, kind)
       SELECT ${trimmed}, COALESCE(MAX(sort_order), -1) + 1, ${kind}
       FROM stages
-      RETURNING id, name, sort_order AS sortOrder, kind;
-    `) as Record<string, unknown>[];
+      RETURNING id, name, sort_order, kind;
+    `) as StageRow[];
   } catch (error) {
     if (hasPgCode(error, "23505")) {
       // Two unique constraints can fire here: the name, or the deferred
@@ -109,10 +109,10 @@ export async function updateStage(id: number, changes: { name?: string; kind?: S
   }
 
   const statement = stageUpdateStatement(id, { name, kind: changes.kind });
-  let rows: Record<string, unknown>[];
+  let rows: StageRow[];
 
   try {
-    rows = (await getSql().query(statement.text, statement.params)) as Record<string, unknown>[];
+    rows = (await getSql().query(statement.text, statement.params)) as StageRow[];
   } catch (error) {
     // Both the exact and the case-insensitive unique index map here.
     if (hasPgCode(error, "23505")) {
@@ -156,7 +156,7 @@ export async function reorderStages(stageIds: number[]): Promise<Stage[]> {
       FROM payload, guard
       WHERE guard.ok AND s.id = payload.id
       RETURNING s.id;
-    `) as Record<string, unknown>[];
+    `) as { id: number }[];
 
     if (updated.length !== stageIds.length) {
       throw new InvalidInputError("Reorder payload must include every stage exactly once");
@@ -166,10 +166,12 @@ export async function reorderStages(stageIds: number[]): Promise<Stage[]> {
   return listStages();
 }
 
-export async function deleteStage(id: number): Promise<{ deleted: boolean; reason?: string }> {
+// Deletes an empty lane and closes the gap in the board order. Throws
+// NotFoundError for an unknown lane and ConflictError while it holds cards.
+export async function deleteStage(id: number): Promise<void> {
   await ensureSchema();
 
-  let results: Record<string, unknown>[][];
+  let results: { id: number }[][];
 
   try {
     results = (await transaction((tx) => [
@@ -189,27 +191,23 @@ export async function deleteStage(id: number): Promise<{ deleted: boolean; reaso
         FROM ordered
         WHERE s.id = ordered.id;
       `
-    ])) as Record<string, unknown>[][];
+    ])) as { id: number }[][];
   } catch (error) {
     // A concurrent move may add an application to the stage between the
     // conditional delete and the FK check. Treat that as "not empty".
     if (hasPgCode(error, "23503")) {
-      return { deleted: false, reason: "Stage is not empty" };
+      throw new ConflictError("Stage is not empty");
     }
     throw error;
   }
 
-  const deletedRows = results[0] ?? [];
-
-  if (deletedRows.length === 0) {
-    const existsRows = (await sql`
-      SELECT 1 FROM stages WHERE id = ${id} LIMIT 1;
-    `) as Record<string, unknown>[];
-
-    return existsRows.length === 0
-      ? { deleted: false, reason: "Stage not found" }
-      : { deleted: false, reason: "Stage is not empty" };
+  if ((results[0] ?? []).length > 0) {
+    return;
   }
 
-  return { deleted: true };
+  const existsRows = (await sql`
+    SELECT 1 FROM stages WHERE id = ${id} LIMIT 1;
+  `) as unknown[];
+
+  throw existsRows.length === 0 ? new NotFoundError("Stage not found") : new ConflictError("Stage is not empty");
 }

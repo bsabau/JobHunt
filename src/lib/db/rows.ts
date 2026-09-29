@@ -1,43 +1,69 @@
-import { StageKind } from "@/lib/stage-kinds";
-import { Application, Stage } from "@/lib/types";
+import type { Role } from "@/lib/auth";
+import type { StageKind } from "@/lib/stage-kinds";
+import type { Application, Stage } from "@/lib/types";
 
-// Maps database rows to the shared TypeScript types.
+// Type-only imports, so the tests can load this file straight from Node.
+//
+// Rows as the queries return them. Columns keep their snake_case names (an
+// alias such as `AS stageName` would reach JavaScript folded to "stagename"),
+// and each query casts its result to one of these once. The Neon driver parses
+// int4 as number, numeric and DATE-as-text as string, and timestamptz as a
+// string or Date depending on the path, which the types reflect.
 
-function toIsoString(value: unknown): string {
-  if (typeof value === "string") {
-    return new Date(value).toISOString();
-  }
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  return new Date(String(value)).toISOString();
+type Timestamp = string | Date;
+
+export interface ApplicationRow {
+  id: number;
+  company: string;
+  role: string;
+  notes: string | null;
+  interview_date: string | null;
+  source_url: string | null;
+  logo_url: string | null;
+  stage_id: number;
+  stage_name: string;
+  stage_kind: StageKind;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  stage_entered_at: Timestamp;
 }
 
-export function mapApplication(row: Record<string, unknown>): Application {
+export interface StageRow {
+  id: number;
+  name: string;
+  sort_order: number;
+  kind: StageKind;
+}
+
+function toIsoString(value: Timestamp): string {
+  return (value instanceof Date ? value : new Date(value)).toISOString();
+}
+
+// Notes are owner-only: every application handed to a guest goes through here
+// with viewer "guest", so no caller has to remember to redact.
+export function mapApplication(row: ApplicationRow, viewer: Role): Application {
   return {
-    id: Number(row.id),
-    company: String(row.company),
-    role: String(row.role),
-    notes: row.notes ? String(row.notes) : null,
-    interviewDate: row.interviewdate ? String(row.interviewdate) : null,
-    sourceUrl: row.sourceurl ? String(row.sourceurl) : null,
-    logoUrl: row.logourl ? String(row.logourl) : null,
-    stageId: Number(row.stageid),
-    stageName: String(row.stagename),
-    stageKind: String(row.stagekind) as StageKind,
-    createdAt: toIsoString(row.createdat),
-    updatedAt: toIsoString(row.updatedat),
-    stageEnteredAt: toIsoString(row.stageenteredat ?? row.createdat)
+    id: row.id,
+    company: row.company,
+    role: row.role,
+    notes: viewer === "guest" ? null : row.notes || null,
+    interviewDate: row.interview_date || null,
+    sourceUrl: row.source_url || null,
+    logoUrl: row.logo_url || null,
+    stageId: row.stage_id,
+    stageName: row.stage_name,
+    stageKind: row.stage_kind,
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
+    stageEnteredAt: toIsoString(row.stage_entered_at)
   };
 }
 
-// A lane row: `id, name, sort_order AS sortOrder, kind` (Postgres folds the
-// alias to sortorder).
-export function mapStage(row: Record<string, unknown>): Stage {
+export function mapStage(row: StageRow): Stage {
   return {
-    id: Number(row.id),
-    name: String(row.name),
-    sortOrder: Number(row.sortorder),
-    kind: String(row.kind) as StageKind
+    id: row.id,
+    name: row.name,
+    sortOrder: row.sort_order,
+    kind: row.kind
   };
 }

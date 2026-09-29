@@ -3,7 +3,25 @@ import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
 import { INTERVIEW_KIND, RESOLVED_KINDS, STALE_EXCLUDED_KINDS, TERMINAL_KINDS, StageKind } from "@/lib/stage-kinds";
 import { StatsPayload } from "@/lib/types";
 import { ensureSchema, transaction } from "./client";
-import { mapStage } from "./rows";
+import { StageRow, mapStage } from "./rows";
+
+// One row type per query, in query order. AVG yields numeric, which the Neon
+// driver returns as a string.
+type StatsRows = [
+  (StageRow & { count: number })[],
+  { count: number }[],
+  { days: string }[],
+  { days: string }[],
+  { days: string | null; count: number }[],
+  { day: string; count: number }[],
+  { day: string; count: number }[],
+  { company: string; count: number }[],
+  { stage_id: number; count: number }[],
+  { from_stage: string; to_stage: string; count: number }[],
+  { company: string; role: string; interview_date: string; stage_name: string }[],
+  { company: string; role: string; stage_name: string; days_since_update: number }[],
+  { outcome_stage: string; kind: StageKind; from_stage: string | null; count: number }[]
+];
 
 // Label for applications that were created straight into an outcome lane.
 const OUTCOME_DIRECT_ENTRY = "Added directly";
@@ -31,7 +49,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     outcomeRows,
   ] = (await transaction((tx) => [
     tx`
-      SELECT s.id, s.name, s.sort_order AS sortOrder, s.kind, COUNT(a.id)::int AS count
+      SELECT s.id, s.name, s.sort_order, s.kind, COUNT(a.id)::int AS count
       FROM stages s
       LEFT JOIN applications a ON a.stage_id = s.id
       GROUP BY s.id, s.name, s.sort_order, s.kind
@@ -166,24 +184,24 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       GROUP BY s.id, s.name, s.kind, s.sort_order, fs.id, 3
       ORDER BY s.sort_order ASC, count DESC;
     `,
-  ], { readOnly: true, isolationLevel: "RepeatableRead" })) as Record<string, unknown>[][];
+  ], { readOnly: true, isolationLevel: "RepeatableRead" })) as StatsRows;
 
   // The lanes come from the same snapshot as the counts.
   const stages = stageCountRows.map(mapStage);
 
   const stageCounts = stageCountRows.map((row) => ({
-    stage: String(row.name),
-    count: Number(row.count),
-    sortOrder: Number(row.sortorder),
-    kind: String(row.kind) as StageKind
+    stage: row.name,
+    count: row.count,
+    sortOrder: row.sort_order,
+    kind: row.kind
   }));
 
   const totalApps = stageCounts.reduce((sum, row) => sum + row.count, 0);
   const activeStages = stageCounts.filter((row) => row.count > 0).length;
-  const totalTransitions = Number(transitionCountRows[0]?.count ?? 0);
+  const totalTransitions = transitionCountRows[0]?.count ?? 0;
   const avgDaysSinceCreated = Math.round(Number(avgDaysRows[0]?.days ?? 0) * 10) / 10;
   const avgDaysInCurrentStage = Math.round(Number(avgCurrentStageRows[0]?.days ?? 0) * 10) / 10;
-  const interviewReachedCount = Number(avgInterviewRows[0]?.count ?? 0);
+  const interviewReachedCount = avgInterviewRows[0]?.count ?? 0;
   const avgDaysToInterview =
     interviewReachedCount > 0
       ? Math.round(Number(avgInterviewRows[0]?.days ?? 0) * 10) / 10
@@ -191,28 +209,22 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
 
   let cumulative = 0;
   const applicationsOverTime = createdByDayRows.map((row) => {
-    const created = Number(row.count);
+    const created = row.count;
     cumulative += created;
     return {
-      date: String(row.day),
+      date: row.day,
       created,
       cumulative
     };
   });
 
-  const transitionsByDay = transitionsByDayRows.map((row) => ({
-    date: String(row.day),
-    count: Number(row.count)
-  }));
+  const transitionsByDay = transitionsByDayRows.map((row) => ({ date: row.day, count: row.count }));
 
-  const topCompanies = topCompanyRows.map((row) => ({
-    company: String(row.company),
-    count: Number(row.count)
-  }));
+  const topCompanies = topCompanyRows.map((row) => ({ company: row.company, count: row.count }));
 
   const reachedMap = new Map<number, number>();
   for (const row of reachedRows) {
-    reachedMap.set(Number(row.stage_id), Number(row.count));
+    reachedMap.set(row.stage_id, row.count);
   }
 
   const funnel = stages.map((stage) => ({
@@ -222,31 +234,27 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     kind: stage.kind
   }));
 
-  const stagePairs = stagePairRows.map((row) => ({
-    from: String(row.from_stage),
-    to: String(row.to_stage),
-    count: Number(row.count)
-  }));
+  const stagePairs = stagePairRows.map((row) => ({ from: row.from_stage, to: row.to_stage, count: row.count }));
 
   const upcomingInterviews = upcomingInterviewRows.map((row) => ({
-    company: String(row.company),
-    role: String(row.role),
-    interviewDate: String(row.interview_date),
-    stageName: String(row.stage_name)
+    company: row.company,
+    role: row.role,
+    interviewDate: row.interview_date,
+    stageName: row.stage_name
   }));
 
   const staleApplications = staleApplicationRows.map((row) => ({
-    company: String(row.company),
-    role: String(row.role),
-    stageName: String(row.stage_name),
-    daysSinceUpdate: Number(row.days_since_update)
+    company: row.company,
+    role: row.role,
+    stageName: row.stage_name,
+    daysSinceUpdate: row.days_since_update
   }));
 
   const outcomes = outcomeRows.map((row) => ({
-    fromStage: row.from_stage == null ? OUTCOME_DIRECT_ENTRY : String(row.from_stage),
-    outcomeStage: String(row.outcome_stage),
-    kind: String(row.kind) as StageKind,
-    count: Number(row.count)
+    fromStage: row.from_stage ?? OUTCOME_DIRECT_ENTRY,
+    outcomeStage: row.outcome_stage,
+    kind: row.kind,
+    count: row.count
   }));
   const resolvedCount = outcomes.reduce((sum, row) => sum + row.count, 0);
 

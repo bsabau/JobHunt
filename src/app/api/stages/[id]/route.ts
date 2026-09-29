@@ -41,14 +41,8 @@ export async function DELETE(_: Request, { params }: Params) {
   try {
     await requireSession({ write: true });
     const stageId = positiveInteger(id, "id");
-    const result = await deleteStage(stageId);
-
-    if (!result.deleted) {
-      const status = result.reason === "Stage not found" ? 404 : 409;
-      return NextResponse.json({ message: result.reason }, { status });
-    }
-
-    return NextResponse.json({ success: true });
+    await deleteStage(stageId);
+    return NextResponse.json({ ok: true });
   } catch (error) {
     return errorResponse(error, "Failed to delete stage");
   }

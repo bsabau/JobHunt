@@ -289,6 +289,13 @@ Give `listApplications` a required `viewer: Role` argument and strip notes insid
 - `expectedStageId` becomes required in the `db` function signatures.
 - Either rename the full update to `PUT` or make `PATCH` accept partial bodies. `PUT` is the smaller change.
 
+Done in PR #17 (4.3, 4.8, 4.9):
+
+- 4.3: queries return snake_case columns; `ApplicationRow` and `StageRow` (and inline types for the one-off queries) are cast once per query, and the mappers in `db/rows.ts` are typed against them. The driver has no row type parameter, so a typed cast replaces `as Record<string, unknown>[]`. The only conversions left are for `numeric` averages, which arrive as strings.
+- 4.8: `listApplications(viewer)` redacts notes for a guest through `mapApplication()`; the board page and `GET /api/applications` no longer redact themselves. `tests/rows.test.mjs` covers it.
+- 4.9: `deleteStage` throws `NotFoundError` / `ConflictError`; `ApiValidationError` extends `ApiError`, which also removes the import cycle between `api-errors.ts` and `api-validation.ts`; bodies without a payload are `{ ok: true }`; `expectedStageId` is required in the db signatures; the full update is `PUT /api/applications/:id` (the edit dialog sends `PUT`; `PATCH` there now answers 405).
+- On `dev`, stats, applications and Sankey are identical to the baseline taken before 4B.
+
 **Done when:** no file in `src/lib/db/` exceeds about 300 lines, the stats page makes one database request, and the phase 1 tests still pass.
 
 ---

@@ -16,7 +16,8 @@ interface Params {
   params: Promise<{ id: string }>;
 }
 
-export async function PATCH(request: NextRequest, { params }: Params) {
+// A full replacement of the editable fields, hence PUT.
+export async function PUT(request: NextRequest, { params }: Params) {
   const { id } = await params;
 
   try {
@@ -56,7 +57,7 @@ export async function DELETE(_: Request, { params }: Params) {
       return NextResponse.json({ message: "Application not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ ok: true });
   } catch (error) {
     return errorResponse(error, "Failed to delete application");
   }

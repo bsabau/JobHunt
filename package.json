@@ -23,7 +23,8 @@
     "verify:transitions": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/transitions.test.mjs",
     "verify:stage-kinds": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stage-kinds.test.mjs",
     "verify:stage-statements": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stage-statements.test.mjs",
-    "verify:schema": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/schema.test.mjs"
+    "verify:schema": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/schema.test.mjs",
+    "verify:rows": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/rows.test.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

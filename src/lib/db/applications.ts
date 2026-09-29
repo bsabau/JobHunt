@@ -1,9 +1,10 @@
 import { ConflictError, InvalidInputError } from "@/lib/api-errors";
 import { SqlFragment, sqlFragment, stageMoveStatement } from "@/lib/stage-statements";
 import { TERMINAL_KINDS } from "@/lib/stage-kinds";
+import type { Role } from "@/lib/auth";
 import { Application } from "@/lib/types";
 import { ensureSchema, getSql, isStageForeignKeyViolation, sql } from "./client";
-import { mapApplication } from "./rows";
+import { ApplicationRow, mapApplication } from "./rows";
 import { getDefaultCreateStage } from "./stages";
 
 async function selectApplicationById(id: number): Promise<Application | null> {
@@ -15,29 +16,32 @@ async function selectApplicationById(id: number): Promise<Application | null> {
       a.company,
       a.role,
       a.notes,
-      a.interview_date::text AS interviewDate,
-      a.source_url AS sourceUrl,
-      a.logo_url AS logoUrl,
-      a.stage_id AS stageId,
-      s.name AS stageName,
-      s.kind AS stageKind,
-      a.created_at AS createdAt,
-      a.updated_at AS updatedAt,
-      e.entered_at AS stageEnteredAt
+      a.interview_date::text AS interview_date,
+      a.source_url,
+      a.logo_url,
+      a.stage_id,
+      s.name AS stage_name,
+      s.kind AS stage_kind,
+      a.created_at,
+      a.updated_at,
+      e.entered_at AS stage_entered_at
     FROM applications a
     JOIN stages s ON s.id = a.stage_id
     JOIN application_stage_entry e ON e.application_id = a.id
     WHERE a.id = ${id};
-  `) as Record<string, unknown>[];
+  `) as ApplicationRow[];
 
   if (rows.length === 0) {
     return null;
   }
 
-  return mapApplication(rows[0]);
+  // Only the owner-only write routes (create, edit, move) read a single
+  // application, so the viewer is always the owner.
+  return mapApplication(rows[0], "user");
 }
 
-export async function listApplications(): Promise<Application[]> {
+// `viewer` decides what the caller may see: a guest gets no notes.
+export async function listApplications(viewer: Role): Promise<Application[]> {
   await ensureSchema();
 
   const rows = (await sql`
@@ -46,22 +50,22 @@ export async function listApplications(): Promise<Application[]> {
       a.company,
       a.role,
       a.notes,
-      a.interview_date::text AS interviewDate,
-      a.source_url AS sourceUrl,
-      a.logo_url AS logoUrl,
-      a.stage_id AS stageId,
-      s.name AS stageName,
-      s.kind AS stageKind,
-      a.created_at AS createdAt,
-      a.updated_at AS updatedAt,
-      e.entered_at AS stageEnteredAt
+      a.interview_date::text AS interview_date,
+      a.source_url,
+      a.logo_url,
+      a.stage_id,
+      s.name AS stage_name,
+      s.kind AS stage_kind,
+      a.created_at,
+      a.updated_at,
+      e.entered_at AS stage_entered_at
     FROM applications a
     JOIN stages s ON s.id = a.stage_id
     JOIN application_stage_entry e ON e.application_id = a.id
     ORDER BY a.updated_at DESC, a.id DESC;
-  `) as Record<string, unknown>[];
+  `) as ApplicationRow[];
 
-  return rows.map(mapApplication);
+  return rows.map((row) => mapApplication(row, viewer));
 }
 
 interface CreateApplicationInput {
@@ -84,7 +88,7 @@ export async function createApplication(input: CreateApplicationInput): Promise<
           FROM stages
           WHERE id = ${input.stageId}
           LIMIT 1;
-        `) as Record<string, unknown>[])
+        `) as { id: number; name: string }[])
       : [];
 
   if (input.stageId !== undefined && selectedStageRows.length === 0) {
@@ -93,10 +97,10 @@ export async function createApplication(input: CreateApplicationInput): Promise<
 
   const stage =
     selectedStageRows.length > 0
-      ? { id: Number(selectedStageRows[0].id), name: String(selectedStageRows[0].name) }
+      ? selectedStageRows[0]
       : await getDefaultCreateStage();
 
-  let insertRows: Record<string, unknown>[];
+  let insertRows: { id: number }[];
 
   try {
     insertRows = (await sql`
@@ -122,7 +126,7 @@ export async function createApplication(input: CreateApplicationInput): Promise<
         NOW()
       )
       RETURNING id;
-    `) as Record<string, unknown>[];
+    `) as { id: number }[];
   } catch (error) {
     if (isStageForeignKeyViolation(error)) {
       throw new InvalidInputError("Invalid stage");
@@ -130,7 +134,7 @@ export async function createApplication(input: CreateApplicationInput): Promise<
     throw error;
   }
 
-  const applicationId = Number(insertRows[0].id);
+  const applicationId = insertRows[0].id;
 
   const application = await selectApplicationById(applicationId);
   if (!application) {
@@ -145,14 +149,14 @@ type StageMoveOutcome = "ok" | "missing" | "conflict";
 async function applyStageMove(
   updateSet: SqlFragment,
   applicationId: number,
-  expectedStageId: number | null,
+  expectedStageId: number,
   toStageId: number
 ): Promise<StageMoveOutcome> {
-  let rows: Record<string, unknown>[];
+  let rows: { found: number; updated: number }[];
 
   try {
     const statement = stageMoveStatement(updateSet, applicationId, expectedStageId, toStageId, TERMINAL_KINDS);
-    rows = (await getSql().query(statement.text, statement.params)) as Record<string, unknown>[];
+    rows = (await getSql().query(statement.text, statement.params)) as { found: number; updated: number }[];
   } catch (error) {
     if (isStageForeignKeyViolation(error)) {
       throw new InvalidInputError("Target stage not found");
@@ -160,8 +164,8 @@ async function applyStageMove(
     throw error;
   }
 
-  const found = Number(rows[0]?.found ?? 0);
-  const updated = Number(rows[0]?.updated ?? 0);
+  const found = rows[0]?.found ?? 0;
+  const updated = rows[0]?.updated ?? 0;
 
   if (found === 0) {
     return "missing";
@@ -177,7 +181,7 @@ async function applyStageMove(
 export async function updateApplicationStage(
   id: number,
   toStageId: number,
-  expectedStageId?: number
+  expectedStageId: number
 ): Promise<Application | null> {
   await ensureSchema();
 
@@ -186,7 +190,7 @@ export async function updateApplicationStage(
   const outcome = await applyStageMove(
     sqlFragment`stage_id = ${toStageId}, updated_at = NOW()`,
     id,
-    expectedStageId ?? null,
+    expectedStageId,
     toStageId
   );
 
@@ -209,7 +213,7 @@ export async function deleteApplication(id: number): Promise<boolean> {
     DELETE FROM applications
     WHERE id = ${id}
     RETURNING id;
-  `) as Record<string, unknown>[];
+  `) as { id: number }[];
 
   return deletedRows.length > 0;
 }
@@ -221,7 +225,8 @@ interface UpdateApplicationInput {
   interviewDate?: string | null;
   sourceUrl?: string;
   stageId: number;
-  expectedStageId?: number;
+  // The concurrency guard: the lane the caller last saw the card in.
+  expectedStageId: number;
 }
 
 export async function updateApplication(id: number, input: UpdateApplicationInput): Promise<Application | null> {
@@ -240,7 +245,7 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
       updated_at = NOW()
     `,
     id,
-    input.expectedStageId ?? null,
+    input.expectedStageId,
     input.stageId
   );
 

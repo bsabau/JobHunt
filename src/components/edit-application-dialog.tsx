@@ -76,7 +76,7 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
     setLoading(true);
     try {
       const response = await fetch(`/api/applications/${application.id}`, {
-        method: "PATCH",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, expectedStageId: application.stageId })
       });
