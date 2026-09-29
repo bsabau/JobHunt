@@ -84,11 +84,30 @@ export function buildSankeyPayload(source: SankeySourceData): SankeyPayload {
   // out of this keyed list (and using an index offset instead) means a stage
   // literally named "New" becomes its own node instead of merging with the
   // entry node and having its entry links dropped as self-loops.
-  const nodeKeys = Array.from(new Set([
-    ...currentStageKeys,
-    ...Array.from(transitionMap.values()).flatMap((t) => [t.from, t.to]),
-    ...Array.from(entryMap.keys())
-  ]));
+  //
+  // Lanes that only survive in history have no rank. Each goes just before the
+  // first live lane it flows into, so its outgoing links point forward, and
+  // at the end when it flows into no live lane.
+  const nodeKeys = [...currentStageKeys];
+  const historyOnlyKeys = new Set(
+    [...Array.from(transitionMap.values()).flatMap((t) => [t.from, t.to]), ...entryMap.keys()].filter(
+      (key) => !currentStageKeys.includes(key)
+    )
+  );
+  for (const key of historyOnlyKeys) {
+    const firstTarget = Math.min(
+      ...Array.from(transitionMap.values())
+        .filter((t) => t.from === key)
+        .map((t) => currentStageKeys.indexOf(t.to))
+        .filter((index) => index !== -1)
+        .map((index) => nodeKeys.indexOf(currentStageKeys[index]))
+    );
+    if (Number.isFinite(firstTarget)) {
+      nodeKeys.splice(firstTarget, 0, key);
+    } else {
+      nodeKeys.push(key);
+    }
+  }
 
   const nodeIndex = new Map(nodeKeys.map((key, index) => [key, index + 1]));
 

@@ -125,7 +125,7 @@ Migration notes:
 - `1730000001000` (adds `interview_date`) is a no-op on a fresh database, because the first migration was later edited to create the column.
 - `1730000002000` rewrote history using raw `sort_order`, before outcome lanes ranked last. It must never run again on current data, which `schema_migrations` guarantees.
 - `1730000007000` dropped `application_transitions_backup` and `pgmigrations`; production's rows were exported first to a local, uncommitted `backups/` file.
-- `1730000010000` deletes legacy `created` rows and any self-loop rows before adding the no-self-loop check.
+- `1730000010000` deletes legacy `created` rows and any self-loop rows before adding the no-self-loop check. It must run only once: since `1730000012000`, an edge from a deleted lane into a new lane of the same name is legitimate, and a re-run would delete it.
 - `1730000011000` adds `from_stage_id` / `to_stage_id` and fills them by name; names with no lane stay `NULL`. It must run only once: after a lane is deleted and another created under its name, a re-run would attach the old history to the new lane.
 - `1730000012000` replaces the name-based no-self-loop check with `application_transitions_distinct_lanes`, which compares ids, so a move from a deleted lane into a new lane of the same name can be stored.
 - The runner serialises concurrent runs with `pg_advisory_xact_lock` inside each migration's transaction, then re-checks `schema_migrations`. A session-level lock would not survive Neon's transaction pooler.

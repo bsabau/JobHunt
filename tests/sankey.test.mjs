@@ -150,4 +150,27 @@ assert.deepEqual(
   ["New:Old+New+Renamed", "Applied:Old+New+Renamed", "Screening:New", "Phone call:Renamed", "Screening (deleted):Old"]
 );
 
+// A deleted lane sits before the live lane it flowed into, so a card that went
+// Applied -> Screening (deleted) -> Screening keeps every link.
+const throughDeleted = buildSankeyPayload({
+  stages: [
+    { id: 1, name: "Applied", sortOrder: 0, kind: "active" },
+    { id: 7, name: "Screening", sortOrder: 1, kind: "active" },
+    { id: 4, name: "Interview", sortOrder: 2, kind: "interview" }
+  ],
+  transitions: [
+    { fromStatus: "Applied", fromStageId: 1, toStatus: "Screening", toStageId: null, company: "A" },
+    { fromStatus: "Screening", fromStageId: null, toStatus: "Screening", toStageId: 7, company: "A" }
+  ],
+  entries: [{ entryStage: "Applied", entryStageId: 1, company: "A" }],
+  current: [{ stageName: "Screening", stageId: 7, company: "A" }]
+});
+
+assertAcyclic(throughDeleted, "through a deleted lane");
+assert.equal(throughDeleted.hiddenBackward, 0, "no link out of the deleted lane is hidden");
+assert.deepEqual(
+  throughDeleted.nodes.map((node) => node.name),
+  ["New", "Applied", "Screening (deleted)", "Screening", "Interview"]
+);
+
 console.log("Sankey DAG checks passed.");
