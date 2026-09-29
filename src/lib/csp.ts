@@ -6,7 +6,10 @@
 // Analytics). Styles: Radix and Recharts set inline style attributes, which a
 // nonce cannot cover, so styles keep 'unsafe-inline'. Images: company logos
 // come from the two hosts logo.ts allows, and Google's favicon service
-// redirects to tN.gstatic.com, which the policy checks as well.
+// redirects to tN.gstatic.com, which the policy checks as well. No
+// upgrade-insecure-requests: every source is already 'self' or https, and on
+// http://localhost it would rewrite same-origin requests to https and break
+// `next start`.
 export function contentSecurityPolicy(nonce: string, options: { development: boolean }): string {
   return [
     "default-src 'self'",
@@ -23,13 +26,14 @@ export function contentSecurityPolicy(nonce: string, options: { development: boo
   ].join("; ");
 }
 
-// Report-only while the policy is new: violations appear in the browser
-// console and nothing is blocked. Switch to Content-Security-Policy once a
-// production build shows none.
-export const CSP_HEADER = "Content-Security-Policy-Report-Only";
+// The response header: enforced. Before loosening or tightening the policy,
+// check the Vercel deployment with the console open: `next start` does not
+// show every problem. tests/csp.test.mjs fails if this becomes report-only.
+export const CSP_HEADER = "Content-Security-Policy";
 
-// Request header Next reads the nonce from while rendering. It is checked
-// before the report-only name, so the proxy always overwrites it.
+// The request header Next reads the nonce from. It must stay this name even if
+// the response header changes: Next reads it before the report-only name, so
+// the proxy has to overwrite it or a client-sent one would win.
 export const CSP_REQUEST_HEADER = "Content-Security-Policy";
 
 // Request header that hands the nonce to the root layout.

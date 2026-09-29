@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { contentSecurityPolicy } from "../src/lib/csp.ts";
+import { CSP_HEADER, CSP_REQUEST_HEADER, contentSecurityPolicy } from "../src/lib/csp.ts";
 import { ALLOWED_LOGO_HOSTS } from "../src/lib/logo.ts";
 
 const directives = (policy) => Object.fromEntries(policy.split("; ").map((part) => [part.split(" ")[0], part.split(" ").slice(1)]));
@@ -35,4 +35,11 @@ test("next.config.ts sets no Content-Security-Policy header", async () => {
     }
     assert.ok(rule.headers.some((header) => header.key === "X-Frame-Options"), "framing must stay refused");
   }
+});
+
+// Downgrading to report-only would leave every page working and the tests
+// green, so make it a deliberate act.
+test("the policy is enforced, and Next reads the nonce from the enforcing request header", () => {
+  assert.equal(CSP_HEADER, "Content-Security-Policy");
+  assert.equal(CSP_REQUEST_HEADER, "Content-Security-Policy");
 });
