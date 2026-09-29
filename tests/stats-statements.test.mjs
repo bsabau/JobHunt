@@ -125,3 +125,51 @@ test("time to hear back: nothing yet gives no median, not zero", async () => {
   const row = await hearBack();
   assert.deepEqual(row, { reply_median_days: null, reply_count: 0, rejection_median_days: null, rejection_count: 0 });
 });
+
+// Sets the time of an application's n-th edge (0-based), `days` after CREATED.
+async function edgeTime(app, index, days) {
+  const [edge] = await sql`SELECT id FROM application_transitions WHERE application_id = ${app} ORDER BY transitioned_at, id OFFSET ${index} LIMIT 1`;
+  const at = new Date(Date.parse(CREATED) + days * 86_400_000).toISOString();
+  await sql`UPDATE application_transitions SET transitioned_at = ${at} WHERE id = ${edge.id}`;
+}
+
+test("time to hear back: days count from the sending, not from the card's creation", async () => {
+  const app = await createApp("Wishlist");
+  await move(app, "Applied", "Screening");
+  await edgeTime(app, 0, 30); // sent 30 days after it was added
+  await edgeTime(app, 1, 34); // reply 4 days later
+  assert.equal((await hearBack()).reply_median_days, 4);
+});
+
+test("time to hear back: the rejection figure is a median of rejections", async () => {
+  await repliedAfter(8, "Rejected");
+  await repliedAfter(12, "Rejected");
+  await repliedAfter(100, "Rejected");
+  assert.equal((await hearBack()).rejection_median_days, 12);
+});
+
+test("time to hear back: a reply before the rejection gives two different figures", async () => {
+  const app = await createApp("Applied");
+  await move(app, "Screening", "Rejected");
+  await edgeTime(app, 0, 3);
+  await edgeTime(app, 1, 20);
+  const row = await hearBack();
+  assert.deepEqual([row.reply_median_days, row.rejection_median_days], [3, 20]);
+});
+
+test("time to hear back: a card never sent brings no rejection", async () => {
+  const app = await createApp("Wishlist");
+  await move(app, "Rejected");
+  assert.equal((await hearBack()).rejection_count, 0);
+});
+
+test("time to hear back: a rejection dated before the sending is left out", async () => {
+  const app = await createApp("Wishlist");
+  await move(app, "Applied", "Screening");
+  await edgeTime(app, 0, 5);
+  await edgeTime(app, 1, 9);
+  // Applied becomes a rejected lane: the sending is now the edge into
+  // Screening, and the "rejection" the earlier edge into Applied.
+  await sql`UPDATE stages SET kind = 'rejected' WHERE name = 'Applied'`;
+  assert.equal((await hearBack()).rejection_count, 0);
+});
