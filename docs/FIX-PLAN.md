@@ -386,6 +386,8 @@ Delete `data/` after confirming with the owner that the SQLite file holds nothin
 
 Apply the pending patch and minor updates in one pull request (`npm update`), then run the full check and a production build. Leave ESLint 10 and TypeScript 7 for separate pull requests.
 
+Done in PR #23: `npm update` (lockfile only; every update is within the ranges in `package.json`). Next 16.3.7, React 19.3.0, Recharts 3.10.1, lucide-react 1.48.0, Tailwind 4.3.3, ESLint 9.39.5, among others. Radix still resolves to a single copy of each package, and `npm audit` reports 0 vulnerabilities. Checked on a production build: pages, logos, the keyboard "Move to" menu, the selects inside dialogs and the confirmations. Still open: ESLint 10, TypeScript 7 and `@types/node` 26 (Node 24 stays).
+
 ---
 
 ## Decisions from the owner
