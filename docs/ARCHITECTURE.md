@@ -61,7 +61,7 @@ There is no stats endpoint; the stats page is server-rendered only. It reads eve
    - Non-GET requests are rejected when `Origin` or `Sec-Fetch-Site` shows a cross-site caller.
    - Requests without a valid session get a 401 (API) or a redirect to `/login` (pages).
    - Guests are blocked from every non-GET API call.
-   - Pages get a fresh nonce and a policy built by `src/lib/csp.ts`. The request carries it as `Content-Security-Policy`, overwriting any the client sent: Next reads the nonce from it and puts it on its scripts, and the root layout passes it to the theme script through `x-nonce`. The response carries the same header, which the browser enforces. API responses get neither.
+   - Pages get a fresh nonce and a policy built by `src/lib/csp.ts`. The request carries it as `Content-Security-Policy` (`CSP_REQUEST_HEADER`, which must keep that name), overwriting any the client sent: Next reads the nonce from it and puts it on its scripts, and the root layout passes it to the theme script through `x-nonce`. The response carries the same header, which the browser enforces. API responses get neither.
 2. The route handler or page calls `requireSession()` / `requirePageSession()` again. The proxy is an early gate, not the authority.
 3. Input goes through the helpers in `src/lib/api-validation.ts`.
 4. `src/lib/db/` runs the query.

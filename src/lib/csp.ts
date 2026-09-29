@@ -26,11 +26,15 @@ export function contentSecurityPolicy(nonce: string, options: { development: boo
   ].join("; ");
 }
 
-// Enforced. On the request it is where Next reads the nonce while rendering
-// (the proxy overwrites any the client sent); on the response the browser
-// applies it. Before loosening or tightening the policy, check the Vercel
-// deployment with the console open: `next start` does not show every problem.
+// The response header: enforced. Before loosening or tightening the policy,
+// check the Vercel deployment with the console open: `next start` does not
+// show every problem. tests/csp.test.mjs fails if this becomes report-only.
 export const CSP_HEADER = "Content-Security-Policy";
+
+// The request header Next reads the nonce from. It must stay this name even if
+// the response header changes: Next reads it before the report-only name, so
+// the proxy has to overwrite it or a client-sent one would win.
+export const CSP_REQUEST_HEADER = "Content-Security-Policy";
 
 // Request header that hands the nonce to the root layout.
 export const NONCE_HEADER = "x-nonce";
