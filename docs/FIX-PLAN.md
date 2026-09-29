@@ -30,7 +30,9 @@ Needs the owner, because it is done in the Neon console or CLI.
 - `migrate:prod` prints the target and requires its endpoint id, typed or as `--confirm=<id>`. `migrate:up` targets `DATABASE_URL` and refuses production.
 - Guards recognise production by Neon endpoint id (the `ep-…` part of the host, without `-pooler`), derived from `PRODUCTION_DATABASE_URL`, so pooled and direct URLs both match.
 
-Status: scripts and guards done in phase 1 (`PRODUCTION_DATABASE_URL` is set locally, so `.env.local` is recognised as production today). Creating the branch and repointing `DATABASE_URL` is still open.
+Status: done in phase 1. Neon project `jobhunt` has a `dev` branch (endpoint `ep-misty-art-al79xv5z`) copied from `production` (`ep-nameless-pine-alwsccfk`) on 2026-09-29; the local `DATABASE_URL` points at it. A branch is a snapshot: refresh it from production in the Neon console when fresher data is needed.
+
+Still open: Vercel's `DATABASE_URL` for the Preview environment is the production database, so a preview deployment reads and writes live data. Point Preview at the `dev` branch (owner decision).
 
 ### 1.1 Guard `reset:db` (DB-3)
 
