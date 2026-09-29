@@ -272,7 +272,7 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
                 <CardTitle>Applications by Stage</CardTitle>
               </CardHeader>
               <CardContent className="h-[320px]">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
                   <BarChart data={stageData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
                     <CartesianGrid stroke="rgba(148,163,184,0.15)" vertical={false} />
                     <XAxis dataKey="stage" tick={{ fontSize: 12, fill: "#94a3b8" }} />
@@ -294,7 +294,7 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
               </CardHeader>
               <CardContent className="h-[320px]">
                 {conversionData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
                     <BarChart
                       data={conversionData}
                       layout="vertical"
@@ -340,7 +340,7 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
             </CardHeader>
             <CardContent className="h-[320px]">
               {dropOffData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
                   <BarChart
                     data={dropOffData}
                     layout="vertical"
@@ -388,7 +388,7 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
             </CardHeader>
             <CardContent className="h-[320px]">
               {timeSeriesData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
                   <AreaChart data={timeSeriesData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
                     <defs>
                       <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
@@ -437,7 +437,7 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
                 <CardTitle>Funnel: Stages Visited</CardTitle>
               </CardHeader>
               <CardContent className="h-[320px]">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
                   <BarChart
                     data={funnelData}
                     layout="vertical"
@@ -468,7 +468,7 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
               </CardHeader>
               <CardContent className="h-[320px]">
                 {transitionsData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
                     <LineChart data={transitionsData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
                       <CartesianGrid stroke="rgba(148,163,184,0.15)" vertical={false} />
                       <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#94a3b8" }} />
@@ -500,7 +500,7 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
                 <CardTitle>Companies with Multiple Applications</CardTitle>
               </CardHeader>
               <CardContent className="h-[280px]">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
                   <BarChart
                     data={data.topCompanies.filter((row) => row.count > 1)}
                     margin={{ top: 8, right: 16, left: 0, bottom: 8 }}

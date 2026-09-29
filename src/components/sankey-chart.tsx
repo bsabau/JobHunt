@@ -136,7 +136,7 @@ export function SankeyChart({ data }: { data: SankeyPayload }) {
         )}
         {hasLinks ? (
           <>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
               <Sankey
                 data={sanitized}
                 nodePadding={28}
