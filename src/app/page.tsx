@@ -11,12 +11,17 @@ export default async function HomePage() {
   const readOnly = session.role === "guest";
 
   const timeZone = await resolveRequestTimeZone();
+  // One clock reading for the whole render, handed to the client components so
+  // relative dates match between the server HTML and hydration. A server
+  // component renders once per request, so reading the clock here is safe.
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
   const stats = await getStatsData(timeZone);
 
   return (
     <main className="mx-auto min-h-screen max-w-[1500px] px-6 py-10">
       <PageHeader active="stats" readOnly={readOnly} />
-      <StatsCharts data={stats} timeZone={timeZone} />
+      <StatsCharts data={stats} timeZone={timeZone} now={now} />
     </main>
   );
 }

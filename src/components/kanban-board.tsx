@@ -27,6 +27,9 @@ interface KanbanBoardProps {
   initialStages: Stage[];
   readOnly?: boolean;
   timeZone: string;
+  // The server's clock when the page was rendered, for every relative date
+  // on the board (see daysSince in constants.ts).
+  now: number;
 }
 
 type DragItem =
@@ -92,9 +95,9 @@ function formatAge(days: number) {
   return days <= 0 ? "today" : `${days}d ago`;
 }
 
-function formatInterviewLabel(date: string, timeZone: string) {
+function formatInterviewLabel(date: string, timeZone: string, now: number) {
   const formatted = formatInterviewDate(date);
-  const until = daysUntil(date, timeZone);
+  const until = daysUntil(date, timeZone, now);
   if (until === 0) {
     return `${formatted} · Today`;
   }
@@ -116,6 +119,7 @@ interface KanbanApplicationCardProps {
   pending: boolean;
   highlighted: boolean;
   timeZone: string;
+  now: number;
   onDragStart: () => void;
   onDragEnd: () => void;
   onEdit: () => void;
@@ -133,6 +137,7 @@ function KanbanApplicationCard({
   pending,
   highlighted,
   timeZone,
+  now,
   onDragStart,
   onDragEnd,
   onEdit,
@@ -248,8 +253,9 @@ function KanbanApplicationCard({
             </div>
             {!isTerminalKind(app.stageKind) ? (
               <p className="text-xs text-muted-foreground/70">
-                {app.stageKind === INTAKE_KIND ? "Added" : "Applied"} {formatAppliedDate(app.createdAt, timeZone)} ·{" "}
-                {formatAge(daysSince(app.createdAt))}
+                {app.stageKind === INTAKE_KIND || app.appliedAt === null
+                  ? `Added ${formatAppliedDate(app.createdAt, timeZone)} · ${formatAge(daysSince(app.createdAt, now))}`
+                  : `Applied ${formatAppliedDate(app.appliedAt, timeZone)} · ${formatAge(daysSince(app.appliedAt, now))}`}
               </p>
             ) : null}
             {app.sourceUrl ? (
@@ -264,7 +270,7 @@ function KanbanApplicationCard({
             ) : null}
             {app.interviewDate ? (
               <div className="rounded-md border border-border/60 bg-background/70 p-2">
-                <p className="text-xs text-amber-300">Interview: {formatInterviewLabel(app.interviewDate, timeZone)}</p>
+                <p className="text-xs text-amber-300">Interview: {formatInterviewLabel(app.interviewDate, timeZone, now)}</p>
               </div>
             ) : null}
           </CardContent>
@@ -286,7 +292,7 @@ function KanbanApplicationCard({
   );
 }
 
-export function KanbanBoard({ initialApplications, initialStages, readOnly = false, timeZone }: KanbanBoardProps) {
+export function KanbanBoard({ initialApplications, initialStages, readOnly = false, timeZone, now }: KanbanBoardProps) {
   const { confirm, toast } = useFeedback();
   const [applications, setApplications] = useState<Application[]>(initialApplications);
   const [stages, setStages] = useState<Stage[]>(initialStages);
@@ -650,8 +656,8 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                 </div>
                 <div className="space-y-3">
                   {(grouped[stage.id] ?? []).map((app) => {
-                    const stale = isApplicationStale(app);
-                    const staleDays = stale ? daysSince(app.stageEnteredAt ?? app.updatedAt) : 0;
+                    const stale = isApplicationStale(app, now);
+                    const staleDays = stale ? daysSince(app.stageEnteredAt ?? app.updatedAt, now) : 0;
                     return (
                       <KanbanApplicationCard
                         key={app.id}
@@ -663,6 +669,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                         pending={pendingMoveIds.includes(app.id)}
                         highlighted={highlightedId === app.id}
                         timeZone={timeZone}
+                        now={now}
                         onDragStart={() => setDraggedItem({ type: "application", id: app.id })}
                         onDragEnd={onAnyDragEnd}
                         onEdit={() => {

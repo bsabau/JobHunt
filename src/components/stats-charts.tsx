@@ -33,8 +33,8 @@ function formatDate(value: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function isTodayOrFuture(value: string, timeZone: string): boolean {
-  return daysUntil(value, timeZone) >= 0;
+function isTodayOrFuture(value: string, timeZone: string, now: number): boolean {
+  return daysUntil(value, timeZone, now) >= 0;
 }
 
 interface SummaryTileProps {
@@ -81,10 +81,12 @@ const tooltipStyle = {
 // Bars coloured per lane through <Cell> have no fill, so their rows need this.
 const cellTooltipItemStyle = { color: "hsl(var(--popover-foreground))" };
 
-export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: string }) {
+// `now` is the server's clock at render time, so "upcoming" is decided the
+// same way on the server and during hydration.
+export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZone: string; now: number }) {
   const upcomingInterviews = useMemo(
-    () => data.upcomingInterviews.filter((row) => isTodayOrFuture(row.interviewDate, timeZone)),
-    [data.upcomingInterviews, timeZone]
+    () => data.upcomingInterviews.filter((row) => isTodayOrFuture(row.interviewDate, timeZone, now)),
+    [data.upcomingInterviews, timeZone, now]
   );
   const stageData = useMemo(
     () => data.stageCounts.map((row) => ({ ...row, fill: colorFor(row.stage, row.kind) })),

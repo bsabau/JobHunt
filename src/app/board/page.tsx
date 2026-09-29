@@ -11,6 +11,11 @@ export default async function BoardPage() {
   const readOnly = session.role === "guest";
 
   const timeZone = await resolveRequestTimeZone();
+  // One clock reading for the whole render, handed to the client components so
+  // relative dates match between the server HTML and hydration. A server
+  // component renders once per request, so reading the clock here is safe.
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
   // listApplications leaves out the notes for a guest viewer.
   const [applications, stages] = await Promise.all([listApplications(session.role), listStages()]);
 
@@ -22,6 +27,7 @@ export default async function BoardPage() {
         initialStages={stages}
         readOnly={readOnly}
         timeZone={timeZone}
+        now={now}
       />
     </main>
   );

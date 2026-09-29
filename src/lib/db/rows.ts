@@ -26,6 +26,7 @@ export interface ApplicationRow {
   created_at: Timestamp;
   updated_at: Timestamp;
   stage_entered_at: Timestamp;
+  applied_at: Timestamp | null;
 }
 
 export interface StageRow {
@@ -55,7 +56,8 @@ export function mapApplication(row: ApplicationRow, viewer: Role): Application {
     stageKind: row.stage_kind,
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),
-    stageEnteredAt: toIsoString(row.stage_entered_at)
+    stageEnteredAt: toIsoString(row.stage_entered_at),
+    appliedAt: row.applied_at === null ? null : toIsoString(row.applied_at)
   };
 }
 

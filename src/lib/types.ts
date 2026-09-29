@@ -23,6 +23,9 @@ export interface Application {
   createdAt: string;
   updatedAt: string;
   stageEnteredAt?: string;
+  // When it was sent: its creation, or its first move out of a wishlist
+  // (intake) lane; null while it has not left one (view application_applied_at).
+  appliedAt: string | null;
 }
 
 export interface SankeyPayload {
