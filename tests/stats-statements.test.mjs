@@ -188,12 +188,13 @@ test("weekly results: each week's applications with their replies, interviews an
   await inWeek("02", "Screening"); // replied
   await inWeek("08", "Interview", "Offer"); // week of Sep 7: interview and offer
   await inWeek("09", "Rejected");
+  await inWeek("10", "Interview"); // an interview without an offer
   await inWeek("15", "Ghosted"); // week of Sep 14: closed, not a reply
   const wishlist = await createApp("Wishlist", at("15")); // not sent: in no week
   assert.ok(wishlist);
   assert.deepEqual(await weeklyResults("UTC"), [
     ["2026-08-31", 2, 1, 0, 0],
-    ["2026-09-07", 2, 2, 1, 1],
+    ["2026-09-07", 3, 3, 2, 1],
     ["2026-09-14", 1, 0, 0, 0]
   ]);
 });

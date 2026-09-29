@@ -86,13 +86,14 @@ function ShareCell({ count, of, color, muted, last }: { count: number; of: numbe
   const pct = of > 0 ? Math.round((count / of) * 100) : 0;
   return (
     <td className={`py-2 ${last ? "" : "pr-4"}`}>
+      {/* Counts first: on a phone the bar is dropped and the numbers stay. */}
       <div className="flex items-center gap-2">
-        <div className="h-1.5 w-16 overflow-hidden rounded-full bg-border/40">
-          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color, opacity: muted ? 0.5 : 1 }} />
-        </div>
         <span className="whitespace-nowrap tabular-nums">
           {count} <span className="text-muted-foreground">({pct}%)</span>
         </span>
+        <div className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-border/40 sm:block" aria-hidden="true">
+          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color, opacity: muted ? 0.5 : 1 }} />
+        </div>
       </div>
     </td>
   );
@@ -513,24 +514,24 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-                        <th className="py-2 pr-4 font-medium">Week of</th>
-                        <th className="py-2 pr-4 text-right font-medium">Sent</th>
-                        <th className="py-2 pr-4 font-medium">Replied</th>
-                        <th className="py-2 pr-4 font-medium">Interview</th>
-                        <th className="py-2 font-medium">Offer</th>
+                        <th scope="col" className="py-2 pr-4 font-medium">Week of</th>
+                        <th scope="col" className="py-2 pr-4 text-right font-medium">Sent</th>
+                        <th scope="col" className="py-2 pr-4 font-medium">Replied</th>
+                        <th scope="col" className="py-2 pr-4 font-medium">Interview</th>
+                        <th scope="col" className="py-2 font-medium">Offer</th>
                       </tr>
                     </thead>
                     <tbody>
                       {weekResults.map((week) => (
                         <tr key={week.weekStart} className={`border-t border-border/40 ${week.open ? "text-muted-foreground" : ""}`}>
-                          <td className="whitespace-nowrap py-2 pr-4">
+                          <th scope="row" className="whitespace-nowrap py-2 pr-4 text-left font-normal">
                             {formatDateOnly(week.weekStart)}
                             {week.open ? (
                               <span className="ml-2 rounded-full border border-border/60 px-2 py-0.5 text-[10px] uppercase tracking-wider">
                                 still open
                               </span>
                             ) : null}
-                          </td>
+                          </th>
                           <td className="py-2 pr-4 text-right tabular-nums">{week.sent}</td>
                           <ShareCell count={week.responded} of={week.sent} color={KIND_COLORS.active} muted={week.open} />
                           <ShareCell count={week.interviewed} of={week.sent} color={KIND_COLORS.interview} muted={week.open} />
