@@ -11,3 +11,4 @@ export {
 } from "./applications";
 export { getSankeyData } from "./sankey";
 export { getStatsData } from "./stats";
+export { getApplicationTimeline } from "./timeline";

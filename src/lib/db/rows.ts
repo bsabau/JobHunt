@@ -1,6 +1,6 @@
 import type { Role } from "@/lib/auth";
 import type { StageKind } from "@/lib/stage-kinds";
-import type { Application, Stage } from "@/lib/types";
+import type { Application, Stage, TimelinePayload } from "@/lib/types";
 
 // Type-only imports, so the tests can load this file straight from Node.
 //
@@ -58,6 +58,36 @@ export function mapApplication(row: ApplicationRow, viewer: Role): Application {
     updatedAt: toIsoString(row.updated_at),
     stageEnteredAt: toIsoString(row.stage_entered_at),
     appliedAt: row.applied_at === null ? null : toIsoString(row.applied_at)
+  };
+}
+
+// applicationTimelineStatement(): one row, the steps as JSON. Timestamps inside
+// JSON arrive as strings in Postgres's own format, so they go through
+// toIsoString() like the columns do.
+export interface TimelineRow {
+  created_at: Timestamp;
+  entry_stage_id: number | null;
+  entry_stage_name: string;
+  entry_stage_kind: StageKind | null;
+  steps: { stage_id: number | null; stage_name: string; stage_kind: StageKind | null; transitioned_at: string }[];
+}
+
+export function mapTimeline(row: TimelineRow): TimelinePayload {
+  return {
+    lanes: [
+      {
+        stageId: row.entry_stage_id,
+        stageName: row.entry_stage_name,
+        stageKind: row.entry_stage_kind,
+        enteredAt: toIsoString(row.created_at)
+      },
+      ...row.steps.map((step) => ({
+        stageId: step.stage_id,
+        stageName: step.stage_name,
+        stageKind: step.stage_kind,
+        enteredAt: toIsoString(step.transitioned_at)
+      }))
+    ]
   };
 }
 

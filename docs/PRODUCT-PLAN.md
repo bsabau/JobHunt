@@ -119,6 +119,16 @@ These repeat `AGENTS.md` where a product step is likely to trip over it.
 - The guest can open the details dialog by keyboard and mouse, sees no notes field and no edit controls.
 - An unknown id returns 404; a request without a session returns 401.
 
+Done in PR #30:
+
+- `GET /api/applications/:id/timeline` returns `{ lanes }`: the entry lane first, entered at `created_at`, then every lane moved into. This is flatter than the planned `{ entry, steps }`: the path is contiguous, so each step's "from" is the lane before it. One statement (`applicationTimelineStatement()` in the new `src/lib/application-statements.ts`, built with `sqlFragment`, which it imports from `./stage-statements.ts` now that `allowImportingTsExtensions` is on) returns the steps as JSON, so the path is one round trip.
+- The edit dialog shows a "History" section below the form, so the form keeps its place while the history loads and "Save changes" stays where it was: each lane with the date entered and the days spent there ("so far" for the current lane, "ago" for an outcome lane). It reloads when the card moves or is saved. Only the dialog's body scrolls, so the header and the close button stay in view.
+- Days are whole days, rounded down per lane, so they need not add up to the card's age; the acceptance check "durations add up to the card's age" was dropped for that reason.
+- The guest opens a read-only details dialog with Enter or a double-click: company, role, lane, applied date, interview date, link and history, and no notes field (decision 4).
+- Fixed on the way: the card's notes tooltip stayed on top of an opened dialog, and closing a card dialog left focus nowhere. Focus now returns to the card.
+- `tests/timeline.test.mjs` (PGlite, moves made with `stageMoveStatement()`) covers a card with no moves, forward moves (entry lane at creation), a rewind onto a visited lane (original time kept), a rewind below the entry lane, renamed and deleted lanes (entry lane included), two applications side by side, a new lane that took a deleted lane's name (joins by id) and an unknown id. Fable's mutations of the application filter, the joins and the creation time all fail it.
+- Dates on the board, in the timeline and in the guest dialog now share `formatDay()` and `formatDateOnly()` in `src/lib/timezone.ts`; the guest dialog shows the interview date as the card does.
+
 ### 1.2 Board filter (F-4)
 
 **Goal:** narrow the board instead of jumping to one card.

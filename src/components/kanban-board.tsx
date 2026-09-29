@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, ArrowRightLeft, Plus, Settings2, Trash2 } from "lucide-react";
 import { KIND_TONES, STAGE_TONES, isApplicationStale } from "@/lib/constants";
-import { daysSince, daysUntil } from "@/lib/timezone";
+import { daysSince, daysUntil, formatDateOnly, formatDay } from "@/lib/timezone";
 import { INTAKE_KIND, KIND_LABELS, isTerminalKind } from "@/lib/stage-kinds";
 import { Application, Stage } from "@/lib/types";
 import { useMiddleButtonPan } from "@/lib/use-middle-button-pan";
@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { AddApplicationDialog } from "@/components/add-application-dialog";
 import { ApplicationSearch } from "@/components/application-search";
 import { EditApplicationDialog } from "@/components/edit-application-dialog";
+import { ApplicationDetailsDialog } from "@/components/application-details-dialog";
 import { StageDialog } from "@/components/stage-dialog";
 import { useFeedback } from "@/components/feedback";
 import {
@@ -74,30 +75,12 @@ function CompanyLogo({ company, logoUrl, logoBgClass }: { company: string; logoU
   );
 }
 
-function formatInterviewDate(date: string) {
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (dateOnly) {
-    const [, year, month, day] = dateOnly;
-    return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(
-      new Date(Number(year), Number(month) - 1, Number(day))
-    );
-  }
-
-  return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date(date));
-}
-
-// Rendered on the server and in the browser, so both the locale and the time
-// zone are pinned to avoid a hydration mismatch.
-function formatAppliedDate(isoDate: string, timeZone: string) {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone }).format(new Date(isoDate));
-}
-
 function formatAge(days: number) {
   return days <= 0 ? "today" : `${days}d ago`;
 }
 
 function formatInterviewLabel(date: string, timeZone: string, now: number) {
-  const formatted = formatInterviewDate(date);
+  const formatted = formatDateOnly(date);
   const until = daysUntil(date, timeZone, now);
   if (until === 0) {
     return `${formatted} · Today`;
@@ -123,7 +106,8 @@ interface KanbanApplicationCardProps {
   now: number;
   onDragStart: () => void;
   onDragEnd: () => void;
-  onEdit: () => void;
+  // Opens the edit dialog for the owner, the read-only details for the guest.
+  onOpen: () => void;
   // Lanes for the "Move to" menu; a keyboard and touch alternative to dragging.
   stages: Stage[];
   onMove: (stageId: number) => void;
@@ -141,7 +125,7 @@ function KanbanApplicationCard({
   now,
   onDragStart,
   onDragEnd,
-  onEdit,
+  onOpen,
   stages,
   onMove
 }: KanbanApplicationCardProps) {
@@ -174,6 +158,17 @@ function KanbanApplicationCard({
     }, 80);
   }
 
+  // The card's blur does not reliably hide the tooltip once a dialog takes
+  // focus, and it would sit on top of the dialog, so opening hides it first.
+  function openCard() {
+    if (hideTimerRef.current !== null) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    setNotesVisible(false);
+    onOpen();
+  }
+
   return (
     <>
       <div
@@ -186,24 +181,20 @@ function KanbanApplicationCard({
       >
         <Card
           // Focusable so the board works from the keyboard: Tab to a card, Enter
-          // to edit it, or the "Move to" menu to change its lane.
+          // to open it, or the "Move to" menu to change its lane.
           tabIndex={0}
           role="group"
           aria-label={`${app.company}, ${app.role}, in ${app.stageName}`}
-          onKeyDown={
-            readOnly
-              ? undefined
-              : (event) => {
-                  if (event.key === "Enter" && event.target === event.currentTarget) {
-                    event.preventDefault();
-                    onEdit();
-                  }
-                }
-          }
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && event.target === event.currentTarget) {
+              event.preventDefault();
+              openCard();
+            }
+          }}
           draggable={!readOnly && !pending}
           onDragStart={readOnly || pending ? undefined : onDragStart}
           onDragEnd={readOnly || pending ? undefined : onDragEnd}
-          onDoubleClick={readOnly ? undefined : onEdit}
+          onDoubleClick={openCard}
           className={`${
             readOnly ? "cursor-default" : pending ? "cursor-wait opacity-60" : "cursor-move"
           } border-border/70 bg-card/80 backdrop-blur transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
@@ -255,8 +246,8 @@ function KanbanApplicationCard({
             {!isTerminalKind(app.stageKind) ? (
               <p className="text-xs text-muted-foreground/70">
                 {app.stageKind === INTAKE_KIND || app.appliedAt === null
-                  ? `Added ${formatAppliedDate(app.createdAt, timeZone)} · ${formatAge(daysSince(app.createdAt, now))}`
-                  : `Applied ${formatAppliedDate(app.appliedAt, timeZone)} · ${formatAge(daysSince(app.appliedAt, now))}`}
+                  ? `Added ${formatDay(app.createdAt, timeZone, { year: false })} · ${formatAge(daysSince(app.createdAt, now))}`
+                  : `Applied ${formatDay(app.appliedAt, timeZone, { year: false })} · ${formatAge(daysSince(app.appliedAt, now))}`}
               </p>
             ) : null}
             {app.sourceUrl ? (
@@ -299,6 +290,19 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   const [stages, setStages] = useState<Stage[]>(initialStages);
   const [editingApplication, setEditingApplication] = useState<Application | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  // The card dialogs open without a trigger element, so Radix has nowhere to
+  // return focus; put it back on the card so the keyboard user keeps their place.
+  function focusEditedCard(event: Event) {
+    const card = editingApplication
+      ? document.querySelector<HTMLElement>(`[data-application-id="${editingApplication.id}"] [role="group"]`)
+      : null;
+    if (card) {
+      event.preventDefault();
+      card.focus();
+    }
+  }
   const [draggedItem, setDraggedItem] = useState<DragItem>(null);
   const [stageDropTargetId, setStageDropTargetId] = useState<number | null>(null);
   const [binHover, setBinHover] = useState(false);
@@ -682,9 +686,13 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                         now={now}
                         onDragStart={() => setDraggedItem({ type: "application", id: app.id })}
                         onDragEnd={onAnyDragEnd}
-                        onEdit={() => {
+                        onOpen={() => {
                           setEditingApplication(app);
-                          setEditOpen(true);
+                          if (readOnly) {
+                            setDetailsOpen(true);
+                          } else {
+                            setEditOpen(true);
+                          }
                         }}
                         stages={stages}
                         onMove={(stageId) => void moveCard(app.id, stageId, { refocus: true })}
@@ -737,8 +745,21 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
               setApplications((current) => current.map((item) => (item.id === updated.id ? updated : item)));
               setEditingApplication(updated);
             }}
+            timeZone={timeZone}
+            now={now}
+            onCloseAutoFocus={focusEditedCard}
           />
         </>
+      )}
+      {readOnly && (
+        <ApplicationDetailsDialog
+          application={editingApplication}
+          open={detailsOpen}
+          onOpenChange={setDetailsOpen}
+          timeZone={timeZone}
+          now={now}
+          onCloseAutoFocus={focusEditedCard}
+        />
       )}
     </section>
   );

@@ -28,6 +28,21 @@ export interface Application {
   appliedAt: string | null;
 }
 
+// One lane on an application's current path: the lane it entered in first,
+// then every lane it moved into. A backward move rewrites the path, so this is
+// where the application stands, not every move ever made. A deleted lane has
+// no id or kind and its name ends in " (deleted)".
+export interface TimelineLane {
+  stageId: number | null;
+  stageName: string;
+  stageKind: StageKind | null;
+  enteredAt: string;
+}
+
+export interface TimelinePayload {
+  lanes: TimelineLane[];
+}
+
 export interface SankeyPayload {
   // `kind` is absent for the synthetic "New" entry node and for names that only
   // survive in history.
