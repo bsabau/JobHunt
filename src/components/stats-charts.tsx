@@ -70,9 +70,12 @@ function OutcomeChip({ label, color, count, total }: { label: string; color: str
   );
 }
 
+// The theme variables hold HSL channels ("222 40% 10%"), so they must be read
+// with hsl(); rgb() misreads them as an orange background.
 const tooltipStyle = {
-  background: "rgb(var(--popover, 15 23 42))",
-  border: "1px solid rgb(var(--border, 51 65 85))",
+  background: "hsl(var(--popover))",
+  border: "1px solid hsl(var(--border))",
+  color: "hsl(var(--popover-foreground))",
   borderRadius: 8,
   fontSize: 12,
 };
@@ -176,11 +179,19 @@ export function StatsCharts({ data, timeZone }: { data: StatsPayload; timeZone: 
       entry.lanes.push(`${row.outcomeStage}: ${row.count}`);
       byStage.set(row.fromStage, entry);
     }
-    return Array.from(byStage.values()).sort(
-      (a, b) =>
-        (stageRank.get(a.fromStage) ?? Number.MAX_SAFE_INTEGER) -
-        (stageRank.get(b.fromStage) ?? Number.MAX_SAFE_INTEGER)
-    );
+    return Array.from(byStage.values())
+      .sort(
+        (a, b) =>
+          (stageRank.get(a.fromStage) ?? Number.MAX_SAFE_INTEGER) -
+          (stageRank.get(b.fromStage) ?? Number.MAX_SAFE_INTEGER)
+      )
+      // null (not 0) so the tooltip, which filters nulls, lists only outcomes that happened.
+      .map((row) => ({
+        ...row,
+        rejected: row.rejected || null,
+        closed: row.closed || null,
+        offer: row.offer || null
+      }));
   }, [data.outcomes, stageRank]);
 
   const outcomeTotals = useMemo(() => {
