@@ -10,10 +10,11 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // Allow login page and login API without auth
+  // Allow login page and login/logout APIs without auth (logout must work with an expired session)
   if (
     request.nextUrl.pathname === "/login" ||
-    request.nextUrl.pathname === "/api/auth/login"
+    request.nextUrl.pathname === "/api/auth/login" ||
+    request.nextUrl.pathname === "/api/auth/logout"
   ) {
     return NextResponse.next();
   }
@@ -33,13 +34,10 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
-  // Block mutating API requests for guest users. Logout is the one write a
-  // guest must always be able to perform, otherwise the cookie outlives the
-  // "Sign out" click for its full lifetime.
+  // Block mutating API requests for guest users.
   if (
     session.role === "guest" &&
     request.nextUrl.pathname.startsWith("/api/") &&
-    request.nextUrl.pathname !== "/api/auth/logout" &&
     request.method !== "GET"
   ) {
     return NextResponse.json({ message: "Guest access is read-only" }, { status: 403 });
@@ -49,5 +47,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg).*)"],
 };
