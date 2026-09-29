@@ -1,0 +1,128 @@
+"use client";
+
+import { useRef, useSyncExternalStore } from "react";
+import { X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+
+const HIDE_OUTCOME_LANES_KEY = "board.hideOutcomeLanes";
+const CHANGE_EVENT = "board-filter-change";
+
+// Ids the board uses to move focus here when a card is out of sight.
+export const BOARD_FILTER_ID = "board-filter";
+export const HIDE_OUTCOME_LANES_ID = "board-hide-outcome-lanes";
+
+// Used when storage is unavailable (blocked, private mode): the choice then
+// lasts until the page is reloaded.
+let memoryValue = false;
+let storageBroken = false;
+
+function subscribe(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(CHANGE_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(CHANGE_EVENT, onChange);
+  };
+}
+
+function readHideOutcomeLanes(): boolean {
+  if (storageBroken) {
+    return memoryValue;
+  }
+  try {
+    return window.localStorage.getItem(HIDE_OUTCOME_LANES_KEY) === "true";
+  } catch {
+    storageBroken = true;
+    return memoryValue;
+  }
+}
+
+// Remembered per browser. The server always renders "shown", and the stored
+// choice applies after hydration, so the two never disagree.
+export function useHideOutcomeLanes(): [boolean, (hide: boolean) => void] {
+  const hide = useSyncExternalStore(subscribe, readHideOutcomeLanes, () => false);
+  function setHide(next: boolean) {
+    memoryValue = next;
+    try {
+      window.localStorage.setItem(HIDE_OUTCOME_LANES_KEY, String(next));
+    } catch {
+      storageBroken = true;
+    }
+    window.dispatchEvent(new Event(CHANGE_EVENT));
+  }
+  return [hide, setHide];
+}
+
+export function BoardFilter({
+  query,
+  onQueryChange,
+  hideOutcomeLanes,
+  onHideOutcomeLanesChange,
+  matching,
+  total,
+  hiddenMatching
+}: {
+  query: string;
+  onQueryChange: (query: string) => void;
+  hideOutcomeLanes: boolean;
+  onHideOutcomeLanesChange: (hide: boolean) => void;
+  matching: number;
+  total: number;
+  hiddenMatching: number;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const filtering = query.trim() !== "";
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="relative">
+        <Input
+          ref={inputRef}
+          id={BOARD_FILTER_ID}
+          // Plain text: a search field brings the browser's own clear button,
+          // next to the one below.
+          type="text"
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && query) {
+              event.preventDefault();
+              onQueryChange("");
+            }
+          }}
+          placeholder="Filter cards"
+          aria-label="Filter cards by company or role"
+          className="h-9 w-48 pr-8"
+        />
+        {query ? (
+          <button
+            type="button"
+            onClick={() => {
+              onQueryChange("");
+              // The button disappears with the text; keep focus in the field.
+              inputRef.current?.focus();
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+            aria-label="Clear the filter"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+        <input
+          id={HIDE_OUTCOME_LANES_ID}
+          type="checkbox"
+          checked={hideOutcomeLanes}
+          onChange={(event) => onHideOutcomeLanesChange(event.target.checked)}
+          className="h-4 w-4 accent-sky-500"
+        />
+        Hide outcome lanes
+      </label>
+      <p className="text-xs text-muted-foreground" aria-live="polite">
+        {filtering
+          ? `${matching} of ${total} cards match${hiddenMatching > 0 ? `, ${hiddenMatching} more in hidden lanes` : ""}`
+          : ""}
+      </p>
+    </div>
+  );
+}

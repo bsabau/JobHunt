@@ -162,6 +162,15 @@ Done in PR #30:
 - Moving a card into a hidden lane through the menu works, and a toast says where it went.
 - Reloading keeps the toggle and logs no hydration warning.
 
+Done in PR #31:
+
+- `BoardFilter` next to the search: a text filter over company and role (Escape or the clear button empties it; focus stays in the field), a "Hide outcome lanes" checkbox and a live "N of M cards match", counted over the lanes on screen, with ", K more in hidden lanes" when some match there. Lane badges read "3 of 12" while filtering, and a lane with cards but no matches says "No cards match the filter".
+- The toggle is remembered in `localStorage` through `useSyncExternalStore`, whose server snapshot is "shown", so the server HTML and hydration agree; a reload with the toggle on logs no warning. When storage is blocked the choice is kept in memory until reload.
+- The rules live in `src/lib/board-filter.ts` (`matchesBoardFilter()`, `isLaneHidden()` by `isTerminalKind()`), tested in `tests/board-filter.test.mjs`. Offer lanes stay visible.
+- A search result behind the filter or in a hidden lane clears what hides it; the board then scrolls to the card once it has re-rendered. Every selection is a new scroll request, so choosing the same card twice scrolls twice.
+- A card that lands out of sight after a menu move, an edit or a new card says why ("is in Rejected, which is hidden", "does not match the filter"), and focus moves to the control that hides it. Lanes keep their colour when others are hidden.
+- Checked on a production build, owner and guest, including a reload with the toggle on and the keyboard regression script.
+
 ---
 
 ## Phase 2: a stats page that says each thing once
