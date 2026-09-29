@@ -32,7 +32,7 @@ Needs the owner, because it is done in the Neon console or CLI.
 
 Status: done in phase 1. Neon project `jobhunt` has a `dev` branch (endpoint `ep-misty-art-al79xv5z`) copied from `production` (`ep-nameless-pine-alwsccfk`) on 2026-09-29; the local `DATABASE_URL` points at it. A branch is a snapshot: refresh it from production in the Neon console when fresher data is needed.
 
-Still open: Vercel's `DATABASE_URL` for the Preview environment is the production database, so a preview deployment reads and writes live data. Point Preview at the `dev` branch (owner decision).
+Vercel was split the same day: `DATABASE_URL` for Production is the `production` branch; Preview and Development use the `dev` branch, so preview deployments and `vercel env pull` never reach live data. Deployments built before the split keep the old value until redeployed.
 
 ### 1.1 Guard `reset:db` (DB-3)
 
