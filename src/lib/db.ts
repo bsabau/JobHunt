@@ -648,20 +648,9 @@ export async function getSankeyData(): Promise<SankeyPayload> {
       ORDER BY t.transitioned_at, t.id;
     ` as Promise<Record<string, unknown>[]>,
     sql`
-      -- The entry lane: where the first edge starts, else the current lane.
-      SELECT
-        CASE WHEN first_edge.application_id IS NULL THEN s.id ELSE first_edge.from_stage_id END AS entryStageId,
-        COALESCE(first_edge.from_status, s.name) AS entryStage,
-        a.company
-      FROM applications a
-      JOIN stages s ON s.id = a.stage_id
-      LEFT JOIN LATERAL (
-        SELECT t.application_id, t.from_stage_id, t.from_status
-        FROM application_transitions t
-        WHERE t.application_id = a.id
-        ORDER BY t.transitioned_at ASC, t.id ASC
-        LIMIT 1
-      ) first_edge ON true;
+      SELECT e.stage_id AS entryStageId, e.stage_name AS entryStage, a.company
+      FROM application_entry_stage e
+      JOIN applications a ON a.id = e.application_id;
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT s.id AS stageId, s.name AS stageName, a.company
@@ -790,16 +779,8 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       -- later lane with the same name.
       SELECT stage_id, COUNT(DISTINCT application_id)::int AS count
       FROM (
-        SELECT a.id AS application_id,
-               CASE WHEN first_edge.application_id IS NULL THEN a.stage_id ELSE first_edge.from_stage_id END AS stage_id
-        FROM applications a
-        LEFT JOIN LATERAL (
-          SELECT t.application_id, t.from_stage_id
-          FROM application_transitions t
-          WHERE t.application_id = a.id
-          ORDER BY t.transitioned_at ASC, t.id ASC
-          LIMIT 1
-        ) first_edge ON true
+        SELECT application_id, stage_id
+        FROM application_entry_stage
         UNION ALL
         SELECT application_id, to_stage_id
         FROM application_transitions

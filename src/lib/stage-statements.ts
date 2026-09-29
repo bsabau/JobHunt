@@ -96,19 +96,13 @@ export function stageMoveStatement(
       FROM current_app c, target tg
       WHERE (tg.terminal, tg.sort_order) < (c.terminal, c.sort_order)
     ),
-    first_edge AS (
-      SELECT t.from_stage_id, t.from_status
-      FROM application_transitions t
-      WHERE t.application_id = ${applicationId}
-      ORDER BY t.transitioned_at ASC, t.id ASC
-      LIMIT 1
-    ),
     entry_stage AS (
-      -- The lane the application entered in: where its first edge starts, else
-      -- its current lane. The id is NULL when that lane has been deleted.
-      SELECT f.from_stage_id AS id, f.from_status AS name FROM first_edge f
-      UNION ALL
-      SELECT c.stage_id, c.stage_name FROM current_app c WHERE NOT EXISTS (SELECT 1 FROM first_edge)
+      -- The lane the application entered in (the application_entry_stage
+      -- view). Like every CTE here it reads the state before this move. The id
+      -- is NULL when that lane has been deleted.
+      SELECT e.stage_id AS id, e.stage_name AS name
+      FROM application_entry_stage e
+      WHERE e.application_id = ${applicationId}
     ),
     clear_history AS (
       -- Moving before the stage the application entered in clears the path.
