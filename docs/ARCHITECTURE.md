@@ -142,7 +142,7 @@ Rank is the pair `(is terminal, sort_order)`. Every terminal lane ranks after ev
 The rule is implemented twice and the two must stay in step:
 
 - TypeScript: `compareStageRank()` and `withPipelineRank()` in `stage-kinds.ts`
-- SQL: the `ranked_stages` CTE in `stageMoveQuery()` in `db.ts`
+- SQL: the `ranked_stages` CTE in `stageMoveStatement()` in `stage-move.ts`
 
 ### Transition history
 
@@ -157,7 +157,7 @@ The rule is implemented twice and the two must stay in step:
 
 There is no row for creation. The **entry lane** is derived: the `from_status` of the earliest transition, or the current lane when there are none.
 
-The reference implementation is `rewindTransitionPath()` in `src/lib/transitions.ts`. The production implementation is the single SQL statement in `stageMoveQuery()`, which also applies the `expectedStageId` guard so that a concurrent move produces a 409 instead of forked history. Only the TypeScript version is covered by `npm run verify:transitions`.
+The reference implementation is `rewindTransitionPath()` in `src/lib/transitions.ts`. The production implementation is the single SQL statement built by `stageMoveStatement()` in `src/lib/stage-move.ts`, which also applies the `expectedStageId` guard so that a concurrent move produces a 409 instead of forked history. `tests/stage-move.test.mjs` runs that statement on PGlite and checks every scenario against the TypeScript version.
 
 ### Why lanes cannot be renamed
 
@@ -186,16 +186,19 @@ Timestamps are stored as `TIMESTAMPTZ`; `interview_date` is a plain `DATE`. The 
 ```
 migrations/            timestamp-prefixed .mjs files exporting up(sql)
 scripts/
-  migrate-up.mjs       runner; one transaction per migration over a WebSocket client
+  migration-utils.mjs  env loading, production detection, the migration loop
+  migrate-up.mjs       migrates DATABASE_URL; refuses production
+  migrate-prod.mjs     migrates PRODUCTION_DATABASE_URL after confirmation
   migrate-create.mjs   scaffolds a migration
-  reset-neon-db.mjs    DESTRUCTIVE: truncates all three tables
-  verify-*.mjs         assert-based checks for the pure helpers
+  reset-neon-db.mjs    DESTRUCTIVE, guarded: empties the tables, reseeds lanes
+tests/                 node --test files; stage-move runs the SQL on PGlite
 src/
   proxy.ts             auth gate, CSRF check, guest write block
   app/                 pages and API routes
   components/          client components; ui/ holds the primitives
   lib/
     db.ts              every query
+    stage-move.ts      the stage-move statement (no runtime imports)
     stage-kinds.ts     lane kinds, rank, chart colours (no runtime imports)
     transitions.ts     reference rewind implementation
     sankey.ts          builds the Sankey graph as a DAG
@@ -208,18 +211,16 @@ src/
 
 ## Verification
 
-| Command | Covers |
-|---|---|
-| `npm run lint` | ESLint |
-| `npx tsc --noEmit` | Types |
-| `npm run verify:auth` | Token signing, expiry, tampering, guest revocation |
-| `npm run verify:timezone` | Date-only arithmetic |
-| `npm run verify:sankey` | Graph is acyclic |
-| `npm run verify:transitions` | Rewind rule, TypeScript version only |
-| `npm run verify:stage-kinds` | Rank ordering |
-| `npm audit` | Dependencies |
+`npm run check` runs lint, typecheck and every test; GitHub Actions runs it on every push, followed by `npm audit --omit=dev` and a build.
 
-There is no test runner, no single command that runs all of the above, and no CI. Nothing exercises the SQL.
+| Test (`npm run verify:<name>`) | Covers |
+|---|---|
+| `auth` | Token signing, expiry, tampering, guest revocation |
+| `timezone` | Date-only arithmetic |
+| `sankey` | Graph is acyclic |
+| `transitions` | Rewind rule, TypeScript version |
+| `stage-kinds` | Rank ordering, stale kinds, colours |
+| `stage-move` | The production move SQL on PGlite, checked against the TypeScript version |
 
 ## Known limitations
 

@@ -2,8 +2,6 @@ import { Application, StageKind } from "@/lib/types";
 import { STALE_EXCLUDED_KINDS } from "@/lib/stage-kinds";
 import { daysBetweenDateOnly, todayInTimeZone } from "@/lib/timezone";
 
-export const DEFAULT_STAGE_NAMES = ["Wishlist", "Applied", "Interview", "Offer", "Rejected"];
-
 export const STALE_THRESHOLD_DAYS = 14;
 
 // Staleness is a pipeline concept: pre-application (Wishlist) and resolved

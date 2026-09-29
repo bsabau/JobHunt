@@ -110,7 +110,7 @@ assert.deepEqual(
 );
 
 // Screening -> Rejected at screening is forward, although the lane sits earlier
-// on the board: stageMoveQuery only rewinds when the target ranks lower.
+// on the board: stageMoveStatement only rewinds when the target ranks lower.
 assert.ok(
   compareStageRank(board[1], board[2]) > 0,
   "a terminal lane outranks every pipeline lane"

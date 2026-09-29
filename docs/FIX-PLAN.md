@@ -26,16 +26,20 @@ Each phase should be its own branch and pull request. Run `npm run check` (added
 Needs the owner, because it is done in the Neon console or CLI.
 
 - Create a Neon branch `dev` from the production branch. It starts as a copy-on-write copy of the current data.
-- Point `DATABASE_URL` in `.env.local` at the `dev` branch. The production connection string lives only in Vercel's environment settings.
-- Apply migrations to production through an explicit `npm run migrate:prod` that reads a separate `PRODUCTION_DATABASE_URL`, prints the host and asks for confirmation. `npm run migrate:up` keeps targeting `.env.local`.
-- Record the production endpoint id (the `ep-…` part of the host, without `-pooler`) in `.env.example` as `PRODUCTION_DATABASE_ENDPOINT`, so the guards below can recognise production however it is addressed.
+- Point `DATABASE_URL` in `.env.local` at the `dev` branch. Keep the production string only as `PRODUCTION_DATABASE_URL`, which nothing but `npm run migrate:prod` connects to.
+- `migrate:prod` prints the target and requires its endpoint id, typed or as `--confirm=<id>`. `migrate:up` targets `DATABASE_URL` and refuses production.
+- Guards recognise production by Neon endpoint id (the `ep-…` part of the host, without `-pooler`), derived from `PRODUCTION_DATABASE_URL`, so pooled and direct URLs both match.
+
+Status: done in phase 1. Neon project `jobhunt` has a `dev` branch (endpoint `ep-misty-art-al79xv5z`) copied from `production` (`ep-nameless-pine-alwsccfk`) on 2026-09-29; the local `DATABASE_URL` points at it. A branch is a snapshot: refresh it from production in the Neon console when fresher data is needed.
+
+Still open: Vercel's `DATABASE_URL` for the Preview environment is the production database, so a preview deployment reads and writes live data. Point Preview at the `dev` branch (owner decision).
 
 ### 1.1 Guard `reset:db` (DB-3)
 
 Do this first if 1.0 has to wait; it is ten minutes of work and removes the only way to lose data by accident.
 
 - Refuse to run unless `--yes` is passed, and print the database host before doing anything.
-- Refuse when the target's Neon endpoint id equals `PRODUCTION_DATABASE_ENDPOINT`. Checking `NODE_ENV` or `VERCEL_ENV` is not enough: locally neither says production, yet today the local connection string is production.
+- Refuse when the target's Neon endpoint id equals production's, and refuse when `PRODUCTION_DATABASE_URL` is unset and production therefore cannot be recognised. Checking `NODE_ENV` or `VERCEL_ENV` is not enough: locally neither says production, yet today the local connection string is production.
 - Delete the copied table definitions. After truncating, run the migration runner so there is one source of schema truth.
 - Take the seed lanes from one shared constant.
 
@@ -45,8 +49,8 @@ Add to `package.json`:
 
 ```json
 "typecheck": "tsc --noEmit --incremental false",
-"verify": "npm run verify:auth && npm run verify:timezone && npm run verify:sankey && npm run verify:transitions && npm run verify:stage-kinds",
-"check": "npm run lint && npm run typecheck && npm run verify"
+"test": "node --test \"tests/**/*.test.mjs\"",
+"check": "npm run lint && npm run typecheck && npm test"
 ```
 
 Turn on `@typescript-eslint/no-explicit-any` as a warning and type the Recharts callbacks in `sankey-chart.tsx`.
@@ -55,10 +59,10 @@ Turn on `@typescript-eslint/no-explicit-any` as a warning and type the Recharts 
 
 Goal: the SQL and `rewindTransitionPath()` are run on the same scenarios and must agree.
 
-Tests must never run against production, not even inside a transaction that is rolled back. PGlite needs no connection string; for the Neon-branch fallback, the test setup refuses to start when the target's endpoint id equals `PRODUCTION_DATABASE_ENDPOINT`. Compare endpoint ids, not whole connection strings: the pooled and direct URLs of one database differ (`ep-…-pooler` vs `ep-…`).
+Tests must never run against production, not even inside a transaction that is rolled back. PGlite needs no connection string; if a Neon-branch fallback is ever added, its setup must refuse production by endpoint id. Compare endpoint ids, not whole connection strings: the pooled and direct URLs of one database differ (`ep-…-pooler` vs `ep-…`).
 
 1. Add a seam in `db.ts`: build the statement in a function that returns text and parameters, and let the executor be injected. The Neon driver is then one executor among others.
-2. Run the statement in tests against an in-process Postgres. PGlite (`@electric-sql/pglite`) is the first choice because it needs no network and no container. The statement text and parameters can be taken out of `db.ts` and run as a plain parameterized query; this has been done by hand once. **Still to verify before committing to it:** that PGlite accepts the row-value comparisons and data-modifying CTEs as written. It is Postgres compiled to WebAssembly, so it should. Fallback: a Neon branch created per CI run.
+2. Run the statement in tests against an in-process Postgres. PGlite (`@electric-sql/pglite`) is the first choice because it needs no network and no container. The statement text and parameters can be taken out of `db.ts` and run as a plain parameterized query; this has been done by hand once. Verified in phase 1: PGlite runs all migrations and the statement unchanged, including the `text[]` parameter.
 3. Load the schema by running the real migrations against the test database, so the migrations are tested as well.
 4. Scenarios, each asserted against both implementations:
    - forward move appends one edge;
@@ -75,9 +79,11 @@ Tests must never run against production, not even inside a transaction that is r
 
 ### 1.4 CI
 
-Add a GitHub Actions workflow that runs on push and pull request with Node 24: `npm ci`, `npm run check`, `npm test`, `npm audit --omit=dev`, `npm run build`.
+Add a GitHub Actions workflow that runs on push and pull request with Node 24: `npm ci`, `npm run check` (which includes the tests), `npm audit --omit=dev`, `npm run build`.
 
-**Done when:** a deliberate bug in `stageMoveQuery` (for example flipping `>=` to `>` in `rewind_boundary`) fails CI.
+**Done when:** a deliberate bug in the move statement fails CI.
+
+Phase 1 result: seven mutations were tried. Six change behaviour and all six fail the suite. The original example here, `>=` to `>` in `rewind_boundary`, only differs on a history that is out of rank order, which a lane reorder produces; it is caught by the reorder scenario. The seventh, `<` to `<=` in `clear_history`, is equivalent: both branches leave an empty path when the target is the entry lane.
 
 ---
 
@@ -166,7 +172,7 @@ Keep `from_status` and `to_status` as a snapshot of the name at the time of the 
 
 ### 3.2 Dual write
 
-`stageMoveQuery` writes both the ids and the names. Reads are unchanged. Deploy and let it run.
+`stageMoveStatement` writes both the ids and the names. Reads are unchanged. Deploy and let it run.
 
 ### 3.3 Switch reads
 

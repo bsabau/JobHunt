@@ -1,10 +1,16 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { MouseEvent, ReactElement, useCallback, useMemo, useState } from "react";
 import { ResponsiveContainer, Sankey } from "recharts";
+import type { SankeyElementType, SankeyLinkProps, SankeyNode, SankeyNodeProps } from "recharts";
 import { SankeyPayload, StageKind } from "@/lib/types";
 import { colorFor, isTerminalKind } from "@/lib/stage-kinds";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+// Recharts types node payloads as its own layout node; ours also carry the
+// fields from SankeyPayload.nodes.
+type ChartNode = SankeyNode & { kind?: StageKind; companies?: string[] };
+type ChartLinkPayload = SankeyLinkProps["payload"] & { companies?: string[] };
 
 function nodeColor(node: { name?: string; kind?: StageKind } | undefined): string {
   return colorFor(node?.name ?? "", node?.kind);
@@ -17,18 +23,25 @@ interface HoverInfo {
   y: number;
 }
 
-function CustomNode(props: any) {
-  const { x, y, width, height, payload } = props;
-  const fill = nodeColor(payload);
+function CustomNode({ x, y, width, height, payload }: SankeyNodeProps) {
+  const fill = nodeColor(payload as ChartNode);
   return <rect x={x} y={y} width={width} height={height} fill={fill} fillOpacity={0.85} stroke="none" rx={2} />;
 }
 
-function CustomLink(props: any) {
-  const { sourceX, sourceY, sourceControlX, targetX, targetY, targetControlX, linkWidth, payload } = props;
+function CustomLink({
+  sourceX,
+  sourceY,
+  sourceControlX,
+  targetX,
+  targetY,
+  targetControlX,
+  linkWidth,
+  payload
+}: SankeyLinkProps): ReactElement<React.SVGProps<SVGPathElement>> {
   // Flows into an outcome lane take the outcome's colour, so rejections read as
   // red wherever they came from; every other flow keeps its source colour.
-  const target = payload?.target;
-  const color = isTerminalKind(target?.kind) ? nodeColor(target) : nodeColor(payload?.source);
+  const target = payload.target as ChartNode;
+  const color = isTerminalKind(target.kind) ? nodeColor(target) : nodeColor(payload.source as ChartNode);
   return (
     <path
       d={`M${sourceX},${sourceY} C${sourceControlX},${sourceY} ${targetControlX},${targetY} ${targetX},${targetY}`}
@@ -83,11 +96,12 @@ export function SankeyChart({ data }: { data: SankeyPayload }) {
   }, [data]);
 
   const handleMouseEnter = useCallback(
-    (item: any, type: string, e: React.MouseEvent) => {
+    (item: SankeyNodeProps | SankeyLinkProps, type: SankeyElementType, e: MouseEvent<SVGGraphicsElement>) => {
       if (type === "node") {
-        const name = item?.payload?.name ?? item?.name ?? "?";
-        const companies: string[] = item?.payload?.companies ?? [];
-        const value = item?.value ?? companies.length;
+        const node = item.payload as ChartNode;
+        const name = node.name ?? "?";
+        const companies = node.companies ?? [];
+        const value = node.value ?? companies.length;
         setHover({
           label: `${name} (${value})`,
           companies,
@@ -95,11 +109,12 @@ export function SankeyChart({ data }: { data: SankeyPayload }) {
           y: e.clientY,
         });
       } else if (type === "link") {
-        const sourceName = item?.payload?.source?.name ?? "?";
-        const targetName = item?.payload?.target?.name ?? "?";
-        const companies: string[] = item?.payload?.companies ?? [];
+        const link = item.payload as ChartLinkPayload;
+        const sourceName = link.source?.name ?? "?";
+        const targetName = link.target?.name ?? "?";
+        const companies = link.companies ?? [];
         setHover({
-          label: `${sourceName} → ${targetName} (${item?.payload?.value ?? 0})`,
+          label: `${sourceName} → ${targetName} (${link.value ?? 0})`,
           companies,
           x: e.clientX,
           y: e.clientY,
@@ -131,10 +146,10 @@ export function SankeyChart({ data }: { data: SankeyPayload }) {
               <Sankey
                 data={sanitized}
                 nodePadding={28}
-                node={<CustomNode />}
-                link={<CustomLink />}
-                onMouseEnter={handleMouseEnter as any}
-                onMouseLeave={handleMouseLeave as any}
+                node={CustomNode}
+                link={CustomLink}
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
               />
             </ResponsiveContainer>
             {hover && (

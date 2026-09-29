@@ -6,6 +6,15 @@ export const STAGE_KINDS = ["intake", "active", "interview", "offer", "rejected"
 
 export type StageKind = (typeof STAGE_KINDS)[number];
 
+// Lanes seeded into an empty database (`npm run reset:db`).
+export const DEFAULT_STAGES: readonly { name: string; kind: StageKind }[] = [
+  { name: "Wishlist", kind: "intake" },
+  { name: "Applied", kind: "active" },
+  { name: "Interview", kind: "interview" },
+  { name: "Offer", kind: "offer" },
+  { name: "Rejected", kind: "rejected" }
+];
+
 export const KIND_LABELS: Record<StageKind, string> = {
   intake: "Wishlist",
   active: "Pipeline",
@@ -38,7 +47,7 @@ export const STALE_EXCLUDED_KINDS: readonly StageKind[] = ["intake", "offer", "r
 
 // Pipeline rank: every terminal lane sorts after every pipeline lane, whatever
 // its board position, so moving a card into an outcome lane is always forward.
-// db.ts `stageMoveQuery` implements the same rule in SQL as the row value
+// `stageMoveStatement` in stage-move.ts implements the same rule in SQL as the row value
 // (kind IN ('rejected','closed'), sort_order); keep the two in step.
 export function compareStageRank(
   a: { sortOrder: number; kind?: StageKind },
