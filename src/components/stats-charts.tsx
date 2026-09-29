@@ -118,7 +118,7 @@ function RangeControl({ range }: { range: StatsRange }) {
           <Link
             key={option.href}
             href={option.href}
-            aria-current={option.value === range ? "page" : undefined}
+            aria-current={option.value === range ? "true" : undefined}
             className={`rounded-md px-3 py-1 text-sm transition-colors ${
               option.value === range ? "bg-sky-500/20 text-foreground" : "text-muted-foreground hover:text-foreground"
             }`}

@@ -227,7 +227,9 @@ test("source applications: each sent application's link and flags; unsent cards 
 });
 
 // Cards sent 10, 60 and 200 days before a fixed `now`, each rejected a day
-// after it was sent, plus a card not sent yet (in the wishlist).
+// after it was sent; a card added to the wishlist 100 days ago, sent 10 days
+// ago and rejected, so its creation and applied dates fall in different
+// ranges; and a card not sent yet (in the wishlist).
 const NOW = Date.parse("2026-09-30T12:00:00.000Z");
 async function cardsAcrossTime() {
   for (const daysAgo of [10, 60, 200]) {
@@ -237,6 +239,11 @@ async function cardsAcrossTime() {
     const replied = new Date(NOW - (daysAgo - 1) * 86_400_000).toISOString();
     await sql`UPDATE application_transitions SET transitioned_at = ${replied} WHERE application_id = ${app}`;
   }
+  const waited = await createApp("Wishlist", new Date(NOW - 100 * 86_400_000).toISOString());
+  await move(waited, "Applied", "Rejected");
+  const edges = await sql`SELECT id FROM application_transitions WHERE application_id = ${waited} ORDER BY transitioned_at, id`;
+  await sql`UPDATE application_transitions SET transitioned_at = ${new Date(NOW - 10 * 86_400_000).toISOString()} WHERE id = ${edges[0].id}`;
+  await sql`UPDATE application_transitions SET transitioned_at = ${new Date(NOW - 9 * 86_400_000).toISOString()} WHERE id = ${edges[1].id}`;
   await createApp("Wishlist", new Date(NOW - 5 * 86_400_000).toISOString());
 }
 
@@ -253,7 +260,7 @@ test("ranged: sent applications, their medians and their sources follow the rang
     const weeks = await run(weeklyStatement("UTC", start));
     counts[label] = [milestone.applied, milestone.responded, hearBack.rejection_count, sources.length, weeks.reduce((sum, week) => sum + week.sent, 0)];
   }
-  assert.deepEqual(counts, { "all time": [3, 3, 3, 3, 3], "90 days": [2, 2, 2, 2, 2], "30 days": [1, 1, 1, 1, 1] });
+  assert.deepEqual(counts, { "all time": [4, 4, 4, 4, 4], "90 days": [3, 3, 3, 3, 3], "30 days": [2, 2, 2, 2, 2] });
 });
 
 test("ranged: the funnel, the companies and the outcomes count the unsent card only under all time", async () => {
@@ -266,5 +273,5 @@ test("ranged: the funnel, the companies and the outcomes count the unsent card o
     const outcomes = (await run(outcomesStatement(start))).reduce((sum, row) => sum + row.count, 0);
     counts[label] = [visitedApplications.size, companies, outcomes];
   }
-  assert.deepEqual(counts, { "all time": [4, 4, 3], "90 days": [2, 2, 2], "30 days": [1, 1, 1] });
+  assert.deepEqual(counts, { "all time": [5, 5, 4], "90 days": [3, 3, 3], "30 days": [2, 2, 2] });
 });

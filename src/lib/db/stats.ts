@@ -1,5 +1,5 @@
 import { MEDIAN_MIN_SAMPLE, STALE_THRESHOLD_DAYS } from "@/lib/constants";
-import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
+import { normalizeTimeZone } from "@/lib/timezone";
 import { STALE_EXCLUDED_KINDS, TERMINAL_KINDS } from "@/lib/stage-kinds";
 import { buildFunnel } from "@/lib/funnel";
 import { groupBySource } from "@/lib/sources";
@@ -51,10 +51,7 @@ function roundOrNull(days: number | null): number | null {
 // URL. The figures that follow the range count applications sent since its
 // start; lane counts, upcoming interviews, stale applications and time in the
 // current lane always describe the present.
-export async function getStatsData(
-  timeZone: string = DEFAULT_TIME_ZONE,
-  options: { now: number; range: StatsRange } = { now: Date.now(), range: null }
-): Promise<StatsPayload> {
+export async function getStatsData(timeZone: string, options: { now: number; range: StatsRange }): Promise<StatsPayload> {
   await ensureSchema();
 
   const zone = normalizeTimeZone(timeZone);
