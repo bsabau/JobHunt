@@ -3,6 +3,7 @@ import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
 import { INTERVIEW_KIND, RESOLVED_KINDS, STALE_EXCLUDED_KINDS, TERMINAL_KINDS, StageKind } from "@/lib/stage-kinds";
 import { StatsPayload } from "@/lib/types";
 import { ensureSchema, transaction } from "./client";
+import { mapStage } from "./rows";
 
 // Label for applications that were created straight into an outcome lane.
 const OUTCOME_DIRECT_ENTRY = "Added directly";
@@ -85,7 +86,8 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     `,
     tx`
       -- Grouped the way the duplicate warning compares names (trimmed, any
-      -- case), shown with the most common spelling.
+      -- case), shown with the most common spelling. On a tie MODE() takes the
+      -- first spelling in the database's collation order.
       SELECT MODE() WITHIN GROUP (ORDER BY btrim(company)) AS company, COUNT(*)::int AS count
       FROM applications
       GROUP BY LOWER(btrim(company))
@@ -167,18 +169,13 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
   ], { readOnly: true, isolationLevel: "RepeatableRead" })) as Record<string, unknown>[][];
 
   // The lanes come from the same snapshot as the counts.
-  const stages = stageCountRows.map((row) => ({
-    id: Number(row.id),
-    name: String(row.name),
-    sortOrder: Number(row.sortorder),
-    kind: String(row.kind ?? "active") as StageKind
-  }));
+  const stages = stageCountRows.map(mapStage);
 
   const stageCounts = stageCountRows.map((row) => ({
     stage: String(row.name),
     count: Number(row.count),
     sortOrder: Number(row.sortorder),
-    kind: String(row.kind ?? "active") as StageKind
+    kind: String(row.kind) as StageKind
   }));
 
   const totalApps = stageCounts.reduce((sum, row) => sum + row.count, 0);

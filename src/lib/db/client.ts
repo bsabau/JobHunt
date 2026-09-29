@@ -13,9 +13,10 @@ export function pgConstraint(error: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-// A stage can be deleted between the "does it exist" check and the write that
-// references it. The FK violation that follows is a caller-visible state
-// change, not a server fault, so it maps to the same error as the check.
+// A write that names a lane that does not exist (never did, or was just
+// deleted) fails the stage_id foreign key. That is a caller error, not a
+// server fault: moves and edits rely on it instead of checking the lane first,
+// and createApplication uses it for a lane deleted after its own check.
 export function isStageForeignKeyViolation(error: unknown): boolean {
   return hasPgCode(error, "23503") && (pgConstraint(error)?.includes("stage_id") ?? true);
 }

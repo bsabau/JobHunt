@@ -227,6 +227,15 @@ describe("stage move statement", () => {
     assert.deepEqual(await history(app), []);
   });
 
+  test("an unknown lane with a stale expectedStageId reports a conflict, not a foreign-key error", async () => {
+    // The guarded UPDATE matches no row, so the foreign key never fires: the
+    // route answers 409 "moved elsewhere" rather than 400 "lane not found".
+    const app = await createApp("Applied");
+    const statement = stageMoveStatement(sqlFragment`stage_id = ${9999}, updated_at = NOW()`, app, await idOf("Screening"), 9999, TERMINAL_KINDS);
+    const [row] = (await pg.query(statement.text, statement.params)).rows;
+    assert.deepEqual({ found: row.found, updated: row.updated }, { found: 1, updated: 0 });
+  });
+
   test("an unknown application reports missing", async () => {
     assert.deepEqual(await runMove(999, "Interview", "Applied"), { found: 0, updated: 0 });
   });

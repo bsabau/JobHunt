@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, Plus, Settings2, Trash2 } from "lucide-react";
 import { KIND_TONES, STAGE_TONES, daysSince, daysUntil, isApplicationStale } from "@/lib/constants";
-import { KIND_LABELS, isTerminalKind } from "@/lib/stage-kinds";
+import { INTAKE_KIND, KIND_LABELS, isTerminalKind } from "@/lib/stage-kinds";
 import { Application, Stage } from "@/lib/types";
 import { useMiddleButtonPan } from "@/lib/use-middle-button-pan";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -197,7 +197,7 @@ function KanbanApplicationCard({
             </div>
             {!isTerminalKind(app.stageKind) ? (
               <p className="text-xs text-muted-foreground/70">
-                {app.stageKind === "intake" ? "Added" : "Applied"} {formatAppliedDate(app.createdAt, timeZone)} ·{" "}
+                {app.stageKind === INTAKE_KIND ? "Added" : "Applied"} {formatAppliedDate(app.createdAt, timeZone)} ·{" "}
                 {formatAge(daysSince(app.createdAt))}
               </p>
             ) : null}

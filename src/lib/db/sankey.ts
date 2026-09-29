@@ -1,7 +1,8 @@
 import { buildSankeyPayload } from "@/lib/sankey";
-import { StageKind, withPipelineRank } from "@/lib/stage-kinds";
+import { withPipelineRank } from "@/lib/stage-kinds";
 import { SankeyPayload } from "@/lib/types";
 import { ensureSchema, transaction } from "./client";
+import { mapStage } from "./rows";
 
 export async function getSankeyData(): Promise<SankeyPayload> {
   await ensureSchema();
@@ -34,12 +35,7 @@ export async function getSankeyData(): Promise<SankeyPayload> {
     `,
   ], { readOnly: true, isolationLevel: "RepeatableRead" })) as Record<string, unknown>[][];
 
-  const stages = stageRows.map((row) => ({
-    id: Number(row.id),
-    name: String(row.name),
-    sortOrder: Number(row.sortorder),
-    kind: String(row.kind ?? "active") as StageKind
-  }));
+  const stages = stageRows.map(mapStage);
 
   const optionalId = (value: unknown) => (value == null ? null : Number(value));
 

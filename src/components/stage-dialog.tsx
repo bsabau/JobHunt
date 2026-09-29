@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { Stage, StageKind } from "@/lib/types";
-import { KIND_COLORS, KIND_DESCRIPTIONS, KIND_LABELS } from "@/lib/stage-kinds";
+import { DEFAULT_CREATE_KIND, KIND_COLORS, KIND_DESCRIPTIONS, KIND_LABELS } from "@/lib/stage-kinds";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,7 +17,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TEXT_LIMITS } from "@/lib/limits";
 
-// Pipeline kinds first, then outcomes, then the rarely used pre-application kind.
+// Every kind, in picker order: pipeline kinds first, then outcomes, then the
+// rarely used pre-application kind.
 const KIND_OPTIONS: StageKind[] = ["active", "interview", "offer", "rejected", "closed", "intake"];
 
 interface StageDialogProps {
@@ -49,7 +50,7 @@ function StageForm({
   onClose: () => void;
 }) {
   const [name, setName] = useState(stage?.name ?? "");
-  const [kind, setKind] = useState<StageKind>(stage?.kind ?? "active");
+  const [kind, setKind] = useState<StageKind>(stage?.kind ?? DEFAULT_CREATE_KIND);
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {

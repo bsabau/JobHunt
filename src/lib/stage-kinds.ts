@@ -50,6 +50,9 @@ export type ResolvedKind = (typeof RESOLVED_KINDS)[number];
 // Reaching a lane of this kind counts as reaching an interview.
 export const INTERVIEW_KIND: StageKind = "interview";
 
+// Lanes for applications not sent yet; cards there show "Added", not "Applied".
+export const INTAKE_KIND: StageKind = "intake";
+
 // New applications go to the first lane of this kind (by board position).
 export const DEFAULT_CREATE_KIND: StageKind = "active";
 

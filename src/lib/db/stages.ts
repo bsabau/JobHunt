@@ -3,6 +3,7 @@ import { stageUpdateStatement } from "@/lib/stage-statements";
 import { DEFAULT_CREATE_KIND, StageKind } from "@/lib/stage-kinds";
 import { Stage } from "@/lib/types";
 import { ensureSchema, getSql, hasPgCode, pgConstraint, sql, transaction } from "./client";
+import { mapStage } from "./rows";
 
 // "New" labels the Sankey entry node, and "created" marked creation in early
 // history rows (removed by migration 1730000010000); neither may name a real
@@ -53,15 +54,10 @@ export async function listStages(): Promise<Stage[]> {
     ORDER BY sort_order ASC, id ASC;
   `) as Record<string, unknown>[];
 
-  return rows.map((row) => ({
-    id: Number(row.id),
-    name: String(row.name),
-    sortOrder: Number(row.sortorder),
-    kind: String(row.kind ?? "active") as Stage["kind"]
-  }));
+  return rows.map(mapStage);
 }
 
-export async function addStage(name: string, kind: StageKind = "active"): Promise<Stage> {
+export async function addStage(name: string, kind: StageKind = DEFAULT_CREATE_KIND): Promise<Stage> {
   await ensureSchema();
 
   const trimmed = name.trim();
@@ -94,12 +90,7 @@ export async function addStage(name: string, kind: StageKind = "active"): Promis
     throw error;
   }
 
-  return {
-    id: Number(inserted[0].id),
-    name: String(inserted[0].name),
-    sortOrder: Number(inserted[0].sortorder),
-    kind: (inserted[0].kind ?? "active") as Stage["kind"]
-  };
+  return mapStage(inserted[0]);
 }
 
 // Renames a lane and/or changes its kind. The rename also rewrites the names
@@ -134,12 +125,7 @@ export async function updateStage(id: number, changes: { name?: string; kind?: S
     throw new NotFoundError("Stage not found");
   }
 
-  return {
-    id: Number(rows[0].id),
-    name: String(rows[0].name),
-    sortOrder: Number(rows[0].sortorder),
-    kind: String(rows[0].kind) as Stage["kind"]
-  };
+  return mapStage(rows[0]);
 }
 
 export async function reorderStages(stageIds: number[]): Promise<Stage[]> {
