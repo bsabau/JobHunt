@@ -25,7 +25,7 @@ A single-owner job application tracker. The owner adds applications, drags them 
 | Path | File | Data | Client component |
 |---|---|---|---|
 | `/` | `src/app/page.tsx` | `getStatsData(timeZone)` | `StatsCharts` |
-| `/board` | `src/app/board/page.tsx` | `listApplications()`, `listStages()` | `KanbanBoard` |
+| `/board` | `src/app/board/page.tsx` | `listApplications(session.role)`, `listStages()` | `KanbanBoard` |
 | `/sankey` | `src/app/sankey/page.tsx` | `getSankeyData()` | `SankeyChart` |
 | `/login` | `src/app/login/page.tsx` | none | client page |
 

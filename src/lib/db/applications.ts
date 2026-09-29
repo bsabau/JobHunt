@@ -35,7 +35,9 @@ async function selectApplicationById(id: number): Promise<Application | null> {
     return null;
   }
 
-  return mapApplication(rows[0]);
+  // Only the owner-only write routes (create, edit, move) read a single
+  // application, so the viewer is always the owner.
+  return mapApplication(rows[0], "user");
 }
 
 // `viewer` decides what the caller may see: a guest gets no notes.

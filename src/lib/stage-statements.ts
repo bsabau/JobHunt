@@ -50,8 +50,7 @@ export function compileSql(fragment: SqlFragment): SqlStatement {
 // records the matching transition in one statement. Because the UPDATE and the
 // transition INSERT/DELETE live in the same data-modifying CTE chain, Postgres
 // uses a single snapshot and the transition is only derived from (and written
-// with) a row that actually still sat in `expectedStageId`. `expectedStageId`
-// null disables the guard for callers that cannot supply one.
+// with) a row that actually still sat in `expectedStageId`.
 //
 // History refers to lanes by id. A row whose lane was deleted has a NULL id and
 // only its stored name, and counts as an unknown lane when finding the rewind
@@ -62,7 +61,7 @@ export function compileSql(fragment: SqlFragment): SqlStatement {
 export function stageMoveStatement(
   updateSet: SqlFragment,
   applicationId: number,
-  expectedStageId: number | null,
+  expectedStageId: number,
   toStageId: number,
   terminalKinds: readonly string[]
 ): SqlStatement {
@@ -88,7 +87,7 @@ export function stageMoveStatement(
       UPDATE applications a
       SET ${updateSet}
       WHERE a.id = ${applicationId}
-        AND a.stage_id = COALESCE(${expectedStageId}, a.stage_id)
+        AND a.stage_id = ${expectedStageId}
       RETURNING a.id
     ),
     is_rewind AS (

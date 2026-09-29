@@ -20,7 +20,6 @@ const row = {
 
 test("the owner sees the notes; a guest never does", () => {
   assert.equal(mapApplication(row, "user").notes, "Salary 90k, recruiter Jane");
-  assert.equal(mapApplication(row).notes, "Salary 90k, recruiter Jane");
   assert.equal(mapApplication(row, "guest").notes, null);
 });
 

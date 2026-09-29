@@ -41,7 +41,7 @@ function toIsoString(value: Timestamp): string {
 
 // Notes are owner-only: every application handed to a guest goes through here
 // with viewer "guest", so no caller has to remember to redact.
-export function mapApplication(row: ApplicationRow, viewer: Role = "user"): Application {
+export function mapApplication(row: ApplicationRow, viewer: Role): Application {
   return {
     id: row.id,
     company: row.company,
