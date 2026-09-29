@@ -21,16 +21,13 @@ export function applicationsForCompany(
   );
 }
 
-export function confirmDuplicateCompany(company: string, matches: Application[], action: "add" | "save"): boolean {
+// The warning to confirm before adding or saving a card for a company that
+// already has one, or null when there is none.
+export function duplicateCompanyWarning(company: string, matches: Application[]): string | null {
   if (matches.length === 0) {
-    return true;
+    return null;
   }
 
-  const label = company.trim();
   const roles = matches.map((app) => app.role).join(", ");
-  const verb = action === "add" ? "Add another" : "Save changes";
-
-  return window.confirm(
-    `You already have ${matches.length} application${matches.length === 1 ? "" : "s"} at ${label} (${roles}). ${verb} anyway?`
-  );
+  return `You already have ${matches.length} application${matches.length === 1 ? "" : "s"} at ${company.trim()} (${roles}).`;
 }

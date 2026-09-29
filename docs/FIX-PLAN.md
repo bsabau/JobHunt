@@ -334,6 +334,13 @@ Compute `daysSince` on the server with a single `now` passed down as a prop, or 
 
 Show a message when `refreshBoard()` fails and offer a reload.
 
+Done in PR #19 (5.3 and 5.6):
+
+- 5.3: cards are focusable (label: company, role, lane) with a focus ring; Enter opens the edit dialog; a "Move to" menu (Radix Select, keyboard-operable) on each owner's card moves it through the same path as a drop. `FeedbackProvider` (`src/components/feedback.tsx`) replaces every `alert()` / `confirm()` with toasts (two `aria-live` regions: assertive for errors, polite otherwise; the region is a Radix dismissable-layer branch, so clicks on a toast do not close an open dialog) and a Radix alert dialog (new dependency `@radix-ui/react-alert-dialog`); the duplicate-company check now returns a message for that dialog. No touch drag (decision 4); the menu covers touch screens.
+- 5.6: `refreshBoard()` reports a failure with an error toast and a "Reload page" action; after a 409 the "moved elsewhere" note only appears when the refresh worked.
+- Fable's review found two blockers that the first browser check missed (it focused menu options directly instead of using the menu like a person): the icon-only "Move to" trigger needs `position="popper"` or the list renders off-screen, and the new dependency pulled second copies of Radix's focus-scope and dismissable-layer, which broke every Select inside a dialog. Fixed by bumping `@radix-ui/react-select` to 2.3.7 and `@radix-ui/react-dialog` to 1.1.23 (one copy of each now), plus focus returning to the moved card and after a confirmation, `role="group"` on cards, and a confirm() that cannot leak a pending promise.
+- Re-checked in a browser on a production build, pressing keys as a person would: the menu opens inside the viewport and moves the card with ArrowDown and Enter, focus lands on the moved card; the add dialog's lane select works by keyboard and Escape closes only the list; Escape in a confirmation returns focus to the form; the page stays clickable; bin confirmation, duplicate warning and refresh-failure toast work; no native dialog opened.
+
 ---
 
 ## Phase 6: hardening and housekeeping

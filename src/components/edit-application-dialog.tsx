@@ -17,7 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { trackApplicationUpdated } from "@/lib/analytics";
 import { TEXT_LIMITS } from "@/lib/limits";
-import { applicationsForCompany, confirmDuplicateCompany } from "@/lib/utils";
+import { applicationsForCompany, duplicateCompanyWarning } from "@/lib/utils";
+import { useFeedback } from "@/components/feedback";
 
 interface EditApplicationDialogProps {
   open: boolean;
@@ -55,6 +56,7 @@ interface EditApplicationFormProps {
 }
 
 function EditApplicationForm({ application, applications, stages, onOpenChange, onUpdated }: EditApplicationFormProps) {
+  const { confirm, toast } = useFeedback();
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     company: application.company,
@@ -68,8 +70,8 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const duplicates = applicationsForCompany(form.company, applications, application.id);
-    if (!confirmDuplicateCompany(form.company, duplicates, "save")) {
+    const warning = duplicateCompanyWarning(form.company, applicationsForCompany(form.company, applications, application.id));
+    if (warning && !(await confirm({ title: "Save with a duplicate company?", description: warning, confirmLabel: "Save anyway" }))) {
       return;
     }
 
@@ -100,7 +102,7 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
       onOpenChange(false);
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Could not update application.");
+      toast(error instanceof Error ? error.message : "Could not update application.", { tone: "error" });
     } finally {
       setLoading(false);
     }

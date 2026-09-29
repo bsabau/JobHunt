@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TEXT_LIMITS } from "@/lib/limits";
+import { useFeedback } from "@/components/feedback";
 
 // Every kind, in picker order: pipeline kinds first, then outcomes, then the
 // rarely used pre-application kind.
@@ -49,6 +50,7 @@ function StageForm({
   onSaved: StageDialogProps["onSaved"];
   onClose: () => void;
 }) {
+  const { toast } = useFeedback();
   const [name, setName] = useState(stage?.name ?? "");
   const [kind, setKind] = useState<StageKind>(stage?.kind ?? DEFAULT_CREATE_KIND);
   const [loading, setLoading] = useState(false);
@@ -80,7 +82,7 @@ function StageForm({
       onSaved(body as Stage, stage ? "edit" : "add");
       onClose();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to save stage");
+      toast(error instanceof Error ? error.message : "Failed to save stage", { tone: "error" });
     } finally {
       setLoading(false);
     }
