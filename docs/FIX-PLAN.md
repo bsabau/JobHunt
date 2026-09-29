@@ -204,6 +204,15 @@ The entry event is cheap and recommended. The append-only log is a product decis
 
 **Done when:** a lane can be renamed from the board and the stats, Sankey and staleness figures are unchanged by the rename.
 
+Phase 3 result (3.1 to 3.4; 3.5 is left for its own PR):
+
+- Migration `1730000011000` adds the id columns (`ON DELETE SET NULL`), fills them by name and indexes both. Dual write and switched reads ship together rather than in three deploys: this app has one writer, and the migration runs right before the merge.
+- `stageMoveStatement()` (moved with the new `stageUpdateStatement()` to `src/lib/stage-statements.ts`) writes both ids and names and finds the entry lane, the boundary and the last kept lane by id. `rewindTransitionPath()` matches by id when a record has one; the tests compare ids as well as names.
+- Reads that join history to lanes use ids. Labels keep the stored names, which a rename rewrites. The Sankey query now has a fixed order, since a rename's `UPDATE` reordered its links.
+- Rename (decision 2: rewrites stored names) is one statement. 409 on a case-insensitive duplicate, and on a deleted lane with the same name next to this one in history.
+- Verified on `dev`: all 35 edges backfilled with matching names; renaming a lane rewrote its 8 edges and left the Sankey payload identical apart from the name.
+- Production order: `npm run migrate:prod` first, then merge. The previous code keeps working on the migrated schema.
+
 ---
 
 ## Phase 4: restructure the data layer

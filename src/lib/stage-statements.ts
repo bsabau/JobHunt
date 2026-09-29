@@ -1,6 +1,7 @@
-// The stage-move statement, kept free of runtime imports so the tests can run
-// the exact text against an in-process Postgres (tests/stage-move.test.mjs).
-// db.ts executes the compiled text through Neon's `sql.query()`.
+// Statements that change lanes and their history (moving a card, renaming a
+// lane), kept free of runtime imports so the tests can run the exact text
+// against an in-process Postgres (tests/stage-statements.test.mjs). db.ts
+// executes the compiled text through Neon's `sql.query()`.
 
 export interface SqlStatement {
   text: string;
@@ -52,7 +53,9 @@ export function compileSql(fragment: SqlFragment): SqlStatement {
 // with) a row that actually still sat in `expectedStageId`. `expectedStageId`
 // null disables the guard for callers that cannot supply one.
 //
-// `terminalKinds` are the outcome lane kinds (TERMINAL_KINDS in
+// History refers to lanes by id. A row whose lane was deleted has a NULL id and
+// only its stored name, and counts as an unknown lane when finding the rewind
+// boundary. `terminalKinds` are the outcome lane kinds (TERMINAL_KINDS in
 // stage-kinds.ts); they rank after every pipeline lane. The rewind rule matches
 // rewindTransitionPath() in transitions.ts, and the tests hold both to the same
 // scenarios.
@@ -93,15 +96,19 @@ export function stageMoveStatement(
       FROM current_app c, target tg
       WHERE (tg.terminal, tg.sort_order) < (c.terminal, c.sort_order)
     ),
+    first_edge AS (
+      SELECT t.from_stage_id, t.from_status
+      FROM application_transitions t
+      WHERE t.application_id = ${applicationId}
+      ORDER BY t.transitioned_at ASC, t.id ASC
+      LIMIT 1
+    ),
     entry_stage AS (
-      SELECT COALESCE(
-        (SELECT t.from_status
-         FROM application_transitions t
-         WHERE t.application_id = ${applicationId}
-         ORDER BY t.transitioned_at ASC, t.id ASC
-         LIMIT 1),
-        (SELECT stage_name FROM current_app)
-      ) AS name
+      -- The lane the application entered in: where its first edge starts, else
+      -- its current lane. The id is NULL when that lane has been deleted.
+      SELECT f.from_stage_id AS id, f.from_status AS name FROM first_edge f
+      UNION ALL
+      SELECT c.stage_id, c.stage_name FROM current_app c WHERE NOT EXISTS (SELECT 1 FROM first_edge)
     ),
     clear_history AS (
       -- Moving before the stage the application entered in clears the path.
@@ -110,42 +117,44 @@ export function stageMoveStatement(
         AND EXISTS (
           SELECT 1
           FROM target tg, ranked_stages e
-          WHERE e.name = (SELECT name FROM entry_stage)
+          WHERE e.id = (SELECT id FROM entry_stage)
             AND (tg.terminal, tg.sort_order) < (e.terminal, e.sort_order)
         )
       ) AS should_clear
     ),
     rewind_boundary AS (
       -- First edge on the ordered path that reaches or passes the target.
-      SELECT t.id, t.from_status, t.to_status, t.transitioned_at
+      SELECT t.id, t.to_stage_id, t.transitioned_at
       FROM application_transitions t
-      JOIN ranked_stages s ON s.name = t.to_status
+      JOIN ranked_stages s ON s.id = t.to_stage_id
       WHERE EXISTS (SELECT 1 FROM is_rewind)
         AND t.application_id = ${applicationId}
         AND (s.terminal, s.sort_order) >= (SELECT tg.terminal, tg.sort_order FROM target tg)
       ORDER BY t.transitioned_at ASC, t.id ASC
       LIMIT 1
     ),
+    kept_edge AS (
+      -- The edge immediately before the boundary: its end is the last kept
+      -- lane. Referenced by (timestamp, id) so it tracks rewindTransitionPath().
+      SELECT t.to_stage_id AS id, t.to_status AS name
+      FROM application_transitions t
+      WHERE t.application_id = ${applicationId}
+        AND (t.transitioned_at, t.id) < (SELECT b.transitioned_at, b.id FROM rewind_boundary b)
+      ORDER BY t.transitioned_at DESC, t.id DESC
+      LIMIT 1
+    ),
     rewind_from AS (
-      -- The edge immediately before the boundary (the last kept node), else the
-      -- entry stage. Referenced by (timestamp, id) so it tracks the pure
-      -- rewindTransitionPath() helper exactly.
-      SELECT COALESCE(
-        (SELECT t.to_status
-         FROM application_transitions t
-         WHERE t.application_id = ${applicationId}
-           AND (t.transitioned_at, t.id) < (SELECT b.transitioned_at, b.id FROM rewind_boundary b)
-         ORDER BY t.transitioned_at DESC, t.id DESC
-         LIMIT 1),
-        (SELECT name FROM entry_stage)
-      ) AS status
+      -- The last kept lane, else the entry lane.
+      SELECT k.id, k.name FROM kept_edge k
+      UNION ALL
+      SELECT e.id, e.name FROM entry_stage e WHERE NOT EXISTS (SELECT 1 FROM kept_edge)
     ),
     forward_insert AS (
-      INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
-      SELECT ${applicationId}, c.stage_name, tg.name, NOW()
+      INSERT INTO application_transitions (application_id, from_status, from_stage_id, to_status, to_stage_id, transitioned_at)
+      SELECT ${applicationId}, c.stage_name, c.stage_id, tg.name, tg.id, NOW()
       FROM moved m, current_app c, target tg
       WHERE (tg.terminal, tg.sort_order) >= (c.terminal, c.sort_order)
-        AND tg.name <> c.stage_name
+        AND tg.id <> c.stage_id
       RETURNING id
     ),
     backward_delete AS (
@@ -161,25 +170,63 @@ export function stageMoveStatement(
             SELECT 1
             FROM rewind_boundary b
             WHERE (t.transitioned_at, t.id) > (b.transitioned_at, b.id)
-               OR (t.id = b.id AND b.to_status <> (SELECT name FROM target))
+               OR (t.id = b.id AND b.to_stage_id <> (SELECT id FROM target))
           )
         )
       RETURNING id
     ),
     backward_insert AS (
-      INSERT INTO application_transitions (application_id, from_status, to_status, transitioned_at)
-      SELECT ${applicationId}, (SELECT status FROM rewind_from), tg.name, NOW()
-      FROM moved m, target tg
+      -- The reconnect edge from the last kept lane to the target. The name
+      -- check also skips a deleted lane that shared the target's name, which
+      -- the no-self-loop constraint (on names) would reject.
+      INSERT INTO application_transitions (application_id, from_status, from_stage_id, to_status, to_stage_id, transitioned_at)
+      SELECT ${applicationId}, rf.name, rf.id, tg.name, tg.id, NOW()
+      FROM moved m, target tg, rewind_from rf
       WHERE EXISTS (SELECT 1 FROM is_rewind)
         AND NOT (SELECT should_clear FROM clear_history)
         AND NOT EXISTS (
-          SELECT 1 FROM rewind_boundary b WHERE b.to_status = tg.name
+          SELECT 1 FROM rewind_boundary b WHERE b.to_stage_id = tg.id
         )
-        AND (SELECT status FROM rewind_from) <> tg.name
+        AND rf.id IS DISTINCT FROM tg.id
+        AND rf.name <> tg.name
       RETURNING id
     )
     SELECT
       (SELECT COUNT(*)::int FROM current_app) AS found,
       (SELECT COUNT(*)::int FROM moved) AS updated;
+  `);
+}
+
+// Renames a lane and/or changes its kind in one statement. The names stored in
+// history are rewritten in the same statement, by id, so they always match the
+// live lane; after the lane is deleted they keep its last name. Returns the
+// updated lane, or no row when it does not exist.
+export function stageUpdateStatement(
+  stageId: number,
+  changes: { name?: string; kind?: string }
+): SqlStatement {
+  return compileSql(sqlFragment`
+    WITH updated AS (
+      UPDATE stages
+      SET name = COALESCE(${changes.name ?? null}::text, name),
+          kind = COALESCE(${changes.kind ?? null}::text, kind)
+      WHERE id = ${stageId}
+      RETURNING id, name, sort_order, kind
+    ),
+    renamed_from AS (
+      UPDATE application_transitions t
+      SET from_status = u.name
+      FROM updated u
+      WHERE t.from_stage_id = u.id AND t.from_status <> u.name
+      RETURNING t.id
+    ),
+    renamed_to AS (
+      UPDATE application_transitions t
+      SET to_status = u.name
+      FROM updated u
+      WHERE t.to_stage_id = u.id AND t.to_status <> u.name
+      RETURNING t.id
+    )
+    SELECT id, name, sort_order AS sortOrder, kind FROM updated;
   `);
 }

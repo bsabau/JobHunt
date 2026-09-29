@@ -4,7 +4,7 @@ import { STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { ConflictError, InvalidInputError, NotFoundError } from "@/lib/api-errors";
 import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
 import { buildSankeyPayload } from "@/lib/sankey";
-import { SqlFragment, sqlFragment, stageMoveStatement } from "@/lib/stage-move";
+import { SqlFragment, sqlFragment, stageMoveStatement, stageUpdateStatement } from "@/lib/stage-statements";
 import { STALE_EXCLUDED_KINDS, TERMINAL_KINDS, StageKind, withPipelineRank } from "@/lib/stage-kinds";
 import { Application, SankeyPayload, Stage, StatsPayload } from "@/lib/types";
 
@@ -190,7 +190,7 @@ async function selectApplicationById(id: number): Promise<Application | null> {
       COALESCE(
         (SELECT t.transitioned_at
          FROM application_transitions t
-         WHERE t.application_id = a.id AND t.to_status = s.name
+         WHERE t.application_id = a.id AND t.to_stage_id = s.id
          ORDER BY t.transitioned_at DESC, t.id DESC
          LIMIT 1),
         a.created_at
@@ -265,17 +265,38 @@ export async function addStage(name: string, kind: StageKind = "active"): Promis
   };
 }
 
-// Only the kind is editable: transitions reference stages by name, so a rename
-// would have to rewrite the history as well.
-export async function updateStageKind(id: number, kind: StageKind): Promise<Stage> {
+// Renames a lane and/or changes its kind. The rename also rewrites the names
+// stored in its history, in the same statement (stageUpdateStatement).
+export async function updateStage(id: number, changes: { name?: string; kind?: StageKind }): Promise<Stage> {
   await ensureSchema();
 
-  const rows = (await sql`
-    UPDATE stages
-    SET kind = ${kind}
-    WHERE id = ${id}
-    RETURNING id, name, sort_order AS sortOrder, kind;
-  `) as Record<string, unknown>[];
+  const name = changes.name?.trim();
+  if (changes.name !== undefined) {
+    if (!name) {
+      throw new InvalidInputError("Stage name is required");
+    }
+    if (RESERVED_STAGE_NAMES.has(name.toLowerCase())) {
+      throw new InvalidInputError(`"${name}" is a reserved stage name`);
+    }
+  }
+
+  const statement = stageUpdateStatement(id, { name, kind: changes.kind });
+  let rows: Record<string, unknown>[];
+
+  try {
+    rows = (await getSql().query(statement.text, statement.params)) as Record<string, unknown>[];
+  } catch (error) {
+    // Both the exact and the case-insensitive unique index map here.
+    if (hasPgCode(error, "23505")) {
+      throw new ConflictError("Stage already exists");
+    }
+    // Renaming onto the name of a deleted lane that sits next to this one in
+    // some card's history would turn that edge into "X -> X".
+    if (hasPgCode(error, "23514") && pgConstraint(error) === "application_transitions_no_self_loop") {
+      throw new ConflictError("A deleted lane with that name is next to this lane in a card's history. Pick another name.");
+    }
+    throw error;
+  }
 
   if (rows.length === 0) {
     throw new NotFoundError("Stage not found");
@@ -395,7 +416,7 @@ export async function listApplications(): Promise<Application[]> {
       COALESCE(
         (SELECT t.transitioned_at
          FROM application_transitions t
-         WHERE t.application_id = a.id AND t.to_status = s.name
+         WHERE t.application_id = a.id AND t.to_stage_id = s.id
          ORDER BY t.transitioned_at DESC, t.id DESC
          LIMIT 1),
         a.created_at
@@ -625,7 +646,10 @@ export async function getSankeyData(): Promise<SankeyPayload> {
     sql`
       SELECT t.from_status AS fromStatus, t.to_status AS toStatus, a.company
       FROM application_transitions t
-      JOIN applications a ON a.id = t.application_id;
+      JOIN applications a ON a.id = t.application_id
+      -- A fixed order keeps the Sankey layout stable; without one, any UPDATE
+      -- (such as a lane rename) can reorder the links and move the flows.
+      ORDER BY t.transitioned_at, t.id;
     ` as Promise<Record<string, unknown>[]>,
     sql`
       SELECT
@@ -708,7 +732,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       LEFT JOIN LATERAL (
         SELECT t.transitioned_at AS entered_at
         FROM application_transitions t
-        WHERE t.application_id = a.id AND t.to_status = s.name
+        WHERE t.application_id = a.id AND t.to_stage_id = s.id
         ORDER BY t.transitioned_at DESC, t.id DESC
         LIMIT 1
       ) stage_entry ON true
@@ -727,7 +751,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
         WHERE t.application_id = a.id
           AND EXISTS (
             SELECT 1 FROM stages interview_stage
-            WHERE interview_stage.name = t.to_status AND interview_stage.kind = 'interview'
+            WHERE interview_stage.id = t.to_stage_id AND interview_stage.kind = 'interview'
           )
       ) first_interview ON true;
     ` as Promise<Record<string, unknown>[]>,
@@ -794,7 +818,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       LEFT JOIN LATERAL (
         SELECT t.transitioned_at AS entered_at
         FROM application_transitions t
-        WHERE t.application_id = a.id AND t.to_status = s.name
+        WHERE t.application_id = a.id AND t.to_stage_id = s.id
         ORDER BY t.transitioned_at DESC, t.id DESC
         LIMIT 1
       ) stage_entry ON true
@@ -812,7 +836,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
         SELECT t.from_status
         FROM application_transitions t
         WHERE t.application_id = a.id
-          AND t.to_status = s.name
+          AND t.to_stage_id = s.id
         ORDER BY t.transitioned_at DESC, t.id DESC
         LIMIT 1
       ) last_move ON true

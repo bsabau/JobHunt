@@ -22,7 +22,7 @@
     "verify:sankey": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/sankey.test.mjs",
     "verify:transitions": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/transitions.test.mjs",
     "verify:stage-kinds": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stage-kinds.test.mjs",
-    "verify:stage-move": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stage-move.test.mjs",
+    "verify:stage-statements": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stage-statements.test.mjs",
     "verify:schema": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/schema.test.mjs"
   },
   "dependencies": {

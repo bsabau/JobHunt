@@ -97,11 +97,11 @@ describe("schema built by the migrations", () => {
     assert.deepEqual(rows, [{ from_status: "Applied", to_status: "Interview" }]);
   });
 
-  test("the phase 2 migrations re-run cleanly on a migrated database", async () => {
-    await sql`DELETE FROM schema_migrations WHERE filename >= '1730000006000' AND filename < '1730000011000'`;
+  test("the phase 2 and 3 migrations re-run cleanly on a migrated database", async () => {
+    await sql`DELETE FROM schema_migrations WHERE filename >= '1730000006000' AND filename < '1730000012000'`;
     const logged = [];
     await runMigrations(sql, (line) => logged.push(line));
-    assert.equal(logged.length, 5);
+    assert.equal(logged.length, 6);
     const [{ count }] = await sql`
       SELECT COUNT(*)::int AS count FROM pg_constraint
       WHERE conname IN ('applications_company_not_blank', 'applications_role_not_blank', 'stages_name_not_blank',
@@ -132,6 +132,39 @@ describe("schema built by the migrations", () => {
     const logged = [];
     await runMigrations(staleSql, (line) => logged.push(line));
     assert.deepEqual(logged, []);
+  });
+
+  test("history is backfilled with lane ids by name; names without a lane stay empty", async () => {
+    const [app] = await sql`INSERT INTO applications (company, role, stage_id) VALUES ('Acme', 'Engineer', ${await applied()}) RETURNING id`;
+    // Rows as written before the id columns existed.
+    await sql`
+      INSERT INTO application_transitions (application_id, from_status, to_status) VALUES
+        (${app.id}, 'Applied', 'Interview'),
+        (${app.id}, 'Interview', 'Gone lane')`;
+    await sql`DELETE FROM schema_migrations WHERE filename = '1730000011000_reference-lanes-by-id.mjs'`;
+    await runMigrations(sql, () => {});
+    const rows = await sql`
+      SELECT t.from_status, fs.name AS from_lane, t.to_status, ts.name AS to_lane
+      FROM application_transitions t
+      LEFT JOIN stages fs ON fs.id = t.from_stage_id
+      LEFT JOIN stages ts ON ts.id = t.to_stage_id
+      WHERE t.application_id = ${app.id}
+      ORDER BY t.id`;
+    assert.deepEqual(rows, [
+      { from_status: "Applied", from_lane: "Applied", to_status: "Interview", to_lane: "Interview" },
+      { from_status: "Interview", from_lane: "Interview", to_status: "Gone lane", to_lane: null }
+    ]);
+  });
+
+  test("deleting a lane keeps its name in history and clears its id", async () => {
+    const [lane] = await sql`INSERT INTO stages (name, sort_order) VALUES ('Screening', 2) RETURNING id`;
+    const [app] = await sql`INSERT INTO applications (company, role, stage_id) VALUES ('Acme', 'Engineer', ${await applied()}) RETURNING id`;
+    await sql`
+      INSERT INTO application_transitions (application_id, from_status, from_stage_id, to_status, to_stage_id)
+      VALUES (${app.id}, 'Screening', ${lane.id}, 'Applied', ${await applied()})`;
+    await sql`DELETE FROM stages WHERE id = ${lane.id}`;
+    const [row] = await sql`SELECT from_status, from_stage_id FROM application_transitions WHERE application_id = ${app.id}`;
+    assert.deepEqual(row, { from_status: "Screening", from_stage_id: null });
   });
 
   test("a second run applies nothing", async () => {

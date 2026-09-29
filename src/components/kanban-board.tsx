@@ -357,9 +357,12 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     }
 
     setStages((current) => current.map((item) => (item.id === stage.id ? stage : item)));
-    // Cards carry their lane's kind (staleness, applied date), so keep them in step.
+    // Cards carry their lane's name and kind (search, staleness, applied date),
+    // so keep them in step.
     setApplications((current) =>
-      current.map((item) => (item.stageId === stage.id ? { ...item, stageKind: stage.kind } : item))
+      current.map((item) =>
+        item.stageId === stage.id ? { ...item, stageName: stage.name, stageKind: stage.kind } : item
+      )
     );
   }
 
@@ -555,8 +558,8 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                         type="button"
                         className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
                         onClick={() => setStageDialog({ open: true, stage })}
-                        title={`Lane type: ${KIND_LABELS[stage.kind]}`}
-                        aria-label={`Change type of ${stage.name}`}
+                        title={`Edit lane (type: ${KIND_LABELS[stage.kind]})`}
+                        aria-label={`Edit ${stage.name}`}
                       >
                         <Settings2 className="h-4 w-4" />
                       </button>
