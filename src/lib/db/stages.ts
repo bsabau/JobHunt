@@ -1,6 +1,6 @@
 import { ConflictError, InvalidInputError, NotFoundError } from "@/lib/api-errors";
 import { stageUpdateStatement } from "@/lib/stage-statements";
-import { StageKind } from "@/lib/stage-kinds";
+import { DEFAULT_CREATE_KIND, StageKind } from "@/lib/stage-kinds";
 import { Stage } from "@/lib/types";
 import { ensureSchema, getSql, hasPgCode, pgConstraint, sql, transaction } from "./client";
 
@@ -32,7 +32,7 @@ export async function getDefaultCreateStage(): Promise<{ id: number; name: strin
   const appliedRows = (await sql`
     SELECT id, name
     FROM stages
-    WHERE kind = 'active'
+    WHERE kind = ${DEFAULT_CREATE_KIND}
     ORDER BY sort_order ASC, id ASC
     LIMIT 1;
   `) as Record<string, unknown>[];

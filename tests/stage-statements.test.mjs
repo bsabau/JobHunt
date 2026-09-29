@@ -218,6 +218,15 @@ describe("stage move statement", () => {
     assert.deepEqual(await history(app), beforeMove);
   });
 
+  test("a move to an unknown lane fails on the stage foreign key", async () => {
+    // The data layer relies on this instead of checking the lane first.
+    const app = await createApp("Applied");
+    const statement = stageMoveStatement(sqlFragment`stage_id = ${9999}, updated_at = NOW()`, app, await idOf("Applied"), 9999, TERMINAL_KINDS);
+    await assert.rejects(pg.query(statement.text, statement.params), (error) => error.code === "23503" && /stage_id/.test(error.message));
+    assert.equal(await currentStage(app), "Applied");
+    assert.deepEqual(await history(app), []);
+  });
+
   test("an unknown application reports missing", async () => {
     assert.deepEqual(await runMove(999, "Interview", "Applied"), { found: 0, updated: 0 });
   });

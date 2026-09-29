@@ -1,15 +1,19 @@
 import { buildSankeyPayload } from "@/lib/sankey";
-import { withPipelineRank } from "@/lib/stage-kinds";
+import { StageKind, withPipelineRank } from "@/lib/stage-kinds";
 import { SankeyPayload } from "@/lib/types";
-import { ensureSchema, sql } from "./client";
-import { listStages } from "./stages";
+import { ensureSchema, transaction } from "./client";
 
 export async function getSankeyData(): Promise<SankeyPayload> {
   await ensureSchema();
 
-  const [stages, transitionDetails, entryDetails, nodeCompanies] = await Promise.all([
-    listStages(),
-    sql`
+  // One request and one snapshot, so the lanes, links and nodes agree.
+  const [stageRows, transitionDetails, entryDetails, nodeCompanies] = (await transaction((tx) => [
+    tx`
+      SELECT id, name, sort_order AS sortOrder, kind
+      FROM stages
+      ORDER BY sort_order ASC, id ASC;
+    `,
+    tx`
       SELECT t.from_status AS fromStatus, t.from_stage_id AS fromStageId,
              t.to_status AS toStatus, t.to_stage_id AS toStageId, a.company
       FROM application_transitions t
@@ -17,18 +21,25 @@ export async function getSankeyData(): Promise<SankeyPayload> {
       -- A fixed order keeps the Sankey layout stable; without one, any UPDATE
       -- (such as a lane rename) can reorder the links and move the flows.
       ORDER BY t.transitioned_at, t.id;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
+    `,
+    tx`
       SELECT e.stage_id AS entryStageId, e.stage_name AS entryStage, a.company
       FROM application_entry_stage e
       JOIN applications a ON a.id = e.application_id;
-    ` as Promise<Record<string, unknown>[]>,
-    sql`
+    `,
+    tx`
       SELECT s.id AS stageId, s.name AS stageName, a.company
       FROM applications a
       JOIN stages s ON s.id = a.stage_id;
-    ` as Promise<Record<string, unknown>[]>,
-  ]);
+    `,
+  ], { readOnly: true, isolationLevel: "RepeatableRead" })) as Record<string, unknown>[][];
+
+  const stages = stageRows.map((row) => ({
+    id: Number(row.id),
+    name: String(row.name),
+    sortOrder: Number(row.sortorder),
+    kind: String(row.kind ?? "active") as StageKind
+  }));
 
   const optionalId = (value: unknown) => (value == null ? null : Number(value));
 

@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { Application, Stage } from "@/lib/types";
+import { DEFAULT_CREATE_KIND } from "@/lib/stage-kinds";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,7 +28,7 @@ interface AddApplicationDialogProps {
 }
 
 function getDefaultStageId(stages: Stage[]): number {
-  const active = stages.find((stage) => stage.kind === "active");
+  const active = stages.find((stage) => stage.kind === DEFAULT_CREATE_KIND);
   return active?.id ?? stages[0]?.id ?? 0;
 }
 

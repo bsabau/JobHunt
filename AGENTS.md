@@ -45,7 +45,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 
 ### Key modules
 
-- `src/lib/db/`: all database access, through Neon's `sql` tagged template. `index.ts` is the public API; `client.ts` (connection, `transaction()`, error helpers, `ensureSchema`), `rows.ts` (mappers), `stages.ts`, `applications.ts`, `sankey.ts`, `stats.ts`.
+- `src/lib/db/`: all database access, through Neon's `sql` tagged template. `index.ts` is the public API; `client.ts` (connection, `transaction()`, error helpers, `ensureSchema`), `schema-version.ts` (`LATEST_MIGRATION`), `rows.ts` (mappers), `stages.ts`, `applications.ts`, `sankey.ts`, `stats.ts`.
 - `src/lib/stage-kinds.ts`: lane kinds, pipeline rank, chart colours. No runtime imports, so the verify scripts can load it directly.
 - `src/lib/stage-statements.ts`: the SQL that moves cards and renames lanes, compiled to text and parameters. No runtime imports, so the tests run it on PGlite.
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
@@ -65,6 +65,7 @@ These are easy to break and not obvious from any single file.
 - **The rewind rule exists twice**: `rewindTransitionPath()` in `transitions.ts` and `stageMoveStatement()` in `stage-statements.ts`. `tests/stage-statements.test.mjs` runs the SQL on PGlite and fails when the two disagree; add a scenario there when you change either.
 - **`application_transitions` is the current path, not an audit log.** Backward moves delete and rewrite rows.
 - **The entry lane comes from the view `application_entry_stage`.** Read it instead of deriving "first edge's start, else current lane" again. The only other copy is the TypeScript twin in `transitions.ts`; change both together.
+- **When a card entered its current lane comes from the view `application_stage_entry`.** Use it for staleness and time in lane instead of another "latest move into the lane, else created_at" subquery.
 - **Transitions reference lanes by id** (`from_stage_id`, `to_stage_id`); join history to lanes by id, never by name. `from_status` / `to_status` hold the lane's name: a rename rewrites them in the same statement (`stageUpdateStatement()`), and after a lane is deleted its id becomes `NULL` and the name is all that remains. `new` and `created` are reserved names.
 - **Stage moves need `expectedStageId`.** It is the concurrency guard; a mismatch returns 409.
 - **Notes are owner-only.** `listApplications()` returns them to any caller, so every caller that serves a guest must set `notes` to `null`.
@@ -76,6 +77,7 @@ Tables: `stages`, `applications`, `application_transitions`, plus `schema_migrat
 
 - Migrations are timestamp-prefixed `.mjs` files in `migrations/` that export `up(sql)`. They are forward-only; there is no `down`.
 - Never edit a migration that has been applied. Add a new one.
+- Every new migration also updates `LATEST_MIGRATION` in `src/lib/db/schema-version.ts`; otherwise the app refuses to start on a database that lacks it, and `npm test` fails.
 - Write migrations so that running them twice is harmless (`IF NOT EXISTS`, guarded updates).
 - The runner wraps each migration in a transaction over a WebSocket client. The HTTP driver used by the app cannot hold a transaction across statements; in app code use `transaction()` from `db/client.ts`, which sends a fixed list of statements in one request.
 
@@ -112,7 +114,7 @@ Use Node 24 LTS. The repo pins `24.16.0` in `.nvmrc` and `.node-version`, and `p
 - UI components follow shadcn/ui patterns and use `cn()` from `src/lib/utils.ts`.
 - Database columns are snake_case and TypeScript is camelCase. Queries alias columns unquoted (`AS interviewDate`), Postgres folds them to lowercase, and the mappers in `db/rows.ts` read the lowercase key (`row.interviewdate`). Follow the existing pattern when adding a column.
 - Neon's `sql` tagged template parameterizes values. Never build SQL by string interpolation. Statements that tests must run on PGlite (see `stage-statements.ts`) are built with `sqlFragment` and `compileSql` instead, which parameterize the same way and nest.
-- Use the kind sets exported from `stage-kinds.ts` (`TERMINAL_KINDS`, `STALE_EXCLUDED_KINDS`) in queries instead of writing the literals.
+- Use the kind names exported from `stage-kinds.ts` (`TERMINAL_KINDS`, `STALE_EXCLUDED_KINDS`, `RESOLVED_KINDS`, `INTERVIEW_KIND`, `DEFAULT_CREATE_KIND`) in queries and components instead of writing the literals.
 - Comments explain why a thing is done, not what the code does.
 
 <!-- BEGIN:nextjs-agent-rules -->

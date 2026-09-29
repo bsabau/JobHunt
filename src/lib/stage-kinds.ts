@@ -42,6 +42,17 @@ export function isTerminalKind(kind: StageKind | undefined): boolean {
   return kind !== undefined && TERMINAL_KINDS.includes(kind);
 }
 
+// Lanes where an application has an outcome: offered, rejected or closed. The
+// order is the stacking order of the "Where applications ended" chart.
+export const RESOLVED_KINDS = ["rejected", "closed", "offer"] as const satisfies readonly StageKind[];
+export type ResolvedKind = (typeof RESOLVED_KINDS)[number];
+
+// Reaching a lane of this kind counts as reaching an interview.
+export const INTERVIEW_KIND: StageKind = "interview";
+
+// New applications go to the first lane of this kind (by board position).
+export const DEFAULT_CREATE_KIND: StageKind = "active";
+
 // Kinds that are never "going stale": not applied yet, or already resolved.
 export const STALE_EXCLUDED_KINDS: readonly StageKind[] = ["intake", "offer", "rejected", "closed"];
 

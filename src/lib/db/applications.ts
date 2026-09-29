@@ -23,16 +23,10 @@ async function selectApplicationById(id: number): Promise<Application | null> {
       s.kind AS stageKind,
       a.created_at AS createdAt,
       a.updated_at AS updatedAt,
-      COALESCE(
-        (SELECT t.transitioned_at
-         FROM application_transitions t
-         WHERE t.application_id = a.id AND t.to_stage_id = s.id
-         ORDER BY t.transitioned_at DESC, t.id DESC
-         LIMIT 1),
-        a.created_at
-      ) AS stageEnteredAt
+      e.entered_at AS stageEnteredAt
     FROM applications a
     JOIN stages s ON s.id = a.stage_id
+    JOIN application_stage_entry e ON e.application_id = a.id
     WHERE a.id = ${id};
   `) as Record<string, unknown>[];
 
@@ -60,17 +54,11 @@ export async function listApplications(): Promise<Application[]> {
       s.kind AS stageKind,
       a.created_at AS createdAt,
       a.updated_at AS updatedAt,
-      COALESCE(
-        (SELECT t.transitioned_at
-         FROM application_transitions t
-         WHERE t.application_id = a.id AND t.to_stage_id = s.id
-         ORDER BY t.transitioned_at DESC, t.id DESC
-         LIMIT 1),
-        a.created_at
-      ) AS stageEnteredAt
+      e.entered_at AS stageEnteredAt
     FROM applications a
     JOIN stages s ON s.id = a.stage_id
-    ORDER BY a.updated_at DESC;
+    JOIN application_stage_entry e ON e.application_id = a.id
+    ORDER BY a.updated_at DESC, a.id DESC;
   `) as Record<string, unknown>[];
 
   return rows.map(mapApplication);
@@ -193,17 +181,8 @@ export async function updateApplicationStage(
 ): Promise<Application | null> {
   await ensureSchema();
 
-  const targetRows = (await sql`
-    SELECT 1
-    FROM stages
-    WHERE id = ${toStageId}
-    LIMIT 1;
-  `) as Record<string, unknown>[];
-
-  if (targetRows.length === 0) {
-    throw new InvalidInputError("Target stage not found");
-  }
-
+  // An unknown target lane fails the stage_id foreign key inside the move
+  // statement, which applyStageMove maps to "Target stage not found".
   const outcome = await applyStageMove(
     sqlFragment`stage_id = ${toStageId}, updated_at = NOW()`,
     id,
@@ -248,17 +227,8 @@ interface UpdateApplicationInput {
 export async function updateApplication(id: number, input: UpdateApplicationInput): Promise<Application | null> {
   await ensureSchema();
 
-  const targetRows = (await sql`
-    SELECT 1
-    FROM stages
-    WHERE id = ${input.stageId}
-    LIMIT 1;
-  `) as Record<string, unknown>[];
-
-  if (targetRows.length === 0) {
-    throw new InvalidInputError("Target stage not found");
-  }
-
+  // An unknown target lane fails the stage_id foreign key inside the move
+  // statement, which applyStageMove maps to "Target stage not found".
   const outcome = await applyStageMove(
     sqlFragment`
       company = ${input.company.trim()},
