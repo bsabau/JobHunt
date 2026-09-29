@@ -33,12 +33,11 @@ Response, interview, offer and ghosted rates; one funnel chart instead of three;
 - New metrics: time to hear back, results by application week, results by source, a date range filter (M-2 to M-5).
 - Actions on stale applications: followed up, snooze, close (F-1).
 - Close ghosted applications in bulk (F-2).
+- Optional fields: referral, location, salary (F-6), and calendar export for interviews (F-7), if the owner keeps the plan's defaults (decisions 14 and 16).
 
 ### Optional
 
-Not needed now; built only on request.
+Not needed now; built only on request (decision 19).
 
-- Optional fields: referral, location, salary (F-6).
-- Calendar export for interviews (F-7).
 - Bulk import from CSV, with a preview, one logo lookup per company and a row cap.
 - CSV export, which doubles as a personal backup (F-5).

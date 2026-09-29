@@ -65,7 +65,7 @@ These repeat `AGENTS.md` where a product step is likely to trip over it.
 
 ---
 
-## Phase 1: the board, data in and out
+## Phase 1: the board
 
 ### 1.1 Application timeline (F-3)
 
@@ -89,7 +89,7 @@ These repeat `AGENTS.md` where a product step is likely to trip over it.
 
 - New: `src/lib/db/timeline.ts`, `src/lib/application-statements.ts` (no runtime imports; later steps add to it), `src/app/api/applications/[id]/timeline/route.ts`, `src/components/application-timeline.tsx`, `src/components/application-details-dialog.tsx` (guest), `tests/timeline.test.mjs`.
 - Changed: `src/lib/types.ts` (`TimelinePayload`), `src/lib/db/index.ts`, `src/components/edit-application-dialog.tsx`, `src/components/kanban-board.tsx`, `src/lib/timezone.ts` if a duration helper is added, `package.json` (`verify:timeline`).
-- Docs: `AGENTS.md` (Commands), `docs/ARCHITECTURE.md` (Routes, Source layout, Verification), `README.md`, `ROADMAP.md`.
+- Docs: `AGENTS.md` (Commands, Key modules), `docs/ARCHITECTURE.md` (Routes, Source layout, Verification), `README.md`, `ROADMAP.md`.
 
 **Domain rules touched**
 
@@ -657,7 +657,7 @@ ALTER TABLE applications
 
 - New: the migration `<next>_interview-time.mjs`, `src/lib/ics.ts`, `src/app/api/applications/[id]/interview.ics/route.ts`, `tests/ics.test.mjs`.
 - Changed: `src/lib/db/schema-version.ts`, `src/lib/db/applications.ts`, `src/lib/db/rows.ts`, `src/lib/application-statements.ts`, `src/lib/types.ts`, `src/lib/api-validation.ts`, both application routes, both dialogs, `src/components/kanban-board.tsx`, `src/components/stats-charts.tsx`, `src/lib/db/stats.ts` (the upcoming rows need the id), `src/lib/auth.ts` (the `owner` option, if not there yet), `tests/schema.test.mjs`, `package.json` (`verify:ics`).
-- Docs: `AGENTS.md` (Commands; Domain rules: extend "Dates and zones" with the time and its zone), `docs/ARCHITECTURE.md` (Tables, Routes, Time zones, Verification), `README.md`.
+- Docs: `AGENTS.md` (Commands; Domain rules: extend "Dates and zones" with the time and its zone; Request pipeline: the `owner` option, if added here), `docs/ARCHITECTURE.md` (Tables, Routes, Time zones, Verification; Authentication, if the option is added here), `README.md`.
 
 **Domain rules touched:** `interview_date` is handled as a `YYYY-MM-DD` string; `interview_time` likewise as a string from the database to the form.
 
@@ -697,7 +697,7 @@ ALTER TABLE applications
 **Data**
 
 - No migration.
-- One `INSERT ... SELECT ... FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) WITH ORDINALITY` statement, so the import is atomic without a multi-statement transaction, and `RETURNING id` in file order. Built as `importApplicationsStatement(rows, stageId)` in a new `src/lib/application-statements.ts` (no runtime imports).
+- One `INSERT ... SELECT ... FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) WITH ORDINALITY` statement, so the import is atomic without a multi-statement transaction, and `RETURNING id` in file order. Built as `importApplicationsStatement(rows, stageId)` in `src/lib/application-statements.ts` (created in 1.1).
 - The cards are then read back with the same select as `listApplications` uses, restricted to the new ids, so `stageEnteredAt` and `appliedAt` come from the views and not from a second derivation.
 - A lane deleted between the lookup and the insert fails the foreign key; map it with `isStageForeignKeyViolation()` to 400, as `createApplication()` does.
 
@@ -711,7 +711,7 @@ ALTER TABLE applications
 **Files**
 
 - New: `src/lib/csv.ts` (parser and writer, no runtime imports; the writer may already exist from 5.4), `src/lib/import-rows.ts` (header mapping, row validation and duplicate marking as pure functions shared by the dialog and the route), `src/components/import-applications-dialog.tsx`, `src/app/api/applications/import/route.ts`, `tests/csv.test.mjs`, `tests/import.test.mjs`.
-- Changed: `src/lib/limits.ts`, `src/lib/db/applications.ts`, `src/lib/db/index.ts`, `src/lib/logo-lookup.ts`, `src/lib/analytics.ts` (`applications_imported` with `count` and `skipped`), `src/components/kanban-board.tsx`, `package.json` (`verify:csv`, `verify:import`).
+- Changed: `src/lib/application-statements.ts`, `src/lib/limits.ts`, `src/lib/db/applications.ts`, `src/lib/db/index.ts`, `src/lib/logo-lookup.ts`, `src/lib/analytics.ts` (`applications_imported` with `count` and `skipped`), `src/components/kanban-board.tsx`, `package.json` (`verify:csv`, `verify:import`).
 - Docs: `AGENTS.md` (Commands: the two verify names; Key modules), `docs/ARCHITECTURE.md` (Routes, Source layout, Logo lookup, Verification), `README.md` (Features), `ROADMAP.md` (move to Shipped).
 
 **Domain rules touched**
@@ -746,7 +746,7 @@ ALTER TABLE applications
 **Scope**
 
 - `GET /api/applications/export`, owner only, since it contains notes.
-- Columns, in this order: `company, role, source_url, notes, stage, stage_kind, applied_at, interview_date, created_at, updated_at`. The first four are the import's columns, so an export loads back through 5.3.
+- Columns, in this order: `company, role, source_url, notes, stage, stage_kind, applied_at, interview_date, created_at, updated_at`. The first four are the import's columns, so if 5.3 is built an export loads back through it.
 - Timestamps are ISO 8601 in UTC; `interview_date` is `YYYY-MM-DD`; `applied_at` is empty for a card not sent yet.
 - Comma-separated, CRLF line ends, a byte-order mark so that spreadsheets read UTF-8 (decision 5).
 - Cells are written exactly as stored (decision 6).
@@ -758,12 +758,12 @@ ALTER TABLE applications
 **Auth**
 
 - The proxy only blocks a guest's non-GET requests, so the route is the authority here.
-- Add an `owner` option to `requireSession()` that throws the same 403 for a guest, and use `requireSession({ owner: true })`. `{ write: true }` would work but would mislabel a read; the two options share one check.
+- Add an `owner` option to `requireSession()`, if 5.2 has not added it, that throws the same 403 for a guest, and use `requireSession({ owner: true })`. `{ write: true }` would work but would mislabel a read; the two options share one check.
 
 **Files**
 
 - New: `src/app/api/applications/export/route.ts`, `src/lib/export-rows.ts` (maps `Application[]` to rows; no runtime imports), `tests/export.test.mjs`.
-- Changed or new: `src/lib/csv.ts` (the writer; created here if 5.3 is not built), `src/lib/auth.ts`, `src/components/kanban-board.tsx`, `src/lib/analytics.ts` (`applications_exported` with `count`), `tests/auth.test.mjs` only if the pure helpers change, `package.json` (`verify:export`).
+- Changed or new: `src/lib/csv.ts` (the writer; created here if 5.3 is not built), `src/lib/auth.ts` (if 5.2 has not added the `owner` option), `src/components/kanban-board.tsx`, `src/lib/analytics.ts` (`applications_exported` with `count`), `tests/auth.test.mjs` only if the pure helpers change, `package.json` (`verify:export`).
 - Docs: `AGENTS.md` (Commands; Request pipeline: the `owner` option), `docs/ARCHITECTURE.md` (Routes, Authentication, Verification), `README.md`, `ROADMAP.md`.
 
 **Domain rules touched**
@@ -776,14 +776,14 @@ ALTER TABLE applications
 
 **Tests**
 
-- Writer: a cell with a comma, a quote, a line break; an empty and a `null` cell; the byte-order mark; CRLF.
+- Writer, in `tests/csv.test.mjs` (`verify:csv`; created here if 5.3 is not built): a cell with a comma, a quote, a line break; an empty and a `null` cell; the byte-order mark; CRLF.
 - Round trip, once the parser from 5.3 exists: `parse(write(rows))` returns the rows, for cells that start with `=`, `+`, `-` and `@` as well.
 - `export-rows`: column order, a card without an applied date, the date-only column untouched.
 
 **Acceptance**
 
 - The file opens in a spreadsheet with diacritics intact and one row per card.
-- Importing the exported file into an empty `dev` database (after `reset:db`, which only the owner runs) recreates every company, role, link and note.
+- If 5.3 is built: importing the exported file into an empty `dev` database (after `reset:db`, which only the owner runs) recreates every company, role, link and note.
 - Signed in as guest: no link, and the URL answers 403.
 
 ---
@@ -794,7 +794,7 @@ ALTER TABLE applications
 |---|---|
 | Deriving `STALE_THRESHOLD_DAYS` from the M-2 median | The median moves with every reply, so the stale list would change without any card changing. Revisit once 3.1 has run on a few months of data. |
 | An append-only record of undone moves | Owner decision 3 of the fix plan. The metrics here are defined on the current path, and the audit confirms that is enough. |
-| A lane, a date or an "applied on" column in the import | `ROADMAP.md` says imported cards land in the default lane. Setting `created_at` from a file would make the applied date editable history; if the owner wants to load past applications with their real dates, that is its own step with its own rules. |
+| A lane, a date or an "applied on" column in the import | 5.3 puts imported cards in the default lane. Setting `created_at` from a file would make the applied date editable history; if the owner wants to load past applications with their real dates, that is its own step with its own rules. |
 | Import of the export's read-only columns (`stage`, `applied_at`, timestamps) | They are derived or set by the server. The export is a backup of the cards' content, not of the history. |
 | A full backup including transitions | Neon branches and point-in-time restore cover the database. The CSV covers "my list of applications" outside it. |
 | A bulk move endpoint | See 4.2. |
