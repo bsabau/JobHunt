@@ -11,31 +11,34 @@ Feature backlog, in priority order. The app is in daily use, so these are the ne
 
 ## Next
 
-### 1. Bulk import from CSV
+In the order of `docs/PRODUCT-PLAN.md`.
 
-**Why:** adding many applications one by one is the biggest friction left in daily use.
-
-- An "Import CSV" button next to "Add Application", with a preview table before anything is saved.
-- Columns `company, role, source_url, notes`; company and role are required.
-- A new owner-only endpoint that inserts the rows in one transaction and schedules the logo lookup for each (`scheduleLogoLookup()`), as a single create does.
-- Imported cards land in the default lane (`DEFAULT_CREATE_KIND`). The result says how many were added and why any row failed.
-- The duplicate-company check applies per row.
-- Look up each company's logo once, not once per row, and cap the rows per file: every lookup calls Clearbit.
-
-### 2. Application timeline (F-3)
+### 1. Application timeline (F-3)
 
 **Why:** see how one application moved and how long it sat in each lane.
 
 - Show the path with dates in the card dialog. The rows are already in `application_transitions`; the dialog needs an endpoint that returns them for one card, owner and guest alike (no notes involved).
 - The path shows where the application stands, not every move ever made: rewinds rewrite it.
 
-### 3. Board filter (F-4)
+### 2. Board filter (F-4)
 
 The search jumps to a card; a filter would narrow the board instead. A text filter over company and role, and a toggle that hides `rejected` and `closed` lanes. Client side only.
 
+### 3. A stats page that says each thing once
+
+Response, interview, offer and ghosted rates; one funnel chart instead of three; applications per week (M-1, R-1 to R-4).
+
 ### Later
 
+- New metrics: time to hear back, results by application week, results by source, a date range filter (M-2 to M-5).
 - Actions on stale applications: followed up, snooze, close (F-1).
 - Close ghosted applications in bulk (F-2).
+
+### Optional
+
+Not needed now; built only on request.
+
+- Optional fields: referral, location, salary (F-6).
+- Calendar export for interviews (F-7).
+- Bulk import from CSV, with a preview, one logo lookup per company and a row cap.
 - CSV export, which doubles as a personal backup (F-5).
-- The stats ideas in the product audit: rate tiles, time to hear back, results by application week (M-1 to M-3).

@@ -8,10 +8,8 @@ Nothing here is implemented yet. Each step's section should end with what was ac
 
 | ID | What | Size | Depends on | Migration | Step |
 |---|---|---|---|---|---|
-| IMP | Bulk import from CSV | medium | | no | 1.1 |
-| F-3 | Application timeline in the card dialog | small | | no | 1.2 |
-| F-4 | Board filter and "hide outcome lanes" | small | | no | 1.3 |
-| F-5 | CSV export | small | 1.1 (`csv.ts`) | no | 1.4 |
+| F-3 | Application timeline in the card dialog | small | | no | 1.1 |
+| F-4 | Board filter and "hide outcome lanes" | small | | no | 1.2 |
 | M-1 | Rate tiles: response, interview, offer, ghosted | small | | yes (view) | 2.1 |
 | R-4 | Replace two summary tiles | tiny | M-1 | no | 2.1 |
 | R-3 | Drop the daily transitions chart | tiny | | no | 2.1 |
@@ -23,8 +21,10 @@ Nothing here is implemented yet. Each step's section should end with what was ac
 | M-5 | Date range filter on the stats page | small | 2.1 to 3.3 | no | 3.4 |
 | F-1 | Actions on stale applications | medium | | yes (columns, view) | 4.1 |
 | F-2 | Close ghosted applications in bulk | small | 2.1, 4.1 | no | 4.2 |
-| F-6 | Optional fields: referral, location, salary | medium | 1.4, 3.3 | yes (columns) | 5.1 |
+| F-6 | Optional fields: referral, location, salary | medium | 3.3 | yes (columns) | 5.1 |
 | F-7 | Calendar export for interviews | small | | yes (columns) | 5.2 |
+| IMP | Bulk import from CSV (optional) | medium | | no | 5.3 |
+| F-5 | CSV export (optional) | small | | no | 5.4 |
 
 Sizes: tiny is under an hour, small is up to half a day, medium is about a day.
 
@@ -32,17 +32,17 @@ Sizes: tiny is under an hour, small is up to half a day, medium is about a day.
 
 | Phase | Goal | Steps | Size |
 |---|---|---|---|
-| 1 | Daily use of the board, data in and out | 1.1 IMP, 1.2 F-3, 1.3 F-4, 1.4 F-5 | 2 to 3 days |
+| 1 | Daily use of the board | 1.1 F-3, 1.2 F-4 | 1 day |
 | 2 | A stats page that says each thing once | 2.1 M-1, R-3, R-4; 2.2 R-1; 2.3 R-2 | 1 to 2 days |
 | 3 | New metrics | 3.1 M-2, 3.2 M-3, 3.3 M-4, 3.4 M-5 | 2 days |
 | 4 | Acting on what the stats show | 4.1 F-1, 4.2 F-2 | 1 to 2 days |
-| 5 | More fields | 5.1 F-6, 5.2 F-7 | 1 to 2 days |
+| 5 | Optional: more fields, calendar, CSV | 5.1 F-6, 5.2 F-7, 5.3 IMP, 5.4 F-5 | 2 to 4 days |
 
-- Phase 1 follows `ROADMAP.md`: import first, then the timeline and the filter. The export joins it because it shares the CSV module with the import, and because a backup should exist before the bulk features (1.1, 4.2) are used on live data.
+- Phase 1 is the timeline and the filter. CSV import and export were first in `ROADMAP.md`; the owner does not need them now (2026-09-29), so they are optional steps 5.3 and 5.4. Without the export, the backup before the bulk close (4.2) is Neon's point-in-time restore.
 - Phase 2 comes before phase 3 because every new metric reads the view that 2.1 adds, and because removing four charts first leaves room on the page for the new ones.
 - M-5 is last in phase 3: it adds a parameter to every ranged query, so it is cheaper once those queries exist.
 - F-2 needs "no reply yet" (2.1) and must respect a snooze (4.1).
-- Phase 5 is optional. Both steps add columns that only pay off if the owner fills them in; see decisions 14 and 16.
+- Phase 5 is optional. 5.1 and 5.2 add columns that only pay off if the owner fills them in (decisions 14 and 16); 5.3 and 5.4 wait until the owner asks for them (decision 19). The steps of phase 5 can be built in any order; where two share a piece, the first one built adds it.
 
 One step is one branch and one pull request. Steps inside a phase can be reordered; the "Depends on" column is the only hard order.
 
@@ -56,7 +56,7 @@ These repeat `AGENTS.md` where a product step is likely to trip over it.
 - **New statements take `now` as a parameter** (`${now}::timestamptz`) instead of calling `NOW()`, so a test can fix the clock. The pages already read the clock once with `requestNow()`.
 - **Migrations**: forward-only, harmless when run twice, `LATEST_MIGRATION` updated in the same commit. File numbers continue from `1730000016000`; take the next free thousand at the time of writing. Every migration in this plan is additive (a view, or nullable columns), so the previous code keeps working after it. Runbook for production: the owner runs `npm run migrate:prod`, then merges. The implementer never runs it.
 - **A view's column list is a contract**: `CREATE OR REPLACE VIEW` can only append columns. Record in `docs/ARCHITECTURE.md` which columns each new view reads, as the existing migration notes do.
-- **Guest**: every new route calls `requireSession()` before any database access; anything that changes data or returns owner-only text passes `{ write: true }` (or the `owner` option from 1.4). Everything that reaches a guest goes through `mapApplication(row, viewer)`.
+- **Guest**: every new route calls `requireSession()` before any database access; anything that changes data or returns owner-only text passes `{ write: true }`, or the `owner` option that 5.2 or 5.4 adds, whichever comes first. Everything that reaches a guest goes through `mapApplication(row, viewer)`.
 - **CSP**: no step needs a new host. A step that adds a download or reads a file says so in its section; check the Vercel preview with the console open, since `next start` does not show every problem.
 - **Analytics**: new events carry counts, booleans and lane kinds only. Never a company, a host name, a file name or any other text the owner typed.
 - **Public repository**: test fixtures and examples use invented names. No real company, recruiter, salary or URL from the owner's data in code, tests, docs, commit messages or PR descriptions.
@@ -67,69 +67,7 @@ These repeat `AGENTS.md` where a product step is likely to trip over it.
 
 ## Phase 1: the board, data in and out
 
-### 1.1 Bulk import from CSV (IMP)
-
-**Goal:** add many applications in one go, with a preview before anything is saved.
-
-**Scope**
-
-- An "Import CSV" button next to "Add Application" on the board, owner only.
-- The browser reads the file (`File.text()`), parses it and shows a preview table. Nothing is sent until the owner confirms.
-- Columns `company, role, source_url, notes`. A header row is required; names are matched after trimming and lower-casing; unknown columns are ignored and listed in the preview as ignored. `company` and `role` are required.
-- The delimiter is detected from the header line: comma, semicolon or tab (decision 1). Quoted fields, doubled quotes, line breaks inside quotes, CRLF and a leading byte-order mark are handled.
-- Each row is validated in the browser with the same rules as the API: required fields, `TEXT_LIMITS`, `source_url` must be http or https. Invalid rows are shown with the reason and are not sent.
-- Duplicate check per row, with the rule of `applicationsForCompany()` (trimmed, any case): against the cards on the board and against earlier rows of the same file. Duplicates are marked in the preview and unticked by default; the owner can tick them (decision 2).
-- Limits: 200 rows per file and 1 MB per file (decision 3), in `src/lib/limits.ts` as `IMPORT_LIMITS`.
-- `POST /api/applications/import` with `{ rows: [{ company, role, sourceUrl?, notes? }] }`. It validates every row again. If any row is invalid it inserts nothing and answers 400 with `{ message, errors: [{ row, message }] }`; the browser has already filtered, so this only happens when the two disagree. On success: 201 with `{ applications: Application[] }`.
-- Every card lands in the default lane (`getDefaultCreateStage()`, which follows `DEFAULT_CREATE_KIND`). No lane column in the file.
-- The result toast says how many were added and how many rows were skipped; the preview keeps the reason for each skipped row until the dialog is closed.
-
-**Data**
-
-- No migration.
-- One `INSERT ... SELECT ... FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) WITH ORDINALITY` statement, so the import is atomic without a multi-statement transaction, and `RETURNING id` in file order. Built as `importApplicationsStatement(rows, stageId)` in a new `src/lib/application-statements.ts` (no runtime imports).
-- The cards are then read back with the same select as `listApplications` uses, restricted to the new ids, so `stageEnteredAt` and `appliedAt` come from the views and not from a second derivation.
-- A lane deleted between the lookup and the insert fails the foreign key; map it with `isStageForeignKeyViolation()` to 400, as `createApplication()` does.
-
-**Logos**
-
-- `scheduleLogoLookups()` in `src/lib/logo-lookup.ts`: one lookup per distinct company (trimmed, lower-cased), not per row, run inside one `after()` with at most 5 lookups at a time.
-- A company that already has a card with a logo gets that logo copied in the insert statement and no lookup.
-- A new `setCompanyLogo(company, logoUrl)` in `db/applications.ts` writes to every card of that company that still has no logo, without touching `updated_at`.
-- A lookup that fails leaves the initial letter; the existing retry on edit still applies.
-
-**Files**
-
-- New: `src/lib/csv.ts` (parser and writer, no runtime imports), `src/lib/application-statements.ts`, `src/lib/import-rows.ts` (header mapping, row validation and duplicate marking as pure functions shared by the dialog and the route), `src/components/import-applications-dialog.tsx`, `src/app/api/applications/import/route.ts`, `tests/csv.test.mjs`, `tests/import.test.mjs`.
-- Changed: `src/lib/limits.ts`, `src/lib/db/applications.ts`, `src/lib/db/index.ts`, `src/lib/logo-lookup.ts`, `src/lib/analytics.ts` (`applications_imported` with `count` and `skipped`), `src/components/kanban-board.tsx`, `package.json` (`verify:csv`, `verify:import`).
-- Docs: `AGENTS.md` (Commands: the two verify names; Key modules), `docs/ARCHITECTURE.md` (Routes, Source layout, Logo lookup, Verification), `README.md` (Features), `ROADMAP.md` (move to Shipped).
-
-**Domain rules touched**
-
-- The default lane comes from `DEFAULT_CREATE_KIND`, never from a lane name or index.
-- A card created in the default lane has no transition row; its entry lane and applied date come from the views. The import must not write to `application_transitions`.
-- Notes are owner-only: the route is owner-only and its response is built with viewer `"user"`.
-
-**Guest and notes:** the button is not rendered for a guest, the proxy blocks the `POST`, and the route calls `requireSession({ write: true })`.
-
-**CSP:** none. The file is read in the browser and sent to the same origin.
-
-**Tests**
-
-- `csv.test.mjs`: quoted fields, doubled quotes, line breaks in quotes, CRLF and LF, byte-order mark, each delimiter, an unclosed quote (error with the line number), an empty file, a header only.
-- `import.test.mjs`, pure part: header matching, missing required column, over-long values, a bad URL, duplicates inside the file, the row limit.
-- `import.test.mjs`, PGlite part: the statement inserts N rows in file order in the given lane; `NULL` for empty optional values; a blank company fails the check constraint and inserts nothing; an unknown lane fails the foreign key; a company with an existing logo copies it; no row appears in `application_transitions`; `application_applied_at` gives every new card its `created_at`.
-
-**Acceptance**
-
-- A file of 50 valid rows adds 50 cards to the default lane with one request, and the board shows them without a reload.
-- A file with 3 invalid rows and 2 duplicates shows all 5 with reasons; confirming adds the rest and the toast reports the numbers.
-- A file over the limits is refused in the browser with a message; a request over the limits is refused by the route.
-- A semicolon-separated file exported by a spreadsheet loads.
-- Signed in as guest: no button, and a hand-made `POST` gets 403.
-- 20 rows for 4 companies cause 4 logo lookups at most (count the calls to `findCompanyLogo()` in a test with the function injected, or log them once during the manual check).
-
-### 1.2 Application timeline (F-3)
+### 1.1 Application timeline (F-3)
 
 **Goal:** see how one application moved and how long it sat in each lane.
 
@@ -149,7 +87,7 @@ These repeat `AGENTS.md` where a product step is likely to trip over it.
 
 **Files**
 
-- New: `src/lib/db/timeline.ts`, `src/app/api/applications/[id]/timeline/route.ts`, `src/components/application-timeline.tsx`, `src/components/application-details-dialog.tsx` (guest), `tests/timeline.test.mjs`.
+- New: `src/lib/db/timeline.ts`, `src/lib/application-statements.ts` (no runtime imports; later steps add to it), `src/app/api/applications/[id]/timeline/route.ts`, `src/components/application-timeline.tsx`, `src/components/application-details-dialog.tsx` (guest), `tests/timeline.test.mjs`.
 - Changed: `src/lib/types.ts` (`TimelinePayload`), `src/lib/db/index.ts`, `src/components/edit-application-dialog.tsx`, `src/components/kanban-board.tsx`, `src/lib/timezone.ts` if a duration helper is added, `package.json` (`verify:timeline`).
 - Docs: `AGENTS.md` (Commands), `docs/ARCHITECTURE.md` (Routes, Source layout, Verification), `README.md`, `ROADMAP.md`.
 
@@ -181,7 +119,7 @@ These repeat `AGENTS.md` where a product step is likely to trip over it.
 - The guest can open the details dialog by keyboard and mouse, sees no notes field and no edit controls.
 - An unknown id returns 404; a request without a session returns 401.
 
-### 1.3 Board filter (F-4)
+### 1.2 Board filter (F-4)
 
 **Goal:** narrow the board instead of jumping to one card.
 
@@ -213,53 +151,6 @@ These repeat `AGENTS.md` where a product step is likely to trip over it.
 - Typing narrows every lane; clearing restores it; drag and drop and the "Move to" menu work while a filter is active.
 - Moving a card into a hidden lane through the menu works, and a toast says where it went.
 - Reloading keeps the toggle and logs no hydration warning.
-
-### 1.4 CSV export (F-5)
-
-**Goal:** one file with every application, for a spreadsheet or as a personal backup.
-
-**Scope**
-
-- `GET /api/applications/export`, owner only, since it contains notes.
-- Columns, in this order: `company, role, source_url, notes, stage, stage_kind, applied_at, interview_date, created_at, updated_at`. The first four are the import's columns, so an export loads back through 1.1.
-- Timestamps are ISO 8601 in UTC; `interview_date` is `YYYY-MM-DD`; `applied_at` is empty for a card not sent yet.
-- Comma-separated, CRLF line ends, a byte-order mark so that spreadsheets read UTF-8 (decision 5).
-- Cells are written exactly as stored (decision 6).
-- Headers: `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="applications-YYYY-MM-DD.csv"` with today's date in the viewer's zone, `Cache-Control: no-store`.
-- An "Export CSV" link in the board toolbar, owner only.
-
-**Data:** no migration. The rows come from `listApplications("user")`.
-
-**Auth**
-
-- The proxy only blocks a guest's non-GET requests, so the route is the authority here.
-- Add an `owner` option to `requireSession()` that throws the same 403 for a guest, and use `requireSession({ owner: true })`. `{ write: true }` would work but would mislabel a read; the two options share one check.
-
-**Files**
-
-- New: `src/app/api/applications/export/route.ts`, `src/lib/export-rows.ts` (maps `Application[]` to rows; no runtime imports), `tests/export.test.mjs`.
-- Changed: `src/lib/csv.ts` (writer, if not added in 1.1), `src/lib/auth.ts`, `src/components/kanban-board.tsx`, `src/lib/analytics.ts` (`applications_exported` with `count`), `tests/auth.test.mjs` only if the pure helpers change, `package.json` (`verify:export`).
-- Docs: `AGENTS.md` (Commands; Request pipeline: the `owner` option), `docs/ARCHITECTURE.md` (Routes, Authentication, Verification), `README.md`, `ROADMAP.md`.
-
-**Domain rules touched**
-
-- Notes are owner-only.
-- The applied date comes from `application_applied_at` (already on `Application` as `appliedAt`), not from `created_at`.
-- `interview_date` stays a string from the database to the file.
-
-**CSP:** none. The download is a same-origin navigation, and API responses carry no policy. Confirm on the Vercel preview that the download starts and the console stays clean.
-
-**Tests**
-
-- Writer: a cell with a comma, a quote, a line break; an empty and a `null` cell; the byte-order mark; CRLF.
-- Round trip: `parse(write(rows))` returns the rows, for cells that start with `=`, `+`, `-` and `@` as well.
-- `export-rows`: column order, a card without an applied date, the date-only column untouched.
-
-**Acceptance**
-
-- The file opens in a spreadsheet with diacritics intact and one row per card.
-- Importing the exported file into an empty `dev` database (after `reset:db`, which only the owner runs) recreates every company, role, link and note.
-- Signed in as guest: no link, and the URL answers 403.
 
 ---
 
@@ -623,7 +514,7 @@ This differs from the audit, which proposed one `next_action_date DATE`:
 
 - "Followed up" removes the row, the stale tile drops by one, and the card on the board loses its marker and shows the follow-up age.
 - "Snooze" removes the row; with the clock moved 8 days forward in a test the card is stale again.
-- "Close" moves the card, the Sankey shows the new edge, and the card's timeline (1.2) ends in the closed lane.
+- "Close" moves the card, the Sankey shows the new edge, and the card's timeline (1.1) ends in the closed lane.
 - With no `closed` lane on the board the Close button is absent.
 - On `dev`, before any action is used, the stale list equals the list from before this step.
 
@@ -670,9 +561,9 @@ This differs from the audit, which proposed one `next_action_date DATE`:
 
 ---
 
-## Phase 5: more fields
+## Phase 5: optional
 
-Both steps are optional (decisions 14 and 16).
+Every step here is optional: 5.1 and 5.2 by decisions 14 and 16, 5.3 and 5.4 by decision 19.
 
 ### 5.1 Optional fields: referral, location, salary (F-6)
 
@@ -701,19 +592,19 @@ ALTER TABLE applications
 - `POST` and `PUT /api/applications` accept `referral`, `workMode`, `location`, `salary`. `PUT` is a full replacement, so a body without them clears them; the edit dialog always sends them.
 - The card shows a small referral mark and the work mode. Salary appears in the edit dialog only.
 - Stats: one table "Results by referral and work mode" with the count and the three rates per group, built like 3.3.
-- Export (1.4) gains the four columns at the end; import (1.1) accepts them as optional columns.
+- If 5.4 or 5.3 is built, the export gains the four columns at the end and the import accepts them as optional columns; whichever step comes later adds them.
 
 **Guest and notes**
 
 - **Salary is owner-only, like notes.** `mapApplication()` returns `salary: null` for a guest. That function stays the only place where an application is built for a viewer.
 - Salary never enters the stats payload, the timeline, an analytics event or a log line.
 - Referral, work mode and location are visible to the guest (decision 15 covers salary only).
-- The guest details dialog from 1.2 shows no salary field.
+- The guest details dialog from 1.1 shows no salary field.
 
 **Files**
 
 - New: the migration `<next>_application-optional-fields.mjs`.
-- Changed: `src/lib/db/schema-version.ts`, `src/lib/db/applications.ts` (both selects, the insert, the update's `updateSet`), `src/lib/db/rows.ts`, `src/lib/application-statements.ts`, `src/lib/types.ts`, `src/lib/limits.ts`, `src/lib/api-validation.ts` (`optionalBoolean`), both application routes, both dialogs, `src/components/kanban-board.tsx`, `src/lib/import-rows.ts`, `src/lib/export-rows.ts`, `src/lib/stats-statements.ts`, `src/lib/db/stats.ts`, `src/components/stats-charts.tsx`, `tests/rows.test.mjs`, `tests/schema.test.mjs`, `tests/import.test.mjs`, `tests/export.test.mjs`, `tests/stats-statements.test.mjs`.
+- Changed: `src/lib/db/schema-version.ts`, `src/lib/db/applications.ts` (both selects, the insert, the update's `updateSet`), `src/lib/db/rows.ts`, `src/lib/application-statements.ts`, `src/lib/types.ts`, `src/lib/limits.ts`, `src/lib/api-validation.ts` (`optionalBoolean`), both application routes, both dialogs, `src/components/kanban-board.tsx`, `src/lib/stats-statements.ts`, `src/lib/db/stats.ts`, `src/components/stats-charts.tsx`, `tests/rows.test.mjs`, `tests/schema.test.mjs`, `tests/stats-statements.test.mjs`. If 5.3 or 5.4 exists: `src/lib/import-rows.ts`, `src/lib/export-rows.ts` and their tests.
 - Docs: `AGENTS.md` (Domain rules: extend "Notes are owner-only" to salary), `docs/ARCHITECTURE.md` (Tables, Routes, What the app does: "except notes and salary"), `README.md` (the guest paragraph).
 
 **Domain rules touched:** notes visibility, now with a second field; snake_case columns cast once and mapped in `rows.ts`.
@@ -731,7 +622,7 @@ ALTER TABLE applications
 
 - Signed in as guest, the response of `GET /api/applications` and the board page's HTML contain no salary text (search both for a marker value set on `dev`).
 - An edit that changes only the salary does not change the lane, the history or the logo.
-- An export followed by an import into an empty `dev` database keeps the four fields.
+- If 5.3 and 5.4 are both built: an export followed by an import into an empty `dev` database keeps the four fields.
 
 ### 5.2 Calendar export for interviews (F-7)
 
@@ -755,7 +646,7 @@ ALTER TABLE applications
 **Scope**
 
 - An optional time input next to the interview date in both dialogs. `interviewTime` is `HH:MM`, validated by a new `optionalTime()`; the zone goes through `isValidTimeZone()`. A zone Postgres does not know is answered with 400.
-- `GET /api/applications/:id/interview.ics`, owner only (`requireSession({ owner: true })`). 404 when the card has no interview date.
+- `GET /api/applications/:id/interview.ics`, owner only (`requireSession({ owner: true })`; add that option to `requireSession()` here if 5.4 has not, as described under 5.4 **Auth**). 404 when the card has no interview date.
 - Without a time: an all-day event (`DTSTART;VALUE=DATE`). With a time: `DTSTART` in UTC and a duration of 60 minutes (decision 17).
 - `SUMMARY` is "Interview: company, role". `URL` is the job link when there is one. **No notes** in the file: a calendar is often shared or synced to other services.
 - A pure `src/lib/ics.ts` writes the file: CRLF, lines folded at 75 octets, commas, semicolons, backslashes and line breaks escaped, a stable `UID` from the application id and the request's host, `DTSTAMP` from `now`.
@@ -765,14 +656,14 @@ ALTER TABLE applications
 **Files**
 
 - New: the migration `<next>_interview-time.mjs`, `src/lib/ics.ts`, `src/app/api/applications/[id]/interview.ics/route.ts`, `tests/ics.test.mjs`.
-- Changed: `src/lib/db/schema-version.ts`, `src/lib/db/applications.ts`, `src/lib/db/rows.ts`, `src/lib/application-statements.ts`, `src/lib/types.ts`, `src/lib/api-validation.ts`, both application routes, both dialogs, `src/components/kanban-board.tsx`, `src/components/stats-charts.tsx`, `src/lib/db/stats.ts` (the upcoming rows need the id), `tests/schema.test.mjs`, `package.json` (`verify:ics`).
+- Changed: `src/lib/db/schema-version.ts`, `src/lib/db/applications.ts`, `src/lib/db/rows.ts`, `src/lib/application-statements.ts`, `src/lib/types.ts`, `src/lib/api-validation.ts`, both application routes, both dialogs, `src/components/kanban-board.tsx`, `src/components/stats-charts.tsx`, `src/lib/db/stats.ts` (the upcoming rows need the id), `src/lib/auth.ts` (the `owner` option, if not there yet), `tests/schema.test.mjs`, `package.json` (`verify:ics`).
 - Docs: `AGENTS.md` (Commands; Domain rules: extend "Dates and zones" with the time and its zone), `docs/ARCHITECTURE.md` (Tables, Routes, Time zones, Verification), `README.md`.
 
 **Domain rules touched:** `interview_date` is handled as a `YYYY-MM-DD` string; `interview_time` likewise as a string from the database to the form.
 
 **Guest and notes:** the guest sees the interview time on the card, as the date today, and no calendar link. The file never holds notes or salary.
 
-**CSP:** none. A same-origin download, like 1.4; check the Vercel preview.
+**CSP:** none. A same-origin download; check the Vercel preview.
 
 **Tests**
 
@@ -785,6 +676,115 @@ ALTER TABLE applications
 - An interview on the day of a daylight-saving change lands at the entered wall-clock time.
 - A card without a time gives an all-day event on the interview date.
 - Signed in as guest, the URL answers 403.
+
+### 5.3 Bulk import from CSV (IMP, optional)
+
+**Goal:** add many applications in one go, with a preview before anything is saved.
+
+**Scope**
+
+- An "Import CSV" button next to "Add Application" on the board, owner only.
+- The browser reads the file (`File.text()`), parses it and shows a preview table. Nothing is sent until the owner confirms.
+- Columns `company, role, source_url, notes`. A header row is required; names are matched after trimming and lower-casing; unknown columns are ignored and listed in the preview as ignored. `company` and `role` are required.
+- The delimiter is detected from the header line: comma, semicolon or tab (decision 1). Quoted fields, doubled quotes, line breaks inside quotes, CRLF and a leading byte-order mark are handled.
+- Each row is validated in the browser with the same rules as the API: required fields, `TEXT_LIMITS`, `source_url` must be http or https. Invalid rows are shown with the reason and are not sent.
+- Duplicate check per row, with the rule of `applicationsForCompany()` (trimmed, any case): against the cards on the board and against earlier rows of the same file. Duplicates are marked in the preview and unticked by default; the owner can tick them (decision 2).
+- Limits: 200 rows per file and 1 MB per file (decision 3), in `src/lib/limits.ts` as `IMPORT_LIMITS`.
+- `POST /api/applications/import` with `{ rows: [{ company, role, sourceUrl?, notes? }] }`. It validates every row again. If any row is invalid it inserts nothing and answers 400 with `{ message, errors: [{ row, message }] }`; the browser has already filtered, so this only happens when the two disagree. On success: 201 with `{ applications: Application[] }`.
+- Every card lands in the default lane (`getDefaultCreateStage()`, which follows `DEFAULT_CREATE_KIND`). No lane column in the file.
+- The result toast says how many were added and how many rows were skipped; the preview keeps the reason for each skipped row until the dialog is closed.
+
+**Data**
+
+- No migration.
+- One `INSERT ... SELECT ... FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) WITH ORDINALITY` statement, so the import is atomic without a multi-statement transaction, and `RETURNING id` in file order. Built as `importApplicationsStatement(rows, stageId)` in a new `src/lib/application-statements.ts` (no runtime imports).
+- The cards are then read back with the same select as `listApplications` uses, restricted to the new ids, so `stageEnteredAt` and `appliedAt` come from the views and not from a second derivation.
+- A lane deleted between the lookup and the insert fails the foreign key; map it with `isStageForeignKeyViolation()` to 400, as `createApplication()` does.
+
+**Logos**
+
+- `scheduleLogoLookups()` in `src/lib/logo-lookup.ts`: one lookup per distinct company (trimmed, lower-cased), not per row, run inside one `after()` with at most 5 lookups at a time.
+- A company that already has a card with a logo gets that logo copied in the insert statement and no lookup.
+- A new `setCompanyLogo(company, logoUrl)` in `db/applications.ts` writes to every card of that company that still has no logo, without touching `updated_at`.
+- A lookup that fails leaves the initial letter; the existing retry on edit still applies.
+
+**Files**
+
+- New: `src/lib/csv.ts` (parser and writer, no runtime imports; the writer may already exist from 5.4), `src/lib/import-rows.ts` (header mapping, row validation and duplicate marking as pure functions shared by the dialog and the route), `src/components/import-applications-dialog.tsx`, `src/app/api/applications/import/route.ts`, `tests/csv.test.mjs`, `tests/import.test.mjs`.
+- Changed: `src/lib/limits.ts`, `src/lib/db/applications.ts`, `src/lib/db/index.ts`, `src/lib/logo-lookup.ts`, `src/lib/analytics.ts` (`applications_imported` with `count` and `skipped`), `src/components/kanban-board.tsx`, `package.json` (`verify:csv`, `verify:import`).
+- Docs: `AGENTS.md` (Commands: the two verify names; Key modules), `docs/ARCHITECTURE.md` (Routes, Source layout, Logo lookup, Verification), `README.md` (Features), `ROADMAP.md` (move to Shipped).
+
+**Domain rules touched**
+
+- The default lane comes from `DEFAULT_CREATE_KIND`, never from a lane name or index.
+- A card created in the default lane has no transition row; its entry lane and applied date come from the views. The import must not write to `application_transitions`.
+- Notes are owner-only: the route is owner-only and its response is built with viewer `"user"`.
+
+**Guest and notes:** the button is not rendered for a guest, the proxy blocks the `POST`, and the route calls `requireSession({ write: true })`.
+
+**CSP:** none. The file is read in the browser and sent to the same origin.
+
+**Tests**
+
+- `csv.test.mjs`: quoted fields, doubled quotes, line breaks in quotes, CRLF and LF, byte-order mark, each delimiter, an unclosed quote (error with the line number), an empty file, a header only.
+- `import.test.mjs`, pure part: header matching, missing required column, over-long values, a bad URL, duplicates inside the file, the row limit.
+- `import.test.mjs`, PGlite part: the statement inserts N rows in file order in the given lane; `NULL` for empty optional values; a blank company fails the check constraint and inserts nothing; an unknown lane fails the foreign key; a company with an existing logo copies it; no row appears in `application_transitions`; `application_applied_at` gives every new card its `created_at`.
+
+**Acceptance**
+
+- A file of 50 valid rows adds 50 cards to the default lane with one request, and the board shows them without a reload.
+- A file with 3 invalid rows and 2 duplicates shows all 5 with reasons; confirming adds the rest and the toast reports the numbers.
+- A file over the limits is refused in the browser with a message; a request over the limits is refused by the route.
+- A semicolon-separated file exported by a spreadsheet loads.
+- Signed in as guest: no button, and a hand-made `POST` gets 403.
+- 20 rows for 4 companies cause 4 logo lookups at most (count the calls to `findCompanyLogo()` in a test with the function injected, or log them once during the manual check).
+
+### 5.4 CSV export (F-5, optional)
+
+**Goal:** one file with every application, for a spreadsheet or as a personal backup.
+
+**Scope**
+
+- `GET /api/applications/export`, owner only, since it contains notes.
+- Columns, in this order: `company, role, source_url, notes, stage, stage_kind, applied_at, interview_date, created_at, updated_at`. The first four are the import's columns, so an export loads back through 5.3.
+- Timestamps are ISO 8601 in UTC; `interview_date` is `YYYY-MM-DD`; `applied_at` is empty for a card not sent yet.
+- Comma-separated, CRLF line ends, a byte-order mark so that spreadsheets read UTF-8 (decision 5).
+- Cells are written exactly as stored (decision 6).
+- Headers: `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="applications-YYYY-MM-DD.csv"` with today's date in the viewer's zone, `Cache-Control: no-store`.
+- An "Export CSV" link in the board toolbar, owner only.
+
+**Data:** no migration. The rows come from `listApplications("user")`.
+
+**Auth**
+
+- The proxy only blocks a guest's non-GET requests, so the route is the authority here.
+- Add an `owner` option to `requireSession()` that throws the same 403 for a guest, and use `requireSession({ owner: true })`. `{ write: true }` would work but would mislabel a read; the two options share one check.
+
+**Files**
+
+- New: `src/app/api/applications/export/route.ts`, `src/lib/export-rows.ts` (maps `Application[]` to rows; no runtime imports), `tests/export.test.mjs`.
+- Changed or new: `src/lib/csv.ts` (the writer; created here if 5.3 is not built), `src/lib/auth.ts`, `src/components/kanban-board.tsx`, `src/lib/analytics.ts` (`applications_exported` with `count`), `tests/auth.test.mjs` only if the pure helpers change, `package.json` (`verify:export`).
+- Docs: `AGENTS.md` (Commands; Request pipeline: the `owner` option), `docs/ARCHITECTURE.md` (Routes, Authentication, Verification), `README.md`, `ROADMAP.md`.
+
+**Domain rules touched**
+
+- Notes are owner-only.
+- The applied date comes from `application_applied_at` (already on `Application` as `appliedAt`), not from `created_at`.
+- `interview_date` stays a string from the database to the file.
+
+**CSP:** none. The download is a same-origin navigation, and API responses carry no policy. Confirm on the Vercel preview that the download starts and the console stays clean.
+
+**Tests**
+
+- Writer: a cell with a comma, a quote, a line break; an empty and a `null` cell; the byte-order mark; CRLF.
+- Round trip, once the parser from 5.3 exists: `parse(write(rows))` returns the rows, for cells that start with `=`, `+`, `-` and `@` as well.
+- `export-rows`: column order, a card without an applied date, the date-only column untouched.
+
+**Acceptance**
+
+- The file opens in a spreadsheet with diacritics intact and one row per card.
+- Importing the exported file into an empty `dev` database (after `reset:db`, which only the owner runs) recreates every company, role, link and note.
+- Signed in as guest: no link, and the URL answers 403.
 
 ---
 
@@ -808,16 +808,16 @@ ALTER TABLE applications
 
 ## Open decisions for the owner
 
-Answer "use the defaults" to accept every recommendation.
+Answer "use the defaults" to accept every recommendation. Decision 19 is already made.
 
 | # | Question | Recommended default |
 |---|---|---|
-| 1 | Import: comma only, or detect comma, semicolon and tab? (1.1) | Detect all three; spreadsheets in many locales write semicolons |
-| 2 | Import: rows for a company that already has a card? (1.1) | Marked and unticked; the owner can tick them |
-| 3 | Import limits? (1.1) | 200 rows and 1 MB per file |
-| 4 | Timeline for the guest: a read-only details dialog, or owner only for now? (1.2) | Read-only details dialog, as the roadmap says "owner and guest alike" |
-| 5 | Export: byte-order mark for spreadsheets? (1.4) | Yes |
-| 6 | Export: write cells exactly, or prefix cells that start with `=`, `+`, `-`, `@` so a spreadsheet does not read them as formulas? (1.4) | Exactly. Every cell is text the owner typed, and the file must load back unchanged |
+| 1 | Import: comma only, or detect comma, semicolon and tab? (5.3) | Detect all three; spreadsheets in many locales write semicolons |
+| 2 | Import: rows for a company that already has a card? (5.3) | Marked and unticked; the owner can tick them |
+| 3 | Import limits? (5.3) | 200 rows and 1 MB per file |
+| 4 | Timeline for the guest: a read-only details dialog, or owner only for now? (1.1) | Read-only details dialog, as the roadmap says "owner and guest alike" |
+| 5 | Export: byte-order mark for spreadsheets? (5.4) | Yes |
+| 6 | Export: write cells exactly, or prefix cells that start with `=`, `+`, `-`, `@` so a spreadsheet does not read them as formulas? (5.4) | Exactly. Every cell is text the owner typed, and the file must load back unchanged |
 | 7 | Applications over time: count by applied date or by creation date? (2.3) | Applied date, like every other metric |
 | 8 | First day of the week? (2.3, 3.2) | Monday |
 | 9 | Smallest sample for a median? (3.1) | 5 applications; below that the tile shows "—" |
@@ -830,3 +830,4 @@ Answer "use the defaults" to accept every recommendation.
 | 16 | Build the calendar export at all? (5.2) | Yes, last; skip it if interviews arrive as calendar invitations anyway |
 | 17 | Calendar: default length of a timed interview? Owner only? (5.2) | 60 minutes; owner only |
 | 18 | One PR per step, or R-1 and R-2 together with 2.1? (phase 2) | One PR per step; each is small and reviewed faster alone |
+| 19 | CSV import and export? (5.3, 5.4) | **Decided 2026-09-29:** not needed now, kept as optional steps. Decisions 1, 2, 3, 5 and 6 apply only if they are built |
