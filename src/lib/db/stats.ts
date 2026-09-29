@@ -178,7 +178,8 @@ export async function getStatsData(timeZone: string, options: { now: number; ran
 
   // Where "Close" on a stale application moves it: the first closed lane by
   // board order, or none when the board has no closed lane.
-  const closeStageId = stages.filter((stage) => stage.kind === CLOSED_KIND).sort(compareStageRank)[0]?.id ?? null;
+  const closeLane = stages.filter((stage) => stage.kind === CLOSED_KIND).sort(compareStageRank)[0];
+  const closeStage = closeLane ? { id: closeLane.id, name: closeLane.name } : null;
 
   const outcomes = outcomeRows.map((row) => ({
     fromStage: row.from_stage ?? OUTCOME_DIRECT_ENTRY,
@@ -240,7 +241,7 @@ export async function getStatsData(timeZone: string, options: { now: number; ran
     funnel,
     upcomingInterviews,
     staleApplications,
-    closeStageId,
+    closeStage,
     outcomes,
     openCount: scopeTotal - resolvedCount
   };

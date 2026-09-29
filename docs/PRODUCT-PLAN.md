@@ -597,6 +597,7 @@ Done in PR #39:
 - The stale list's rows get "Followed up", "Snooze 7 days" and "Close" for the owner (`StaleActions`); Close is the normal stage move into the first closed lane, with the row's lane as `expectedStageId`. Board cards show "Followed up today / Nd ago" while that follow-up drives the clock.
 - Checked on `dev` with three backdated temporary cards: the tile went 3, 2, 1, 0 as each was followed up, snoozed and closed; the closed card's timeline ends in the closed lane; neither card keeps a stale marker; the guest sees the list without buttons; the API answers 404, 400, 403 and 401 where it should. The cards were removed.
 - `tests/stale-clock.test.mjs`: every scenario of the plan, the SQL and TypeScript rules compared on each, the inclusive threshold, and the follow-up statement (including `updated_at` untouched).
+- After Fable's review: the buttons' accessible names include the company; focus moves to the list's heading after an action; a 404 (card deleted meanwhile) refreshes like a 409; a follow-up or a snooze can be undone from the toast (it sends `clear`); a snoozed card shows "Snoozed until <date>" on the board; the card's follow-up and snooze lines use `isStaleEligibleStage()`; Close's message names the lane (`closeStage` in the payload).
 
 ### 4.2 Close ghosted applications in bulk (F-2)
 

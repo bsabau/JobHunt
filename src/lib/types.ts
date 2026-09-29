@@ -113,7 +113,7 @@ export interface StatsPayload {
     followedUpAt: string | null;
   }[];
   // The lane "Close" moves a stale application to: the first closed lane.
-  closeStageId: number | null;
+  closeStage: { id: number; name: string } | null;
   // Where applications that reached an outcome lane (offer, rejected, closed)
   // came from: the stage they left to get there.
   outcomes: { fromStage: string; outcomeStage: string; kind: StageKind; count: number }[];

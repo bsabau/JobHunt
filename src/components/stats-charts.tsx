@@ -18,7 +18,7 @@ import {
 import { StatsPayload } from "@/lib/types";
 import { MEDIAN_MIN_SAMPLE } from "@/lib/constants";
 import { daysSince, daysUntil, formatDateOnly, todayInTimeZone } from "@/lib/timezone";
-import { StaleActions } from "@/components/stale-actions";
+import { STALE_LIST_HEADING_ID, StaleActions } from "@/components/stale-actions";
 import { fillWeeks, isWeekOpen, weekStartOf } from "@/lib/weeks";
 import { SOURCE_MIN_GROUP, UNKNOWN_SOURCE } from "@/lib/sources";
 import { STATS_RANGES, StatsRange, rangeLabel } from "@/lib/stats-range";
@@ -373,7 +373,9 @@ export function StatsCharts({
 
             <Card>
               <CardHeader>
-                <CardTitle>Stale Applications</CardTitle>
+                <CardTitle id={STALE_LIST_HEADING_ID} tabIndex={-1} className="outline-none">
+                  Stale Applications
+                </CardTitle>
                 {data.range !== null ? <PresentNote /> : null}
               </CardHeader>
               <CardContent>
@@ -402,7 +404,7 @@ export function StatsCharts({
                             applicationId={row.id}
                             company={row.company}
                             stageId={row.stageId}
-                            closeStageId={data.closeStageId}
+                            closeStage={data.closeStage}
                           />
                         )}
                       </li>
