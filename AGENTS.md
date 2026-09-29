@@ -51,7 +51,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/application-statements.ts`: read statements about one application (its timeline), built with `sqlFragment`. Its only runtime import is `./stage-statements.ts`, by relative path with the extension, so the tests still load it from Node and run it on PGlite.
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
 - `src/lib/stats-statements.ts`: statements for the stats page (the rates over `application_milestones`), run inside the page's snapshot with `tx.query()`.
-- `src/lib/funnel.ts`: the stats funnel (lanes in pipeline rank, share that went on); it imports `compareStageRank()`, so the rank rule is not copied a third time.
+- `src/lib/funnel.ts`: the stats funnel (lanes in pipeline rank, and per lane the share of its cards that reached a later pipeline lane); it imports `compareStageRank()`, so the rank rule is not copied a third time.
 - `src/lib/board-filter.ts`: the board filter's rules (company and role only, never notes; outcome lanes hidden by kind).
 - `src/lib/sankey.ts`: builds the Sankey graph as a DAG.
 - `src/lib/auth.ts`: session tokens, credential check, `requireSession()`.

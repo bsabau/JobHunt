@@ -18,7 +18,6 @@ import {
 import { StatsPayload } from "@/lib/types";
 import { daysUntil } from "@/lib/timezone";
 import { KIND_COLORS, KIND_LABELS, RESOLVED_KINDS, ResolvedKind, colorFor } from "@/lib/stage-kinds";
-import { buildFunnel } from "@/lib/funnel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 function formatDate(value: string): string {
@@ -105,9 +104,9 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
     [data.stageCounts]
   );
 
-  // Pipeline rank of every current stage: outcome lanes come after the
-  // pipeline wherever they sit on the board. History-only names rank last.
-  const rankedFunnel = useMemo(() => buildFunnel(data.funnel), [data.funnel]);
+  // The funnel arrives in pipeline rank (buildFunnel() on the server): outcome
+  // lanes come after the pipeline wherever they sit on the board.
+  const rankedFunnel = data.funnel;
   const stageRank = useMemo(
     () => new Map(rankedFunnel.map((row, index) => [row.stage, index])),
     [rankedFunnel]
@@ -125,7 +124,7 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
       rankedFunnel.map((row) => ({
         ...row,
         fill: colorFor(row.stage, row.kind),
-        label: row.advanced === null ? `${row.reached}` : `${row.reached} · ${row.advanced}% on`
+        label: row.advanced === null ? `${row.reached}` : `${row.reached} · ${row.advanced}% further`
       })),
     [rankedFunnel]
   );
@@ -359,7 +358,7 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
               <CardHeader>
                 <CardTitle>How Far Applications Got</CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Applications that reached each lane, and the share that went on to the next pipeline lane.
+                  Applications that reached each lane, and the share of them that reached a later pipeline lane.
                 </p>
               </CardHeader>
               <CardContent className="h-[320px]">
@@ -375,7 +374,7 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
                       formatter={(value, _name, item) => {
                         const row = item.payload as (typeof funnelData)[number];
                         return [
-                          row.advanced === null ? `${value}` : `${value}, ${row.advanced}% went on to the next lane`,
+                          row.advanced === null ? `${value}` : `${value}, of which ${row.advanced}% reached a later lane`,
                           "Reached"
                         ];
                       }}
@@ -391,7 +390,6 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
               </CardContent>
             </Card>
           </div>
-
 
           <Card>
             <CardHeader>
@@ -441,7 +439,6 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
               )}
             </CardContent>
           </Card>
-
 
           {data.topCompanies.some((row) => row.count > 1) && (
             <Card>

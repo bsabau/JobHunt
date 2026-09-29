@@ -228,7 +228,7 @@ A rename is refused (409) when another lane has the name in any case. Charts gro
 | Stage entered at | Latest transition into the current lane, else `created_at` (view `application_stage_entry`). A rewind is a correction, not an event: afterwards this is the time of the edge kept or reconnected, so a card reopened from an outcome lane long after counts from when it first left its last kept lane and can be stale at once |
 | Stale | In a lane that can go stale for 14 days or more since it was entered (`STALE_THRESHOLD_DAYS`) |
 | Reached (funnel) | Distinct applications whose entry lane or any lane moved into is the lane, by lane id |
-| Went on (funnel) | Reached of the next pipeline lane in rank divided by reached of this one; none for outcome lanes, the last pipeline lane, a lane nobody reached, or when the next lane was reached by more (`buildFunnel()` in `src/lib/funnel.ts`) |
+| Went further (funnel) | Of the applications that reached a pipeline lane, the share that also reached a pipeline lane ranked after it, counted per application; none for outcome lanes, the last pipeline lane or a lane nobody reached (`buildFunnel()` in `src/lib/funnel.ts`, run on the server over each application's visited lanes) |
 | Applied at | For a card whose entry lane is `intake`: its first move into a pipeline lane (not `intake`, `rejected` or `closed`; a deleted lane counts), `NULL` until then. Otherwise `created_at` (view `application_applied_at`). Derived, not stored: a card moved back below its entry lane into intake loses its original date, because that move clears the path |
 | Days to interview | First transition into any `interview` lane minus applied at, over cards that have one (`application_milestones.first_interview_at`) |
 | Replied | The first edge after the application was sent whose target is not `intake` or `closed` (a deleted lane counts); for a card that entered in intake, after the edge that sent it, compared by `(transitioned_at, id)`. Also true, with no time, for a card that entered in an `interview`, `offer` or `rejected` lane, and for any card that reached an interview or an offer (view `application_milestones`) |
@@ -270,7 +270,7 @@ src/
     stage-kinds.ts     lane kinds, rank, chart colours (no runtime imports)
     transitions.ts     reference rewind implementation
     board-filter.ts    the board filter's match and hidden-lane rules
-    funnel.ts          the stats funnel: lanes in rank and the share that went on
+    funnel.ts          the stats funnel: lanes in rank, and per lane the share of its cards that went further
     sankey.ts          builds the Sankey graph as a DAG
     auth.ts            tokens, credentials, requireSession
     logo.ts            company logo lookup (Clearbit, S2 favicons)
@@ -298,7 +298,7 @@ src/
 | `schema` | Indexes, constraints and cleanup built by the real migrations on PGlite; migrations re-run safely |
 | `timeline` | The timeline statement on PGlite after real moves: rewinds, renamed and deleted lanes |
 | `board-filter` | The filter matches company and role only; only rejected and closed lanes hide |
-| `funnel` | Rank order with outcome lanes last, the share that went on, and where there is none |
+| `funnel` | Rank order with outcome lanes last; the share counted per card, not from lane totals (cards added mid-pipeline, skipped lanes) |
 | `milestones` | The milestones view and the rates statement on PGlite after real moves: replies, interviews, wishlist cards, rewinds, deleted lanes, kind changes |
 
 ## Known limitations
