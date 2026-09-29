@@ -67,9 +67,10 @@ export interface StatsPayload {
   // denominator `applied` and how many of them got a reply, reached an
   // interview, got an offer, or sit in a closed lane now.
   rates: { applied: number; responded: number; interviewed: number; offered: number; ghosted: number };
-  // Applications sent per week (by applied date, weeks from Monday in the
-  // viewer's zone); weeks without any are absent.
-  applicationsOverTime: { weekStart: string; sent: number }[];
+  // Applications by the week they were sent (weeks from Monday in the
+  // viewer's zone), with how many of them got a reply, an interview, an offer;
+  // weeks without any are absent.
+  weeks: { weekStart: string; sent: number; responded: number; interviewed: number; offered: number }[];
   // Median days from sending to the first reply and to a rejection, over the
   // applications where both times are known, with how many there were.
   timeToHearBack: {

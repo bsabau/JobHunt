@@ -16,9 +16,9 @@ import {
   YAxis,
 } from "recharts";
 import { StatsPayload } from "@/lib/types";
-import { MEDIAN_MIN_SAMPLE } from "@/lib/constants";
+import { MEDIAN_MIN_SAMPLE, STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { daysUntil, formatDateOnly, todayInTimeZone } from "@/lib/timezone";
-import { fillWeeks, weekStartOf } from "@/lib/weeks";
+import { fillWeeks, isWeekOpen, weekStartOf } from "@/lib/weeks";
 import { KIND_COLORS, KIND_LABELS, RESOLVED_KINDS, ResolvedKind, colorFor } from "@/lib/stage-kinds";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -80,6 +80,25 @@ function MedianTile({ label, days, count }: { label: string; days: number | null
   );
 }
 
+// "2 of 5" with a bar for the share: with a few applications a week, the
+// counts matter more than the percentage.
+function ShareCell({ count, of, color, muted, last }: { count: number; of: number; color: string; muted: boolean; last?: boolean }) {
+  const pct = of > 0 ? Math.round((count / of) * 100) : 0;
+  return (
+    <td className={`py-2 ${last ? "" : "pr-4"}`}>
+      {/* Counts first: on a phone the bar is dropped and the numbers stay. */}
+      <div className="flex items-center gap-2">
+        <span className="whitespace-nowrap tabular-nums">
+          {count} <span className="text-muted-foreground">({pct}%)</span>
+        </span>
+        <div className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-border/40 sm:block" aria-hidden="true">
+          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color, opacity: muted ? 0.5 : 1 }} />
+        </div>
+      </div>
+    </td>
+  );
+}
+
 function OutcomeChip({ label, color, count, total }: { label: string; color: string; count: number; total: number }) {
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   return (
@@ -131,14 +150,28 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
   // The axis shows the year only when the weeks span more than one; the
   // tooltip always does.
   const weeklyData = useMemo(() => {
-    const weeks = fillWeeks(data.applicationsOverTime, weekStartOf(todayInTimeZone(timeZone, new Date(now))));
+    const weeks = fillWeeks(data.weeks, weekStartOf(todayInTimeZone(timeZone, new Date(now))));
     const years = new Set(weeks.map((week) => week.weekStart.slice(0, 4)));
     return weeks.map((row) => ({
       ...row,
       label: years.size > 1 ? `${formatDate(row.weekStart)} '${row.weekStart.slice(2, 4)}` : formatDate(row.weekStart),
       fullLabel: formatDateOnly(row.weekStart)
     }));
-  }, [data.applicationsOverTime, timeZone, now]);
+  }, [data.weeks, timeZone, now]);
+
+  // Each week's results, newest first. A week stays open for the median days
+  // to a first reply (rounded up) after it ends, or STALE_THRESHOLD_DAYS while
+  // that median rests on too few applications.
+  const openDays =
+    data.timeToHearBack.replyMedianDays !== null && data.timeToHearBack.replyCount >= MEDIAN_MIN_SAMPLE
+      ? Math.ceil(data.timeToHearBack.replyMedianDays)
+      : STALE_THRESHOLD_DAYS;
+  const weekResults = useMemo(() => {
+    const today = todayInTimeZone(timeZone, new Date(now));
+    return [...data.weeks]
+      .reverse()
+      .map((week) => ({ ...week, open: isWeekOpen(week.weekStart, openDays, today) }));
+  }, [data.weeks, openDays, timeZone, now]);
 
   // The label beside each bar: the count, and for a pipeline lane the share
   // that went on to the next one.
@@ -460,6 +493,56 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                   No application sent yet.
                 </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Results by Week Sent</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                What became of each week&apos;s applications, where they stand now. A week stays open for {openDays} days
+                after it ends ({openDays === STALE_THRESHOLD_DAYS && data.timeToHearBack.replyCount < MEDIAN_MIN_SAMPLE
+                  ? "until there are enough replies for a median"
+                  : "the median time to a first reply"}
+                ); until then its figures can still rise.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {weekResults.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+                        <th scope="col" className="py-2 pr-4 font-medium">Week of</th>
+                        <th scope="col" className="py-2 pr-4 text-right font-medium">Sent</th>
+                        <th scope="col" className="py-2 pr-4 font-medium">Replied</th>
+                        <th scope="col" className="py-2 pr-4 font-medium">Interview</th>
+                        <th scope="col" className="py-2 font-medium">Offer</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {weekResults.map((week) => (
+                        <tr key={week.weekStart} className={`border-t border-border/40 ${week.open ? "text-muted-foreground" : ""}`}>
+                          <th scope="row" className="whitespace-nowrap py-2 pr-4 text-left font-normal">
+                            {formatDateOnly(week.weekStart)}
+                            {week.open ? (
+                              <span className="ml-2 rounded-full border border-border/60 px-2 py-0.5 text-[10px] uppercase tracking-wider">
+                                still open
+                              </span>
+                            ) : null}
+                          </th>
+                          <td className="py-2 pr-4 text-right tabular-nums">{week.sent}</td>
+                          <ShareCell count={week.responded} of={week.sent} color={KIND_COLORS.active} muted={week.open} />
+                          <ShareCell count={week.interviewed} of={week.sent} color={KIND_COLORS.interview} muted={week.open} />
+                          <ShareCell count={week.offered} of={week.sent} color={KIND_COLORS.offer} muted={week.open} last />
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="py-6 text-center text-sm text-muted-foreground">No application sent yet.</p>
               )}
             </CardContent>
           </Card>

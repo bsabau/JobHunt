@@ -46,3 +46,12 @@ export function fillWeeks(
   }
   return weeks;
 }
+
+// A week is still open while fewer than `days` have passed since its last day
+// (the Sunday): its applications can still get replies, so its figures can
+// still rise. `today` is the viewer's date, from todayInTimeZone() and the
+// page's `now`.
+export function isWeekOpen(weekStart: string, days: number, today: string): boolean {
+  const lastDay = addDays(weekStart, 6);
+  return (toUtcMs(today) - toUtcMs(lastDay)) / DAY_MS < days;
+}

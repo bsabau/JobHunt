@@ -37,16 +37,28 @@ export function milestoneStatsStatement(): SqlStatement {
   `);
 }
 
-// Applications sent per week, by applied date: the Monday that starts the week
-// in the viewer's zone (`zone` is validated by normalizeTimeZone()), as a
-// YYYY-MM-DD string. Weeks without applications are absent; fillWeeks() in
-// weeks.ts adds them.
-export function weeklySentStatement(zone: string): SqlStatement {
+export interface WeekRow {
+  week_start: string;
+  sent: number;
+  responded: number;
+  interviewed: number;
+  offered: number;
+}
+
+// Applications by the week they were sent: the Monday that starts the week in
+// the viewer's zone (`zone` is validated by normalizeTimeZone()), as a
+// YYYY-MM-DD string, with how many of that week's applications got a reply,
+// reached an interview and got an offer. Weeks without applications are
+// absent; fillWeeks() in weeks.ts adds them for the weekly chart.
+export function weeklyStatement(zone: string): SqlStatement {
   return compileSql(sqlFragment`
-    SELECT to_char(date_trunc('week', p.applied_at AT TIME ZONE ${zone})::date, 'YYYY-MM-DD') AS week_start,
-           COUNT(*)::int AS sent
-    FROM application_applied_at p
-    WHERE p.applied_at IS NOT NULL
+    SELECT to_char(date_trunc('week', m.applied_at AT TIME ZONE ${zone})::date, 'YYYY-MM-DD') AS week_start,
+           COUNT(*)::int AS sent,
+           COUNT(*) FILTER (WHERE m.responded)::int AS responded,
+           COUNT(*) FILTER (WHERE m.interviewed)::int AS interviewed,
+           COUNT(*) FILTER (WHERE m.offered)::int AS offered
+    FROM application_milestones m
+    WHERE m.applied_at IS NOT NULL
     GROUP BY 1
     ORDER BY 1;
   `);
