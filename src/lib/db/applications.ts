@@ -68,13 +68,26 @@ export async function listApplications(viewer: Role): Promise<Application[]> {
   return rows.map((row) => mapApplication(row, viewer));
 }
 
+// Stores a looked-up logo. The lookup runs after the response, so it only
+// writes while the application still has the company it was looked up for,
+// and it leaves updated_at alone: a logo is not an edit and must not reorder
+// the board.
+export async function setApplicationLogo(id: number, company: string, logoUrl: string | null): Promise<void> {
+  await ensureSchema();
+
+  await sql`
+    UPDATE applications
+    SET logo_url = ${logoUrl}
+    WHERE id = ${id} AND company = ${company} AND logo_url IS DISTINCT FROM ${logoUrl};
+  `;
+}
+
 interface CreateApplicationInput {
   company: string;
   role: string;
   notes?: string;
   interviewDate?: string | null;
   sourceUrl?: string;
-  logoUrl?: string | null;
   stageId?: number;
 }
 
@@ -110,7 +123,6 @@ export async function createApplication(input: CreateApplicationInput): Promise<
         notes,
         interview_date,
         source_url,
-        logo_url,
         stage_id,
         created_at,
         updated_at
@@ -120,7 +132,6 @@ export async function createApplication(input: CreateApplicationInput): Promise<
         ${input.notes?.trim() || null},
         ${input.interviewDate ? input.interviewDate : null},
         ${input.sourceUrl?.trim() || null},
-        ${input.logoUrl || null},
         ${stage.id},
         NOW(),
         NOW()
@@ -235,7 +246,15 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
   // An unknown target lane fails the stage_id foreign key inside the move
   // statement, which applyStageMove maps to "Target stage not found".
   const outcome = await applyStageMove(
+    // SET expressions read the row as it was, so this compares the old
+    // company with the new one. A different company (not just different case
+    // or spacing) must not keep the old company's logo; the edit route then
+    // schedules a lookup for any card left without one.
     sqlFragment`
+      logo_url = CASE
+        WHEN LOWER(btrim(company)) = LOWER(${input.company.trim()}) THEN logo_url
+        ELSE NULL
+      END,
       company = ${input.company.trim()},
       role = ${input.role.trim()},
       notes = ${input.notes?.trim() || null},

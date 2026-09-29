@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteApplication, updateApplication } from "@/lib/db";
+import { scheduleLogoLookup } from "@/lib/logo-lookup";
 import { errorResponse } from "@/lib/api-errors";
 import { requireSession } from "@/lib/auth";
 import {
@@ -37,6 +38,12 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     if (!updated) {
       return NextResponse.json({ message: "Application not found" }, { status: 404 });
+    }
+
+    // A renamed company comes back without a logo (the update clears it), as
+    // does a card whose earlier lookup found nothing or failed; look it up.
+    if (updated.logoUrl === null) {
+      scheduleLogoLookup(updated.id, updated.company);
     }
 
     return NextResponse.json(updated);

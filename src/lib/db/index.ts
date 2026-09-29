@@ -5,6 +5,7 @@ export {
   createApplication,
   deleteApplication,
   listApplications,
+  setApplicationLogo,
   updateApplication,
   updateApplicationStage
 } from "./applications";
