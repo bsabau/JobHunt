@@ -4,12 +4,14 @@ Kanban-style job application tracker built with Next.js, TypeScript, Tailwind CS
 
 ## Features
 
-- Dark-theme dashboard
-- Kanban columns/stages with drag and drop
+- Stats dashboard (`/`): totals, funnel, conversion and drop-off, outcomes, upcoming interviews, stale applications
+- Kanban board (`/board`) with drag and drop, search, and stale markers
 - Drag cards to recycle bin to delete
 - Add/reorder/delete stages (stage delete blocked when not empty)
+- Stage types (wishlist, pipeline, interview, offer, rejected, closed) that drive the statistics
 - Add application dialog with automatic company logo lookup from the internet
-- Sankey diagram view for application flow transitions
+- Sankey diagram (`/sankey`) of application flow transitions
+- Owner login plus an optional read-only guest account
 - Neon Postgres persistence
 
 ## Stack
@@ -19,7 +21,14 @@ Kanban-style job application tracker built with Next.js, TypeScript, Tailwind CS
 - Tailwind CSS v4
 - Radix UI + shadcn/ui component patterns
 - Neon serverless Postgres (`@neondatabase/serverless`)
-- Recharts (Sankey)
+- Recharts (stats and Sankey)
+
+## Documentation
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): domain model, schema, API, authentication
+- [`docs/AUDIT-2026-09-29.md`](docs/AUDIT-2026-09-29.md): code audit findings
+- [`docs/FIX-PLAN.md`](docs/FIX-PLAN.md): planned fixes
+- [`AGENTS.md`](AGENTS.md): rules for coding agents
 
 ## Environment
 
@@ -67,13 +76,21 @@ npm run migrate:up
 npm run dev
 ```
 
+Open [http://localhost:3000](http://localhost:3000).
+
+## Checks
+
+```bash
+npm run lint
+npx tsc --noEmit --incremental false
+npm run verify:auth && npm run verify:timezone && npm run verify:sankey && npm run verify:transitions && npm run verify:stage-kinds
+```
+
 ## Reset database
 
 ```bash
 npm run reset:db
 ```
 
-This clears applications/transitions and recreates default stages:
+**Destructive.** This deletes every application, transition and stage in the database that `DATABASE_URL` points at, without asking, and recreates the default stages:
 `Wishlist`, `Applied`, `Interview`, `Offer`, `Rejected`.
-
-Open [http://localhost:3000](http://localhost:3000).

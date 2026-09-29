@@ -1,59 +1,116 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+Guidance for coding agents working in this repository. This is the single source; `CLAUDE.md` imports it.
 
-## What This Is
+Deeper reference: `docs/ARCHITECTURE.md` (domain model, schema, API, auth). Open issues: `docs/AUDIT-2026-09-29.md`. Planned work: `docs/FIX-PLAN.md`.
 
-A Kanban-style job application tracker. Users add job applications, drag them between pipeline stages (Wishlist → Applied → Interview → Offer → Rejected), and view a Sankey diagram of transitions.
+## What this is
+
+A single-owner job application tracker with three views: pipeline stats (`/`), a Kanban board (`/board`) and a Sankey flow chart (`/sankey`). An optional guest account is read-only and never sees notes.
 
 ## Commands
 
-- `npm run dev` — start dev server (Next.js with Turbopack) at localhost:3000
-- `npm run build` — production build
-- `npm run lint` — ESLint
-- `npm run migrate:up` — run database migrations (required before first run)
-- `npm run migrate:create -- <name>` — scaffold a new migration
-- `npm run reset:db` — drop all data and recreate default stages
+- `npm run dev`: dev server (Next.js with Turbopack) at localhost:3000
+- `npm run build`: production build
+- `npm run lint`: ESLint
+- `npx tsc --noEmit --incremental false`: typecheck
+- `npm run verify:auth`, `verify:timezone`, `verify:sankey`, `verify:transitions`, `verify:stage-kinds`: assert-based checks for the pure helpers
+- `npm run migrate:up`: apply migrations (required before first run)
+- `npm run migrate:create -- <name>`: scaffold a migration
+- `npm run reset:db`: **destructive.** Truncates every table in whatever `DATABASE_URL` points at, with no confirmation. `.env.local` normally points at the real database. Do not run it unless the user asks for it by name.
+
+Before finishing a change, run lint, typecheck and the verify scripts. Run `npm audit` and `npm run build` when dependencies or config changed.
 
 ## Architecture
 
-**Next.js App Router** with server-side rendering. The stats page (`src/app/page.tsx`), board page (`src/app/board/page.tsx`), and Sankey page (`src/app/sankey/page.tsx`) are server components that fetch data and pass it to client-side chart/board components.
+Next.js 16 App Router. Pages are server components that load data and hand it to a client component.
 
-`src/proxy.ts` handles authentication and guest read-only enforcement for pages and API routes.
+| Route | Page | Client component |
+|---|---|---|
+| `/` | `src/app/page.tsx` | `src/components/stats-charts.tsx` |
+| `/board` | `src/app/board/page.tsx` | `src/components/kanban-board.tsx` |
+| `/sankey` | `src/app/sankey/page.tsx` | `src/components/sankey-chart.tsx` |
+| `/login` | `src/app/login/page.tsx` | |
 
-### Data flow
+API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (CRUD and reorder), sankey, auth (login, logout).
 
-- **Database**: Neon serverless Postgres via `@neondatabase/serverless`. All queries in `src/lib/db.ts` using the tagged template `sql` function.
-- **API routes** (`src/app/api/`): REST endpoints for applications (CRUD + stage moves), stages (CRUD + reorder), and sankey data. Stage moves record transitions in `application_transitions` table.
-- **Logo lookup**: `src/lib/logo.ts` uses Clearbit autocomplete → Google S2 favicons for company logos.
+### Request pipeline
+
+1. `src/proxy.ts` (Next 16's middleware) checks the session, rejects cross-site writes and blocks guest writes.
+2. Every route handler calls `requireSession()` and every page calls `requirePageSession()` **before** any database access. The proxy is not the authority. New routes and pages must do the same; pass `{ write: true }` for anything that changes data.
+3. Parse input with the helpers in `src/lib/api-validation.ts`.
+4. Query through `src/lib/db.ts`.
+5. Return errors through `errorResponse()` from `src/lib/api-errors.ts`. Throw `NotFoundError`, `ConflictError` or `InvalidInputError` for expected failures.
 
 ### Key modules
 
-- `src/lib/db.ts` — all database access; exports functions consumed by API routes and the server component. Uses `ensureSchema()` guard that checks tables exist on first query.
-- `src/lib/types.ts` — shared TypeScript interfaces (`Stage`, `Application`, `SankeyPayload`).
-- `src/lib/constants.ts` — default stage names and color tones.
-- `src/components/kanban-board.tsx` — main client component with drag-and-drop.
-- `src/components/stats-charts.tsx` — Recharts stats dashboard on `/`.
-- `src/components/sankey-chart.tsx` — Recharts Sankey visualization (route: `/sankey`).
-- `src/components/ui/` — shadcn/ui-style primitives (Radix UI + Tailwind).
+- `src/lib/db.ts`: all database access, through Neon's `sql` tagged template.
+- `src/lib/stage-kinds.ts`: lane kinds, pipeline rank, chart colours. No runtime imports, so the verify scripts can load it directly.
+- `src/lib/transitions.ts`: reference implementation of the rewind rule.
+- `src/lib/sankey.ts`: builds the Sankey graph as a DAG.
+- `src/lib/auth.ts`: session tokens, credential check, `requireSession()`.
+- `src/lib/types.ts`: shared interfaces (`Stage`, `Application`, `SankeyPayload`, `StatsPayload`).
+- `src/lib/limits.ts`: text length limits used by both the forms and the API.
+- `src/components/ui/`: shadcn/ui-style primitives (Radix and Tailwind).
 
-### Database schema
+## Domain rules
 
-Three tables: `stages`, `applications`, `application_transitions`. Managed by custom migration runner in `scripts/` with migration files in `migrations/` (timestamp-prefixed `.mjs` files). The migration runner tracks applied migrations in a `schema_migrations` table.
+These are easy to break and not obvious from any single file.
 
-### Environment
+- **The lane kind carries the meaning, not the board position.** Kinds are `intake`, `active`, `interview`, `offer`, `rejected`, `closed`. Never infer meaning from a lane's name or index.
+- **Pipeline rank is `(is terminal, sort_order)`.** `rejected` and `closed` lanes rank after every pipeline lane. Moving a card into one is always a forward move and never truncates history. They are excluded from staleness and drop-off.
+- **The rank rule exists twice**: `compareStageRank()` in `stage-kinds.ts` and the `ranked_stages` CTE in `stageMoveQuery()` in `db.ts`. Change both together.
+- **The rewind rule exists twice**: `rewindTransitionPath()` in `transitions.ts` and `stageMoveQuery()` in `db.ts`. Only the TypeScript one is tested. Change both together and extend `scripts/verify-transitions.mjs`.
+- **`application_transitions` is the current path, not an audit log.** Backward moves delete and rewrite rows.
+- **Transitions reference lanes by name.** Lanes therefore cannot be renamed; the API only allows changing the kind. `new` and `created` are reserved names.
+- **Stage moves need `expectedStageId`.** It is the concurrency guard; a mismatch returns 409.
+- **Notes are owner-only.** `listApplications()` returns them to any caller, so every caller that serves a guest must set `notes` to `null`.
+- **Dates and zones.** `interview_date` is a `DATE` and must be handled as a `YYYY-MM-DD` string, never parsed with `new Date(string)`. Anything formatted on both server and client must pin locale and time zone.
 
-Requires `DATABASE_URL` in `.env.local` pointing to a Neon Postgres connection string.
+## Database
+
+Tables: `stages`, `applications`, `application_transitions`, plus `schema_migrations` for the runner. Full definitions are in `docs/ARCHITECTURE.md`.
+
+- Migrations are timestamp-prefixed `.mjs` files in `migrations/` that export `up(sql)`. They are forward-only; there is no `down`.
+- Never edit a migration that has been applied. Add a new one.
+- Write migrations so that running them twice is harmless (`IF NOT EXISTS`, guarded updates).
+- The runner wraps each migration in a transaction over a WebSocket client. The HTTP driver used by the app cannot hold a transaction across statements; in app code use `transaction()` from `db.ts`, which sends a fixed list of statements in one request.
+
+## Keeping these docs current
+
+Update the docs in the same change as the code, not afterwards. Before finishing a task, check whether it touched any of the following and edit the matching file:
+
+| If the change touches | Update |
+|---|---|
+| npm scripts, env variables, Node version | `AGENTS.md` (Commands, Environment), `README.md`, `.env.example` |
+| A route, page, or API request or response shape | `docs/ARCHITECTURE.md` (Routes) |
+| A migration, table, column, index or constraint | `docs/ARCHITECTURE.md` (Tables) |
+| Lane kinds, pipeline rank, the rewind rule, derived values | `AGENTS.md` (Domain rules), `docs/ARCHITECTURE.md` (Domain model) |
+| Auth, the proxy, guest visibility | `AGENTS.md` (Request pipeline), `docs/ARCHITECTURE.md` (Authentication) |
+| A module added, moved, renamed or deleted under `src/lib/` | `AGENTS.md` (Key modules), `docs/ARCHITECTURE.md` (Source layout) |
+| A finding in `docs/AUDIT-2026-09-29.md` is fixed | Mark it done in `docs/FIX-PLAN.md`; remove any rule here that only described the old behaviour |
+
+Do not add to `AGENTS.md` what the code already makes obvious. It holds rules and traps; detail belongs in `docs/ARCHITECTURE.md`. If a change needs no doc edit, say so in the final summary rather than staying silent.
+
+## Environment
+
+`.env.local`, see `.env.example`:
+
+- `DATABASE_URL`: Neon Postgres connection string
+- `AUTH_USER`, `AUTH_PASS`: owner credentials
+- `AUTH_SECRET`: session signing key, at least 32 characters
+- `AUTH_GUEST_ENABLED`, `AUTH_GUEST_PASS`: optional read-only guest
 
 Use Node 24 LTS. The repo pins `24.16.0` in `.nvmrc` and `.node-version`, and `package.json` declares `>=24.16.0 <25`.
 
 ## Conventions
 
-- Tailwind CSS v4 (PostCSS plugin, not the older config-based setup)
-- UI components follow shadcn/ui patterns with `cn()` utility from `src/lib/utils.ts`
-- DB column names are snake_case; TypeScript interfaces use camelCase; `mapApplication()` in `db.ts` handles the mapping
-- Neon's `sql` tagged template handles parameterization — never interpolate user input directly
-- Keep dependency security checks part of routine verification: `npm audit`, `npm run lint`, `npx tsc --noEmit`, and `npm run build`.
+- Tailwind CSS v4 through the PostCSS plugin, not the older config file.
+- UI components follow shadcn/ui patterns and use `cn()` from `src/lib/utils.ts`.
+- Database columns are snake_case and TypeScript is camelCase. Queries alias columns unquoted (`AS interviewDate`), Postgres folds them to lowercase, and the mappers in `db.ts` read the lowercase key (`row.interviewdate`). Follow the existing pattern when adding a column.
+- Neon's `sql` tagged template parameterizes values. Never build SQL by string interpolation. To compose, nest `sql` fragments as `updateApplication` does.
+- Use the kind sets exported from `stage-kinds.ts` (`TERMINAL_KINDS`, `STALE_EXCLUDED_KINDS`) in queries instead of writing the literals.
+- Comments explain why a thing is done, not what the code does.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
