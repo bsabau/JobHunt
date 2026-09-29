@@ -37,7 +37,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 
 ### Request pipeline
 
-1. `src/proxy.ts` (Next 16's middleware) checks the session, rejects cross-site writes and blocks guest writes. It also gives every page a CSP nonce (`src/lib/csp.ts`, report-only for now). A new external host for scripts, images or requests must be added there.
+1. `src/proxy.ts` (Next 16's middleware) checks the session, rejects cross-site writes and blocks guest writes. It also gives every page a CSP nonce and an enforced policy (`src/lib/csp.ts`). A new external host for scripts, images or requests must be added there.
 2. Every route handler calls `requireSession()` and every page calls `requirePageSession()` **before** any database access. The proxy is not the authority. New routes and pages must do the same; pass `{ write: true }` for anything that changes data.
 3. Parse input with the helpers in `src/lib/api-validation.ts`.
 4. Query through `src/lib/db/` (imported as `@/lib/db`).
