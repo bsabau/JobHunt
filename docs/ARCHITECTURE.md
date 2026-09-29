@@ -250,6 +250,7 @@ src/
     application-statements.ts  read statements about one application, e.g. its timeline (imports only ./stage-statements.ts)
     stage-kinds.ts     lane kinds, rank, chart colours (no runtime imports)
     transitions.ts     reference rewind implementation
+    board-filter.ts    the board filter's match and hidden-lane rules
     sankey.ts          builds the Sankey graph as a DAG
     auth.ts            tokens, credentials, requireSession
     logo.ts            company logo lookup (Clearbit, S2 favicons)
@@ -276,6 +277,7 @@ src/
 | `stage-statements` | The production move and rename SQL on PGlite, the move checked against the TypeScript version |
 | `schema` | Indexes, constraints and cleanup built by the real migrations on PGlite; migrations re-run safely |
 | `timeline` | The timeline statement on PGlite after real moves: rewinds, renamed and deleted lanes |
+| `board-filter` | The filter matches company and role only; only rejected and closed lanes hide |
 
 ## Known limitations
 

@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { AddApplicationDialog } from "@/components/add-application-dialog";
 import { ApplicationSearch } from "@/components/application-search";
+import { BoardFilter, useHideOutcomeLanes } from "@/components/board-filter";
+import { isLaneHidden, matchesBoardFilter } from "@/lib/board-filter";
 import { EditApplicationDialog } from "@/components/edit-application-dialog";
 import { ApplicationDetailsDialog } from "@/components/application-details-dialog";
 import { StageDialog } from "@/components/stage-dialog";
@@ -291,6 +293,8 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   const [editingApplication, setEditingApplication] = useState<Application | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [filterQuery, setFilterQuery] = useState("");
+  const [hideOutcomeLanes, setHideOutcomeLanes] = useHideOutcomeLanes();
 
   // The card dialogs open without a trigger element, so Radix has nowhere to
   // return focus; put it back on the card so the keyboard user keeps their place.
@@ -334,12 +338,32 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     return () => window.clearTimeout(timer);
   }, [highlightedId]);
 
+  // A search result may sit behind the filter or in a hidden lane: clear what
+  // hides it, then scroll once the board has re-rendered with it (the effect).
   function focusApplication(app: Application) {
+    if (!matchesBoardFilter(app, filterQuery)) {
+      setFilterQuery("");
+    }
+    if (isLaneHidden(app.stageKind, hideOutcomeLanes)) {
+      setHideOutcomeLanes(false);
+    }
     setHighlightedId(app.id);
-    const card = scrollRef.current?.querySelector<HTMLElement>(`[data-application-id="${app.id}"]`);
-    card?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
   }
 
+  useEffect(() => {
+    if (highlightedId === null) {
+      return;
+    }
+    const card = scrollRef.current?.querySelector<HTMLElement>(`[data-application-id="${highlightedId}"]`);
+    card?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+  }, [highlightedId]);
+
+  const visibleStages = useMemo(
+    () => stages.filter((stage) => !isLaneHidden(stage.kind, hideOutcomeLanes)),
+    [stages, hideOutcomeLanes]
+  );
+
+  // Every lane's cards, and the ones the filter lets through.
   const grouped = useMemo(() => {
     return stages.reduce(
       (acc, stage) => {
@@ -349,6 +373,16 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
       {} as Record<number, Application[]>
     );
   }, [applications, stages]);
+
+  const filtering = filterQuery.trim() !== "";
+  const shown = useMemo(() => {
+    const result: Record<number, Application[]> = {};
+    for (const [stageId, cards] of Object.entries(grouped)) {
+      result[Number(stageId)] = filtering ? cards.filter((app) => matchesBoardFilter(app, filterQuery)) : cards;
+    }
+    return result;
+  }, [grouped, filtering, filterQuery]);
+  const matchingCount = filtering ? applications.filter((app) => matchesBoardFilter(app, filterQuery)).length : applications.length;
 
   // Reloads cards and lanes from the server. On failure the board is known to
   // be out of date, so say so and offer a full reload.
@@ -419,6 +453,10 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
 
       if (fromStage && toStage && fromStage.id !== toStage.id) {
         trackApplicationMoved({ fromStageKind: fromStage.kind, toStageKind: toStage.kind });
+      }
+      // The menu lists every lane, hidden ones included; say where the card went.
+      if (toStage && isLaneHidden(toStage.kind, hideOutcomeLanes)) {
+        toast(`Moved to ${toStage.name}, which is hidden. Untick "Hide outcome lanes" to see it.`);
       }
     } finally {
       pendingMoveIdsRef.current.delete(id);
@@ -593,6 +631,14 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-xl font-semibold">Applications Board</h2>
           <ApplicationSearch applications={applications} stages={stages} onSelect={focusApplication} />
+          <BoardFilter
+            query={filterQuery}
+            onQueryChange={setFilterQuery}
+            hideOutcomeLanes={hideOutcomeLanes}
+            onHideOutcomeLanesChange={setHideOutcomeLanes}
+            matching={matchingCount}
+            total={applications.length}
+          />
         </div>
         {!readOnly && (
           <div className="flex items-center gap-2">
@@ -612,10 +658,12 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
       <div ref={scrollRef} className="scrollbar-none overflow-x-auto overscroll-x-contain pb-3 data-[panning=true]:cursor-grabbing data-[panning=true]:select-none">
         <div
           className="inline-grid gap-4"
-          style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(240px, 280px))` }}
+          style={{ gridTemplateColumns: `repeat(${Math.max(visibleStages.length, 1)}, minmax(240px, 280px))` }}
         >
-          {stages.map((stage, index) => {
-            const tone = toneFor(stage, index);
+          {visibleStages.map((stage) => {
+            // The tone follows the lane's place among all lanes, so hiding
+            // some does not recolour the rest.
+            const tone = toneFor(stage, stages.indexOf(stage));
             return (
               <div
                 key={stage.id}
@@ -650,7 +698,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                   >
                     {stage.name}
                   </h3>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     {!readOnly && (
                       <button
                         type="button"
@@ -662,14 +710,16 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                         <Settings2 className="h-4 w-4" />
                       </button>
                     )}
-                    <span className="rounded-full border border-border/60 px-2 py-0.5 text-xs text-muted-foreground">
-                      {grouped[stage.id]?.length ?? 0}
+                    <span className="shrink-0 whitespace-nowrap rounded-full border border-border/60 px-2 py-0.5 text-xs text-muted-foreground">
+                      {filtering
+                        ? `${shown[stage.id]?.length ?? 0} of ${grouped[stage.id]?.length ?? 0}`
+                        : (grouped[stage.id]?.length ?? 0)}
                     </span>
                     <ArrowLeftRight className="h-4 w-4 text-muted-foreground" />
                   </div>
                 </div>
                 <div className="space-y-3">
-                  {(grouped[stage.id] ?? []).map((app) => {
+                  {(shown[stage.id] ?? []).map((app) => {
                     const stale = isApplicationStale(app, now);
                     const staleDays = stale ? daysSince(app.stageEnteredAt ?? app.updatedAt, now) : 0;
                     return (
@@ -703,6 +753,8 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                     <div className="rounded-md border border-dashed border-border/70 p-3 text-center text-xs text-muted-foreground">
                       Drop applications or stages here
                     </div>
+                  ) : (shown[stage.id] ?? []).length === 0 ? (
+                    <p className="p-3 text-center text-xs text-muted-foreground">No cards match the filter</p>
                   ) : null}
                 </div>
               </div>

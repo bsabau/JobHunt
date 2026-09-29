@@ -14,7 +14,7 @@ A single-owner job application tracker with three views: pipeline stats (`/`), a
 - `npm run build`: production build
 - `npm run check`: lint, typecheck and every test. Run it before every commit; CI runs it on every push.
 - `npm run lint`, `npm run typecheck`, `npm test`: the three parts on their own
-- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`)
+- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`)
 - `npm run migrate:up`: apply migrations to `DATABASE_URL`. Refuses when that is production.
 - `npm run migrate:prod`: apply migrations to `PRODUCTION_DATABASE_URL`. Asks for the endpoint id; only run it when the user asks.
 - `npm run migrate:create -- <name>`: scaffold a migration
@@ -50,6 +50,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/stage-statements.ts`: the SQL that moves cards and renames lanes, compiled to text and parameters. No runtime imports, so the tests run it on PGlite.
 - `src/lib/application-statements.ts`: read statements about one application (its timeline), built with `sqlFragment`. Its only runtime import is `./stage-statements.ts`, by relative path with the extension, so the tests still load it from Node and run it on PGlite.
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
+- `src/lib/board-filter.ts`: the board filter's rules (company and role only, never notes; outcome lanes hidden by kind).
 - `src/lib/sankey.ts`: builds the Sankey graph as a DAG.
 - `src/lib/auth.ts`: session tokens, credential check, `requireSession()`.
 - `src/lib/logo.ts`: company logo lookup (Clearbit, Google S2 favicons, host allowlist); `src/lib/logo-lookup.ts` runs it with `after()` once the response is sent.
