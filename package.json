@@ -17,13 +17,13 @@
     "migrate:prod": "node scripts/migrate-prod.mjs",
     "migrate:create": "node scripts/migrate-create.mjs",
     "reset:db": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/reset-neon-db.mjs",
-    "cleanup:created": "node scripts/cleanup-created-transitions.mjs",
     "verify:auth": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/auth.test.mjs",
     "verify:timezone": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/timezone.test.mjs",
     "verify:sankey": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/sankey.test.mjs",
     "verify:transitions": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/transitions.test.mjs",
     "verify:stage-kinds": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stage-kinds.test.mjs",
-    "verify:stage-move": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stage-move.test.mjs"
+    "verify:stage-move": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stage-move.test.mjs",
+    "verify:schema": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/schema.test.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

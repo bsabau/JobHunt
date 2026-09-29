@@ -148,6 +148,14 @@ Leave `SERIAL` alone. Converting to identity columns has no practical benefit he
 
 **Done when:** `npm run migrate:up` on a fresh database and on a copy of production produce the same catalog, and phase 1 tests pass.
 
+Phase 2 result:
+
+- Migrations `1730000006000` to `1730000010000`, one per item; `tests/schema.test.mjs` checks each guarantee on PGlite.
+- 2.6 changed from the plan: a session-level `pg_advisory_lock` did not stop a concurrent run through Neon's pooler (tested; the second run failed on a duplicate index and rolled back). The runner now takes `pg_advisory_xact_lock` inside each migration's transaction and re-checks the file. Three concurrent runs on a copy of production then applied each file exactly once.
+- The header comment for the first migration went to `docs/ARCHITECTURE.md` instead, because `AGENTS.md` forbids editing applied migrations.
+- Catalog check on a copy of production against a fresh database: columns, constraints and indexes identical. The only difference is that PGlite runs Postgres 18, which records `NOT NULL` as constraint rows; Neon runs 17.
+- Applied to the `dev` branch. Production still needs `npm run migrate:prod` after merge.
+
 ---
 
 ## Phase 3: reference lanes by id

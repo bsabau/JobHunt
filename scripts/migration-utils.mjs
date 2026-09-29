@@ -81,21 +81,32 @@ export async function connect(url) {
   return { sql, end: () => client.end() };
 }
 
+// Arbitrary constant identifying migrations to pg_advisory_xact_lock.
+const MIGRATION_LOCK_KEY = 7302026;
+
 // Applies every migration file not yet recorded in schema_migrations, each in
-// its own transaction. `sql` is a tagged-template function returning rows.
+// its own transaction. `sql` is a tagged-template function returning rows on a
+// single session.
+//
+// Concurrent runs are serialised with a transaction-level advisory lock taken
+// inside each migration's transaction, after which the file is checked again.
+// A session-level lock would not do: DATABASE_URL usually goes through Neon's
+// pooler, which hands each transaction its own server connection, so a lock
+// taken in one statement does not cover the next.
 export async function runMigrations(sql, log = console.log) {
-  await sql`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      filename TEXT PRIMARY KEY,
-      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `;
+  await inLockedTransaction(sql, async () => {
+    await sql`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        filename TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `;
+  });
 
   const appliedRows = await sql`
     SELECT filename
     FROM schema_migrations;
   `;
-
   const applied = new Set(appliedRows.map((row) => String(row.filename)));
 
   for (const migration of getMigrationFiles()) {
@@ -109,18 +120,35 @@ export async function runMigrations(sql, log = console.log) {
       throw new Error(`Migration ${migration.file} does not export an 'up' function`);
     }
 
-    await sql`BEGIN`;
-    try {
+    const ran = await inLockedTransaction(sql, async () => {
+      // Another run may have applied it while this one waited for the lock.
+      const done = await sql`SELECT 1 FROM schema_migrations WHERE filename = ${migration.file}`;
+      if (done.length > 0) {
+        return false;
+      }
       await mod.up(sql);
       await sql`
         INSERT INTO schema_migrations (filename)
         VALUES (${migration.file});
       `;
-      await sql`COMMIT`;
+      return true;
+    });
+
+    if (ran) {
       log(`Applied: ${migration.file}`);
-    } catch (error) {
-      await sql`ROLLBACK`;
-      throw error;
     }
+  }
+}
+
+async function inLockedTransaction(sql, work) {
+  await sql`BEGIN`;
+  try {
+    await sql`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_KEY})`;
+    const result = await work();
+    await sql`COMMIT`;
+    return result;
+  } catch (error) {
+    await sql`ROLLBACK`;
+    throw error;
   }
 }
