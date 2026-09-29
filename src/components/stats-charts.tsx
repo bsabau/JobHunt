@@ -16,6 +16,7 @@ import {
   YAxis,
 } from "recharts";
 import { StatsPayload } from "@/lib/types";
+import { MEDIAN_MIN_SAMPLE } from "@/lib/constants";
 import { daysUntil, formatDateOnly, todayInTimeZone } from "@/lib/timezone";
 import { fillWeeks, weekStartOf } from "@/lib/weeks";
 import { KIND_COLORS, KIND_LABELS, RESOLVED_KINDS, ResolvedKind, colorFor } from "@/lib/stage-kinds";
@@ -63,6 +64,18 @@ function RateTile({ label, count, of, hint }: { label: string; count: number; of
       label={label}
       value={of > 0 ? `${Math.round((count / of) * 100)}%` : "—"}
       hint={of > 0 ? `${count} of ${of} sent${hint ? `, ${hint}` : ""}` : "Nothing sent yet"}
+    />
+  );
+}
+
+// A median, shown only once it rests on enough applications to mean something.
+function MedianTile({ label, days, count }: { label: string; days: number | null; count: number }) {
+  const enough = days !== null && count >= MEDIAN_MIN_SAMPLE;
+  return (
+    <SummaryTile
+      label={label}
+      value={enough ? days : "—"}
+      hint={enough ? `Median of ${count}` : `Not enough data yet (${count} of ${MEDIAN_MIN_SAMPLE})`}
     />
   );
 }
@@ -179,7 +192,7 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
         <SummaryTile label="Total Applications" value={data.totals.applications} />
         <RateTile label="Response Rate" count={data.rates.responded} of={data.rates.applied} />
         <RateTile label="Interview Rate" count={data.rates.interviewed} of={data.rates.applied} />
@@ -198,6 +211,16 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
               ? `Based on ${data.totals.interviewReachedCount} app${data.totals.interviewReachedCount === 1 ? "" : "s"}`
               : "No apps reached Interview yet"
           }
+        />
+        <MedianTile
+          label="Days to First Reply"
+          days={data.timeToHearBack.replyMedianDays}
+          count={data.timeToHearBack.replyCount}
+        />
+        <MedianTile
+          label="Days to Rejection"
+          days={data.timeToHearBack.rejectionMedianDays}
+          count={data.timeToHearBack.rejectionCount}
         />
         <SummaryTile
           label="Stale Applications"

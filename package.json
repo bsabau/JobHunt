@@ -30,7 +30,8 @@
     "verify:board-filter": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/board-filter.test.mjs",
     "verify:milestones": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/milestones.test.mjs",
     "verify:funnel": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/funnel.test.mjs",
-    "verify:weeks": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/weeks.test.mjs"
+    "verify:weeks": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/weeks.test.mjs",
+    "verify:stats-statements": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stats-statements.test.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

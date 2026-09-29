@@ -51,3 +51,32 @@ export function weeklySentStatement(zone: string): SqlStatement {
     ORDER BY 1;
   `);
 }
+
+export interface TimeToHearBackRow {
+  reply_median_days: number | null;
+  reply_count: number;
+  rejection_median_days: number | null;
+  rejection_count: number;
+}
+
+// Median days from sending an application to its first reply, and to its
+// rejection, over the sent applications where both times are known. A card
+// that entered straight in an interview, offer or rejected lane replied at an
+// unknown time and is left out, as is a rejection dated before the sending
+// (possible when a lane the card passed is later made a rejected lane). The
+// medians are cast to double precision, which the driver returns as a number
+// (numeric would arrive as a string).
+export function timeToHearBackStatement(): SqlStatement {
+  return compileSql(sqlFragment`
+    SELECT (percentile_cont(0.5) WITHIN GROUP (
+              ORDER BY EXTRACT(EPOCH FROM (m.responded_at - m.applied_at))::double precision / 86400
+            ) FILTER (WHERE m.responded_at IS NOT NULL))::double precision AS reply_median_days,
+           COUNT(*) FILTER (WHERE m.responded_at IS NOT NULL)::int AS reply_count,
+           (percentile_cont(0.5) WITHIN GROUP (
+              ORDER BY EXTRACT(EPOCH FROM (m.rejected_at - m.applied_at))::double precision / 86400
+            ) FILTER (WHERE m.rejected_at >= m.applied_at))::double precision AS rejection_median_days,
+           COUNT(*) FILTER (WHERE m.rejected_at >= m.applied_at)::int AS rejection_count
+    FROM application_milestones m
+    WHERE m.applied_at IS NOT NULL;
+  `);
+}

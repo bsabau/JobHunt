@@ -2,7 +2,13 @@ import { STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
 import { RESOLVED_KINDS, STALE_EXCLUDED_KINDS, TERMINAL_KINDS, StageKind } from "@/lib/stage-kinds";
 import { buildFunnel } from "@/lib/funnel";
-import { MilestoneStatsRow, milestoneStatsStatement, weeklySentStatement } from "@/lib/stats-statements";
+import {
+  MilestoneStatsRow,
+  TimeToHearBackRow,
+  milestoneStatsStatement,
+  timeToHearBackStatement,
+  weeklySentStatement
+} from "@/lib/stats-statements";
 import { StatsPayload } from "@/lib/types";
 import { ensureSchema, transaction } from "./client";
 import { StageRow, mapStage } from "./rows";
@@ -12,6 +18,7 @@ import { StageRow, mapStage } from "./rows";
 type StatsRows = [
   (StageRow & { count: number })[],
   MilestoneStatsRow[],
+  TimeToHearBackRow[],
   { days: string }[],
   { week_start: string; sent: number }[],
   { company: string; count: number }[],
@@ -24,6 +31,11 @@ type StatsRows = [
 // Label for applications that were created straight into an outcome lane.
 const OUTCOME_DIRECT_ENTRY = "Added directly";
 
+// One decimal, like the other day figures on the page.
+function roundOrNull(days: number | null): number | null {
+  return days === null ? null : Math.round(days * 10) / 10;
+}
+
 export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promise<StatsPayload> {
   await ensureSchema();
 
@@ -33,9 +45,11 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
   // because a write landed between two of these queries.
   const milestones = milestoneStatsStatement();
   const weeklySent = weeklySentStatement(zone);
+  const hearBack = timeToHearBackStatement();
   const [
     stageCountRows,
     milestoneRows,
+    hearBackRows,
     avgCurrentStageRows,
     weeklySentRows,
     topCompanyRows,
@@ -52,6 +66,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       ORDER BY s.sort_order ASC, s.id ASC;
     `,
     tx.query(milestones.text, milestones.params),
+    tx.query(hearBack.text, hearBack.params),
     tx`
       SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - e.entered_at)) / 86400.0), 0) AS days
       FROM applications a
@@ -204,6 +219,12 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       interviewed: milestone?.interviewed ?? 0,
       offered: milestone?.offered ?? 0,
       ghosted: milestone?.ghosted ?? 0
+    },
+    timeToHearBack: {
+      replyMedianDays: roundOrNull(hearBackRows[0]?.reply_median_days ?? null),
+      replyCount: hearBackRows[0]?.reply_count ?? 0,
+      rejectionMedianDays: roundOrNull(hearBackRows[0]?.rejection_median_days ?? null),
+      rejectionCount: hearBackRows[0]?.rejection_count ?? 0
     },
     applicationsOverTime,
     topCompanies,

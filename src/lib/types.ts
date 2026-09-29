@@ -70,6 +70,14 @@ export interface StatsPayload {
   // Applications sent per week (by applied date, weeks from Monday in the
   // viewer's zone); weeks without any are absent.
   applicationsOverTime: { weekStart: string; sent: number }[];
+  // Median days from sending to the first reply and to a rejection, over the
+  // applications where both times are known, with how many there were.
+  timeToHearBack: {
+    replyMedianDays: number | null;
+    replyCount: number;
+    rejectionMedianDays: number | null;
+    rejectionCount: number;
+  };
   topCompanies: { company: string; count: number }[];
   // In pipeline rank, from buildFunnel(): `advanced` is the percent of the
   // lane's applications that reached a later pipeline lane (null where none).

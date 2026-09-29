@@ -14,7 +14,7 @@ A single-owner job application tracker with three views: pipeline stats (`/`), a
 - `npm run build`: production build
 - `npm run check`: lint, typecheck and every test. Run it before every commit; CI runs it on every push.
 - `npm run lint`, `npm run typecheck`, `npm test`: the three parts on their own
-- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`, `milestones`, `funnel`, `weeks`)
+- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`, `milestones`, `funnel`, `weeks`, `stats-statements`)
 - `npm run migrate:up`: apply migrations to `DATABASE_URL`. Refuses when that is production.
 - `npm run migrate:prod`: apply migrations to `PRODUCTION_DATABASE_URL`. Asks for the endpoint id; only run it when the user asks.
 - `npm run migrate:create -- <name>`: scaffold a migration
@@ -50,7 +50,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/stage-statements.ts`: the SQL that moves cards and renames lanes, compiled to text and parameters. No runtime imports, so the tests run it on PGlite.
 - `src/lib/application-statements.ts`: read statements about one application (its timeline), built with `sqlFragment`. Its only runtime import is `./stage-statements.ts`, by relative path with the extension, so the tests still load it from Node and run it on PGlite.
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
-- `src/lib/stats-statements.ts`: statements for the stats page (the rates over `application_milestones`, the weekly counts), run inside the page's snapshot with `tx.query()`.
+- `src/lib/stats-statements.ts`: statements for the stats page (the rates over `application_milestones`, the weekly counts, the medians to a reply), run inside the page's snapshot with `tx.query()`. Their tests go in `tests/stats-statements.test.mjs`.
 - `src/lib/weeks.ts`: week arithmetic on `YYYY-MM-DD` strings (Monday week starts, empty weeks filled up to the current one).
 - `src/lib/funnel.ts`: the stats funnel (lanes in pipeline rank, and per lane the share of its cards that reached a later pipeline lane); it imports `compareStageRank()`, so the rank rule is not copied a third time.
 - `src/lib/board-filter.ts`: the board filter's rules (company and role only, never notes; outcome lanes hidden by kind).

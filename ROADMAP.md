@@ -5,7 +5,7 @@ Feature backlog, in priority order. The app is in daily use, so these are the ne
 ## Shipped
 
 - **Board search**: find a card by company or role and jump to it.
-- **Stats page** (`/`): response, interview, offer and ghosted rates, one funnel with the share of each lane's cards that went further, applications sent per week with a running total, outcomes, upcoming interviews.
+- **Stats page** (`/`): response, interview, offer and ghosted rates, median days to a reply and to a rejection, one funnel with the share of each lane's cards that went further, applications sent per week with a running total, outcomes, upcoming interviews.
 - **Stale alerts**: cards that have sat for 14 days or more in a lane that can go stale (not a wishlist, offer or outcome lane) are flagged on the board and listed on the stats page.
 - **Board filter**: narrows every lane by company or role, and a remembered toggle hides the rejected and closed lanes.
 - **Application timeline**: the card dialog shows the lanes a card passed through, with dates and time in each; the guest gets a read-only version.
@@ -17,7 +17,7 @@ In the order of `docs/PRODUCT-PLAN.md`.
 
 ### 1. New metrics
 
-Time to hear back, results by application week, results by source, and a date range filter on the stats page (M-2 to M-5).
+Results by application week, results by source, and a date range filter on the stats page (M-3 to M-5). Time to hear back has shipped.
 
 ### Later
 
