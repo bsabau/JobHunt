@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, ArrowRightLeft, Plus, Settings2, Trash2 } from "lucide-react";
-import { KIND_TONES, STAGE_TONES, daysSince, daysUntil, isApplicationStale } from "@/lib/constants";
+import { KIND_TONES, STAGE_TONES, isApplicationStale } from "@/lib/constants";
+import { daysSince, daysUntil } from "@/lib/timezone";
 import { INTAKE_KIND, KIND_LABELS, isTerminalKind } from "@/lib/stage-kinds";
 import { Application, Stage } from "@/lib/types";
 import { useMiddleButtonPan } from "@/lib/use-middle-button-pan";
@@ -440,6 +441,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
       return;
     }
 
+    const kindChanged = stages.find((item) => item.id === stage.id)?.kind !== stage.kind;
     setStages((current) => current.map((item) => (item.id === stage.id ? stage : item)));
     // Cards carry their lane's name and kind (search, staleness, applied date),
     // so keep them in step.
@@ -448,6 +450,11 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
         item.stageId === stage.id ? { ...item, stageName: stage.name, stageKind: stage.kind } : item
       )
     );
+    // A kind change can also move the applied date of cards in other lanes
+    // that passed through this one; only the server knows which.
+    if (kindChanged) {
+      void refreshBoard();
+    }
   }
 
   async function deleteStageById(id: number) {
@@ -461,6 +468,9 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
 
     setStages((current) => current.filter((stage) => stage.id !== id));
     trackStageDeleted();
+    // Cards that entered through the deleted lane now count from their
+    // creation (application_applied_at), so reload them.
+    void refreshBoard();
   }
 
   async function reorderStage(draggedStageId: number, targetStageId: number) {

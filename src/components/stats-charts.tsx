@@ -17,7 +17,7 @@ import {
   YAxis,
 } from "recharts";
 import { StageKind, StatsPayload } from "@/lib/types";
-import { daysUntil } from "@/lib/constants";
+import { daysUntil } from "@/lib/timezone";
 import { KIND_COLORS, KIND_LABELS, RESOLVED_KINDS, ResolvedKind, colorFor, compareStageRank, isTerminalKind } from "@/lib/stage-kinds";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 

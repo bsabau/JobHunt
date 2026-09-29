@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
   daysBetweenDateOnly,
+  daysSince,
+  daysUntil,
   isValidTimeZone,
   normalizeTimeZone,
   todayInTimeZone
@@ -35,5 +37,18 @@ assert.equal(daysBetweenDateOnly("2026-09-14", "2026-09-15"), 1);
 assert.equal(daysBetweenDateOnly("2026-09-15", "2026-09-14"), -1);
 assert.equal(daysBetweenDateOnly("2026-12-31", "2027-01-01"), 1);
 assert.equal(daysBetweenDateOnly("2026-06-30", "2026-07-01"), 1);
+
+// Relative dates use the caller's `now`, never the clock, so the server render
+// and hydration agree.
+const now = instant.getTime();
+assert.equal(daysSince("2026-09-15T06:30:00.000Z", now), 0);
+assert.equal(daysSince("2026-09-14T06:30:00.001Z", now), 0, "a day starts after a full 24 hours");
+assert.equal(daysSince("2026-09-14T06:30:00.000Z", now), 1);
+assert.equal(daysSince("2026-09-15T07:00:00.000Z", now), -1, "created after `now` (a card added after the page loaded)");
+assert.equal(daysSince("not a date", now), 0);
+// At 06:30 UTC it is still the 14th in Los Angeles, so the 15th is tomorrow there.
+assert.equal(daysUntil("2026-09-15", "UTC", now), 0);
+assert.equal(daysUntil("2026-09-15", "America/Los_Angeles", now), 1);
+assert.equal(daysUntil("2026-09-14", "Pacific/Auckland", now), -1);
 
 console.log("Timezone checks passed.");

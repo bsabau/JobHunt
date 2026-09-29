@@ -2,7 +2,7 @@ import { KanbanBoard } from "@/components/kanban-board";
 import { PageHeader } from "@/components/page-header";
 import { listApplications, listStages } from "@/lib/db";
 import { requirePageSession } from "@/lib/page-auth";
-import { resolveRequestTimeZone } from "@/lib/request-timezone";
+import { requestNow, resolveRequestTimeZone } from "@/lib/request-timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -11,11 +11,7 @@ export default async function BoardPage() {
   const readOnly = session.role === "guest";
 
   const timeZone = await resolveRequestTimeZone();
-  // One clock reading for the whole render, handed to the client components so
-  // relative dates match between the server HTML and hydration. A server
-  // component renders once per request, so reading the clock here is safe.
-  // eslint-disable-next-line react-hooks/purity
-  const now = Date.now();
+  const now = requestNow();
   // listApplications leaves out the notes for a guest viewer.
   const [applications, stages] = await Promise.all([listApplications(session.role), listStages()]);
 

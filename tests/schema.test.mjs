@@ -256,6 +256,8 @@ describe("schema built by the migrations", () => {
     const sent = await insertApp("Sent", appliedId);
     const viaDeleted = await insertApp("ViaDeleted", appliedId);
     const deletedEntry = await insertApp("DeletedEntry", appliedId);
+    const [closed] = await sql`INSERT INTO stages (name, sort_order, kind) VALUES ('Dropped', 5, 'closed') RETURNING id`;
+    const dropped = await insertApp("Dropped", closed.id);
     await sql`
       INSERT INTO application_transitions (application_id, from_status, from_stage_id, to_status, to_stage_id, transitioned_at) VALUES
         (${waiting}, 'Wishlist', ${wishlist.id}, 'Shortlist', ${shortlist.id}, '2026-01-02T00:00:00Z'),
@@ -264,17 +266,19 @@ describe("schema built by the migrations", () => {
         (${sent}, 'Applied', ${appliedId}, 'Interview', NULL, '2026-01-09T00:00:00Z'),
         (${viaDeleted}, 'Wishlist', ${wishlist.id}, 'Gone', ${gone.id}, '2026-01-03T00:00:00Z'),
         (${viaDeleted}, 'Gone', ${gone.id}, 'Applied', ${appliedId}, '2026-01-04T00:00:00Z'),
-        (${deletedEntry}, 'Gone', ${gone.id}, 'Applied', ${appliedId}, '2026-01-06T00:00:00Z')`;
+        (${deletedEntry}, 'Gone', ${gone.id}, 'Applied', ${appliedId}, '2026-01-06T00:00:00Z'),
+        (${dropped}, 'Wishlist', ${wishlist.id}, 'Dropped', ${closed.id}, '2026-01-07T00:00:00Z')`;
     await sql`DELETE FROM stages WHERE id = ${gone.id}`;
     const rows = await sql`
       SELECT application_id, applied_at FROM application_applied_at
-      WHERE application_id IN (${direct}, ${waiting}, ${sent}, ${viaDeleted}, ${deletedEntry}) ORDER BY application_id`;
+      WHERE application_id IN (${direct}, ${waiting}, ${sent}, ${viaDeleted}, ${deletedEntry}, ${dropped}) ORDER BY application_id`;
     assert.deepEqual(rows.map((row) => row.applied_at && new Date(row.applied_at).toISOString()), [
       created, // entered a pipeline lane: its creation
       null, // moved only between intake lanes: not sent yet
       "2026-01-05T00:00:00.000Z", // the first move out of intake
       "2026-01-03T00:00:00.000Z", // a move into a deleted lane counts as sending it
-      created // its entry lane was deleted: its creation
+      created, // its entry lane was deleted: its creation
+      null // left the wishlist straight for an outcome lane: never sent
     ]);
   });
 

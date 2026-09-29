@@ -145,7 +145,7 @@ Migration notes:
 - `1730000012000` replaces the name-based no-self-loop check with `application_transitions_distinct_lanes`, which compares ids, so a move from a deleted lane into a new lane of the same name can be stored.
 - `1730000013000` creates the view `application_entry_stage`. It reads `applications.id` and `.stage_id`, `stages.id` and `.name`, and the transitions' `id`, `application_id`, `from_stage_id`, `from_status` and `transitioned_at`; Postgres refuses to drop or retype any of those while the view exists, so such a migration must drop and re-create the view. `CREATE OR REPLACE VIEW` can only append columns: renaming or retyping a view column also needs `DROP VIEW` first.
 - `1730000014000` creates the view `application_stage_entry`, which reads `applications.id`, `.stage_id` and `.created_at` and the transitions' `id`, `application_id`, `to_stage_id` and `transitioned_at`; the same drop-and-re-create rule applies.
-- `1730000015000` creates the view `application_applied_at` on top of `application_entry_stage`. It reads `applications.id` and `.created_at`, `stages.id` and `.kind`, and the transitions' `application_id`, `to_stage_id` and `transitioned_at`; the same rule applies, and dropping `application_entry_stage` now needs this view dropped first.
+- `1730000015000` creates the view `application_applied_at` on top of `application_entry_stage`. It reads `applications.id` and `.created_at`, `stages.id` and `.kind`, and the transitions' `application_id`, `to_stage_id` and `transitioned_at`; the same rule applies, and dropping `application_entry_stage` now needs this view dropped first. `1730000016000` replaces it so that a move into a `rejected` or `closed` lane does not count as sending.
 - Every new migration also updates `LATEST_MIGRATION` in `src/lib/db/schema-version.ts`. `ensureSchema()` compares it with the newest row in `schema_migrations` once per process and refuses to query a database that is behind; a test fails when the constant falls behind the `migrations/` folder.
 - The runner serialises concurrent runs with `pg_advisory_xact_lock` inside each migration's transaction, then re-checks `schema_migrations`. A session-level lock would not survive Neon's transaction pooler.
 
@@ -206,7 +206,7 @@ A rename is refused (409) when another lane has the name in any case. Charts gro
 | Stage entered at | Latest transition into the current lane, else `created_at` (view `application_stage_entry`) |
 | Stale | In a lane that can go stale for 14 days or more since it was entered (`STALE_THRESHOLD_DAYS`) |
 | Reached (funnel) | Distinct applications whose entry lane or any lane moved into is the lane, by lane id |
-| Applied at | For a card whose entry lane is `intake`: its first move into a lane of another kind (a deleted lane counts), `NULL` until then. Otherwise `created_at` (view `application_applied_at`) |
+| Applied at | For a card whose entry lane is `intake`: its first move into a pipeline lane (not `intake`, `rejected` or `closed`; a deleted lane counts), `NULL` until then. Otherwise `created_at` (view `application_applied_at`). Derived, not stored: a card moved back below its entry lane into intake loses its original date, because that move clears the path |
 | Days to interview | First transition into any `interview` lane minus applied at, over cards that have one |
 | Open count | Total minus applications in a resolved lane |
 
@@ -245,7 +245,7 @@ src/
     logo-lookup.ts     runs the lookup after the response
     api-validation.ts  input parsing
     api-errors.ts      typed errors and the response mapper
-    timezone.ts        zone validation and date-only arithmetic
+    timezone.ts        zone validation, date-only arithmetic, relative ages from a given now
     limits.ts          text length limits shared by client and server
 ```
 
@@ -256,7 +256,7 @@ src/
 | Test (`npm run verify:<name>`) | Covers |
 |---|---|
 | `auth` | Token signing, expiry, tampering, guest revocation |
-| `timezone` | Date-only arithmetic |
+| `timezone` | Date-only arithmetic, relative ages from a fixed `now` |
 | `sankey` | Graph is acyclic |
 | `transitions` | Rewind rule, TypeScript version |
 | `stage-kinds` | Rank ordering, stale kinds, colours |
