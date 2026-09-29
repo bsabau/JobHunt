@@ -1,8 +1,10 @@
-// Read statements about single applications, kept free of runtime imports so
+// Read statements about single applications, loadable straight from Node so
 // the tests can run the exact text against an in-process Postgres
-// (tests/timeline.test.mjs). src/lib/db executes it through `sql.query()`.
+// (tests/timeline.test.mjs). The only runtime import is another such module,
+// by relative path with its extension, which Node's type stripping resolves.
+// src/lib/db executes the compiled text through `sql.query()`.
 
-import type { SqlStatement } from "@/lib/stage-statements";
+import { type SqlStatement, compileSql, sqlFragment } from "./stage-statements.ts";
 
 // The application's current path: the lane it entered in (from the view
 // application_entry_stage, entered at its creation) and every lane it moved
@@ -11,8 +13,7 @@ import type { SqlStatement } from "@/lib/stage-statements";
 // with " (deleted)", as the charts show it, and has no id or kind. No row when
 // the application does not exist.
 export function applicationTimelineStatement(applicationId: number): SqlStatement {
-  return {
-    text: `
+  return compileSql(sqlFragment`
       SELECT a.created_at,
              e.stage_id AS entry_stage_id,
              CASE WHEN es.id IS NULL THEN e.stage_name || ' (deleted)' ELSE es.name END AS entry_stage_name,
@@ -34,8 +35,6 @@ export function applicationTimelineStatement(applicationId: number): SqlStatemen
       FROM applications a
       JOIN application_entry_stage e ON e.application_id = a.id
       LEFT JOIN stages es ON es.id = e.stage_id
-      WHERE a.id = $1;
-    `,
-    params: [applicationId]
-  };
+      WHERE a.id = ${applicationId};
+    `);
 }

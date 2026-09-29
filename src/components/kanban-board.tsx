@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, ArrowRightLeft, Plus, Settings2, Trash2 } from "lucide-react";
 import { KIND_TONES, STAGE_TONES, isApplicationStale } from "@/lib/constants";
-import { daysSince, daysUntil } from "@/lib/timezone";
+import { daysSince, daysUntil, formatDateOnly, formatDay } from "@/lib/timezone";
 import { INTAKE_KIND, KIND_LABELS, isTerminalKind } from "@/lib/stage-kinds";
 import { Application, Stage } from "@/lib/types";
 import { useMiddleButtonPan } from "@/lib/use-middle-button-pan";
@@ -75,30 +75,12 @@ function CompanyLogo({ company, logoUrl, logoBgClass }: { company: string; logoU
   );
 }
 
-function formatInterviewDate(date: string) {
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (dateOnly) {
-    const [, year, month, day] = dateOnly;
-    return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(
-      new Date(Number(year), Number(month) - 1, Number(day))
-    );
-  }
-
-  return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(new Date(date));
-}
-
-// Rendered on the server and in the browser, so both the locale and the time
-// zone are pinned to avoid a hydration mismatch.
-function formatAppliedDate(isoDate: string, timeZone: string) {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone }).format(new Date(isoDate));
-}
-
 function formatAge(days: number) {
   return days <= 0 ? "today" : `${days}d ago`;
 }
 
 function formatInterviewLabel(date: string, timeZone: string, now: number) {
-  const formatted = formatInterviewDate(date);
+  const formatted = formatDateOnly(date);
   const until = daysUntil(date, timeZone, now);
   if (until === 0) {
     return `${formatted} · Today`;
@@ -264,8 +246,8 @@ function KanbanApplicationCard({
             {!isTerminalKind(app.stageKind) ? (
               <p className="text-xs text-muted-foreground/70">
                 {app.stageKind === INTAKE_KIND || app.appliedAt === null
-                  ? `Added ${formatAppliedDate(app.createdAt, timeZone)} · ${formatAge(daysSince(app.createdAt, now))}`
-                  : `Applied ${formatAppliedDate(app.appliedAt, timeZone)} · ${formatAge(daysSince(app.appliedAt, now))}`}
+                  ? `Added ${formatDay(app.createdAt, timeZone, { year: false })} · ${formatAge(daysSince(app.createdAt, now))}`
+                  : `Applied ${formatDay(app.appliedAt, timeZone, { year: false })} · ${formatAge(daysSince(app.appliedAt, now))}`}
               </p>
             ) : null}
             {app.sourceUrl ? (

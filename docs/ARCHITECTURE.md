@@ -247,7 +247,7 @@ src/
     db/                every query: index.ts (public API), client.ts, rows.ts,
                        stages.ts, applications.ts, sankey.ts, stats.ts, timeline.ts
     stage-statements.ts  the move and rename statements (no runtime imports)
-    application-statements.ts  read statements about one application, e.g. its timeline (no runtime imports)
+    application-statements.ts  read statements about one application, e.g. its timeline (imports only ./stage-statements.ts)
     stage-kinds.ts     lane kinds, rank, chart colours (no runtime imports)
     transitions.ts     reference rewind implementation
     sankey.ts          builds the Sankey graph as a DAG

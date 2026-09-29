@@ -203,29 +203,34 @@ export function EditApplicationDialog({
 }: EditApplicationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto" onCloseAutoFocus={onCloseAutoFocus}>
+      {/* Only the body scrolls, so the header and the close button stay in view. */}
+      <DialogContent className="flex max-h-[90vh] flex-col" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>Edit application</DialogTitle>
           <DialogDescription>Update details and interview planning for this application.</DialogDescription>
         </DialogHeader>
         {application ? (
-          <ApplicationTimeline
-            // A moved or edited card loads its path again.
-            key={`${application.id}-${application.stageId}-${application.updatedAt}`}
-            applicationId={application.id}
-            timeZone={timeZone}
-            now={now}
-          />
-        ) : null}
-        {application ? (
-          <EditApplicationForm
-            key={application.id}
-            application={application}
-            applications={applications}
-            stages={stages}
-            onOpenChange={onOpenChange}
-            onUpdated={onUpdated}
-          />
+          <div className="-mx-6 space-y-6 overflow-y-auto px-6">
+            <EditApplicationForm
+              key={application.id}
+              application={application}
+              applications={applications}
+              stages={stages}
+              onOpenChange={onOpenChange}
+              onUpdated={onUpdated}
+            />
+            {/* Below the form: the owner opens this dialog to edit, and the
+                form must not move when the history arrives. */}
+            <div className="border-t border-border/60 pt-4">
+              <ApplicationTimeline
+                // A moved or edited card loads its path again.
+                key={`${application.id}-${application.stageId}-${application.updatedAt}`}
+                applicationId={application.id}
+                timeZone={timeZone}
+                now={now}
+              />
+            </div>
+          </div>
         ) : null}
       </DialogContent>
     </Dialog>

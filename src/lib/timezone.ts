@@ -84,3 +84,29 @@ function localTodayDateOnly(now: number): string {
   const day = String(today.getDate()).padStart(2, "0");
   return `${today.getFullYear()}-${month}-${day}`;
 }
+
+// An instant as a day in the viewer's zone ("Sep 3, 2026", or "Sep 3" without
+// the year). Rendered on the server and in the browser, so locale and zone are
+// pinned.
+export function formatDay(isoInstant: string, timeZone: string, options: { year?: boolean } = {}): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(options.year === false ? {} : { year: "numeric" }),
+    timeZone
+  }).format(new Date(isoInstant));
+}
+
+// A DATE column ("2026-10-05") as "Oct 5, 2026". Built from its parts, never
+// parsed with new Date(string), which would read it as UTC midnight and show
+// the day before in zones west of UTC.
+export function formatDateOnly(date: string): string {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!dateOnly) {
+    return date;
+  }
+  const [, year, month, day] = dateOnly;
+  return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(
+    new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+  );
+}

@@ -42,8 +42,12 @@ beforeEach(async () => {
 
 const idOf = async (name) => (await sql`SELECT id FROM stages WHERE name = ${name}`)[0]?.id;
 
-async function createApp(stageName) {
-  const [row] = await sql`INSERT INTO applications (company, role, stage_id) VALUES ('Acme', 'Engineer', ${await idOf(stageName)}) RETURNING id`;
+async function createApp(stageName, createdAt = "2026-01-01T00:00:00.000Z") {
+  // A fixed creation time, earlier than any move, so a mix-up with updated_at
+  // or a move's time shows.
+  const [row] = await sql`
+    INSERT INTO applications (company, role, stage_id, created_at)
+    VALUES ('Acme', 'Engineer', ${await idOf(stageName)}, ${createdAt}) RETURNING id`;
   return row.id;
 }
 
@@ -78,6 +82,7 @@ test("forward moves add one lane each, in path order, with the move's time and t
   await move(app, "Interview");
   const payload = await timeline(app);
   assert.deepEqual(names(payload), ["Applied", "Screening", "Interview"]);
+  assert.equal(payload.lanes[0].enteredAt, "2026-01-01T00:00:00.000Z", "the entry lane is entered at creation");
   assert.equal(payload.lanes[2].stageKind, "interview");
   const moves = await sql`SELECT transitioned_at FROM application_transitions WHERE application_id = ${app} ORDER BY transitioned_at, id`;
   assert.deepEqual(payload.lanes.slice(1).map((lane) => lane.enteredAt), moves.map((row) => new Date(row.transitioned_at).toISOString()));
@@ -112,6 +117,27 @@ test("a renamed lane shows its new name; a deleted lane its old name, marked, wi
   const payload = await timeline(app);
   assert.deepEqual(names(payload), ["Applied", "Screening (deleted)", "Interviews", "Rejected"]);
   assert.deepEqual([payload.lanes[1].stageId, payload.lanes[1].stageKind], [null, null]);
+});
+
+test("each application gets only its own moves", async () => {
+  const first = await createApp("Applied");
+  const second = await createApp("Applied");
+  await move(first, "Screening");
+  await move(second, "Interview");
+  await move(second, "Rejected");
+  assert.deepEqual(names(await timeline(first)), ["Applied", "Screening"]);
+  assert.deepEqual(names(await timeline(second)), ["Applied", "Interview", "Rejected"]);
+});
+
+test("lanes are joined by id: a new lane that took a deleted lane's name does not claim its history", async () => {
+  const app = await createApp("Wishlist");
+  await move(app, "Applied");
+  await move(app, "Screening");
+  await sql`DELETE FROM stages WHERE name IN ('Wishlist', 'Applied')`;
+  await sql`INSERT INTO stages (name, sort_order, kind) VALUES ('Wishlist', 10, 'intake'), ('Applied', 11, 'active')`;
+  const payload = await timeline(app);
+  assert.deepEqual(names(payload), ["Wishlist (deleted)", "Applied (deleted)", "Screening"]);
+  assert.deepEqual(payload.lanes.slice(0, 2).map((lane) => [lane.stageId, lane.stageKind]), [[null, null], [null, null]]);
 });
 
 test("a deleted entry lane keeps its name, marked", async () => {

@@ -48,7 +48,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/db/`: all database access, through Neon's `sql` tagged template. `index.ts` is the public API; `client.ts` (connection, `transaction()`, error helpers, `ensureSchema`), `schema-version.ts` (`LATEST_MIGRATION`), `rows.ts` (mappers), `stages.ts`, `applications.ts`, `sankey.ts`, `stats.ts`, `timeline.ts`.
 - `src/lib/stage-kinds.ts`: lane kinds, pipeline rank, chart colours. No runtime imports, so the verify scripts can load it directly.
 - `src/lib/stage-statements.ts`: the SQL that moves cards and renames lanes, compiled to text and parameters. No runtime imports, so the tests run it on PGlite.
-- `src/lib/application-statements.ts`: read statements about one application (its timeline), as text and parameters. No runtime imports, so the tests run them on PGlite.
+- `src/lib/application-statements.ts`: read statements about one application (its timeline), built with `sqlFragment`. Its only runtime import is `./stage-statements.ts`, by relative path with the extension, so the tests still load it from Node and run it on PGlite.
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
 - `src/lib/sankey.ts`: builds the Sankey graph as a DAG.
 - `src/lib/auth.ts`: session tokens, credential check, `requireSession()`.
@@ -119,6 +119,7 @@ Use Node 24 LTS. The repo pins `24.16.0` in `.nvmrc` and `.node-version`, and `p
 - UI components follow shadcn/ui patterns and use `cn()` from `src/lib/utils.ts`.
 - Database columns are snake_case and TypeScript is camelCase. Queries return columns under their snake_case names (never alias to camelCase: Postgres folds unquoted aliases to lowercase), each query casts its result once to a row type (`ApplicationRow`, `StageRow` in `db/rows.ts`, or an inline type), and the mappers convert to camelCase. The Neon driver returns `numeric` (for example `AVG`) as a string.
 - Neon's `sql` tagged template parameterizes values. Never build SQL by string interpolation. Statements that tests must run on PGlite (see `stage-statements.ts`) are built with `sqlFragment` and `compileSql` instead, which parameterize the same way and nest.
+- Modules the tests load straight from Node (`stage-statements.ts`, `application-statements.ts`, `stage-kinds.ts`, `timezone.ts`, `db/rows.ts` and the like) may import only types through `@/`, and other such modules only by relative path with the `.ts` extension (`allowImportingTsExtensions` is on; nothing is emitted).
 - Use the kind names exported from `stage-kinds.ts` (`TERMINAL_KINDS`, `STALE_EXCLUDED_KINDS`, `RESOLVED_KINDS`, `INTERVIEW_KIND`, `DEFAULT_CREATE_KIND`) in queries and components instead of writing the literals.
 - Comments explain why a thing is done, not what the code does.
 

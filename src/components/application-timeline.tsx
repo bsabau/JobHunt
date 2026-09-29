@@ -2,16 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { colorFor, isTerminalKind } from "@/lib/stage-kinds";
-import { daysSince } from "@/lib/timezone";
+import { daysSince, formatDay } from "@/lib/timezone";
 import type { TimelineLane, TimelinePayload } from "@/lib/types";
 
 type State = { status: "loading" } | { status: "error" } | { status: "ready"; lanes: TimelineLane[] };
-
-function formatDay(isoDate: string, timeZone: string) {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone }).format(
-    new Date(isoDate)
-  );
-}
 
 function formatDays(days: number) {
   return days < 1 ? "under a day" : days === 1 ? "1 day" : `${days} days`;
@@ -19,7 +13,8 @@ function formatDays(days: number) {
 
 // How long the card sat in a lane: until it entered the next one, or until
 // `now` for the lane it is in. `now` is the page's clock, as everywhere on the
-// board, so the server render and hydration agree.
+// board, so the server render and hydration agree. Whole days, rounded down per
+// lane, so the lanes need not add up to the card's age.
 function timeInLane(lanes: TimelineLane[], index: number, now: number) {
   const next = lanes[index + 1];
   return daysSince(lanes[index].enteredAt, next ? Date.parse(next.enteredAt) : now);

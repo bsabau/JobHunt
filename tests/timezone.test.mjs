@@ -3,6 +3,8 @@ import {
   daysBetweenDateOnly,
   daysSince,
   daysUntil,
+  formatDateOnly,
+  formatDay,
   isValidTimeZone,
   normalizeTimeZone,
   todayInTimeZone
@@ -50,5 +52,12 @@ assert.equal(daysSince("not a date", now), 0);
 assert.equal(daysUntil("2026-09-15", "UTC", now), 0);
 assert.equal(daysUntil("2026-09-15", "America/Los_Angeles", now), 1);
 assert.equal(daysUntil("2026-09-14", "Pacific/Auckland", now), -1);
+
+// Days are shown in the viewer's zone; a DATE is never shifted by a zone.
+assert.equal(formatDay("2026-09-15T06:30:00.000Z", "UTC"), "Sep 15, 2026");
+assert.equal(formatDay("2026-09-15T06:30:00.000Z", "America/Los_Angeles"), "Sep 14, 2026");
+assert.equal(formatDay("2026-09-15T06:30:00.000Z", "UTC", { year: false }), "Sep 15");
+assert.equal(formatDateOnly("2026-10-05"), "Oct 5, 2026");
+assert.equal(formatDateOnly("2026-01-01"), "Jan 1, 2026");
 
 console.log("Timezone checks passed.");
