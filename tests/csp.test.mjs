@@ -24,3 +24,15 @@ test("every logo host the lookup may store is allowed as an image source", () =>
     assert.ok(images.includes(`https://${host}`), `${host} is missing from img-src`);
   }
 });
+
+// Vercel applies these headers to the incoming request too, where a CSP would
+// replace the one the proxy hands Next and strip the nonce from its scripts.
+test("next.config.ts sets no Content-Security-Policy header", async () => {
+  const { default: config } = await import("../next.config.ts");
+  for (const rule of await config.headers()) {
+    for (const header of rule.headers) {
+      assert.doesNotMatch(header.key, /^content-security-policy/i, `${rule.source} sets ${header.key}`);
+    }
+    assert.ok(rule.headers.some((header) => header.key === "X-Frame-Options"), "framing must stay refused");
+  }
+});
