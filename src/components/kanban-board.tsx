@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { AddApplicationDialog } from "@/components/add-application-dialog";
 import { ApplicationSearch } from "@/components/application-search";
-import { BoardFilter, useHideOutcomeLanes } from "@/components/board-filter";
+import { BOARD_FILTER_ID, BoardFilter, HIDE_OUTCOME_LANES_ID, useHideOutcomeLanes } from "@/components/board-filter";
 import { isLaneHidden, matchesBoardFilter } from "@/lib/board-filter";
 import { EditApplicationDialog } from "@/components/edit-application-dialog";
 import { ApplicationDetailsDialog } from "@/components/application-details-dialog";
@@ -295,6 +295,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
   const [hideOutcomeLanes, setHideOutcomeLanes] = useHideOutcomeLanes();
+  const [scrollRequest, setScrollRequest] = useState<{ id: number; seq: number } | null>(null);
 
   // The card dialogs open without a trigger element, so Radix has nowhere to
   // return focus; put it back on the card so the keyboard user keeps their place.
@@ -305,6 +306,9 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     if (card) {
       event.preventDefault();
       card.focus();
+    } else if (editingApplication && whyNotShown(editingApplication)) {
+      event.preventDefault();
+      focusWhatHides(editingApplication);
     }
   }
   const [draggedItem, setDraggedItem] = useState<DragItem>(null);
@@ -340,6 +344,8 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
 
   // A search result may sit behind the filter or in a hidden lane: clear what
   // hides it, then scroll once the board has re-rendered with it (the effect).
+  // Every selection is a new request, so choosing the same card twice scrolls
+  // twice.
   function focusApplication(app: Application) {
     if (!matchesBoardFilter(app, filterQuery)) {
       setFilterQuery("");
@@ -348,15 +354,44 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
       setHideOutcomeLanes(false);
     }
     setHighlightedId(app.id);
+    setScrollRequest((current) => ({ id: app.id, seq: (current?.seq ?? 0) + 1 }));
   }
 
   useEffect(() => {
-    if (highlightedId === null) {
+    if (scrollRequest === null) {
       return;
     }
-    const card = scrollRef.current?.querySelector<HTMLElement>(`[data-application-id="${highlightedId}"]`);
+    const card = scrollRef.current?.querySelector<HTMLElement>(`[data-application-id="${scrollRequest.id}"]`);
     card?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
-  }, [highlightedId]);
+  }, [scrollRequest]);
+
+  // Why a saved card is not on the board, or null when it is.
+  function whyNotShown(app: Application): "hidden-lane" | "filter" | null {
+    if (isLaneHidden(app.stageKind, hideOutcomeLanes)) return "hidden-lane";
+    if (!matchesBoardFilter(app, filterQuery)) return "filter";
+    return null;
+  }
+
+  // After a move, an edit or a new card: a card that lands out of sight says
+  // where it went, so it does not seem to vanish.
+  function explainIfNotShown(app: Application) {
+    const reason = whyNotShown(app);
+    if (reason === "hidden-lane") {
+      toast(`${app.company} is in ${app.stageName}, which is hidden. Untick "Hide outcome lanes" to see it.`);
+    } else if (reason === "filter") {
+      toast(`${app.company} does not match the filter, so it is not shown. Clear the filter to see it.`);
+    }
+  }
+
+  // Where focus goes when the card it belonged to is out of sight: the control
+  // that hides it.
+  function focusWhatHides(app: Application | undefined) {
+    const reason = app ? whyNotShown(app) : null;
+    const target = reason === "hidden-lane" ? HIDE_OUTCOME_LANES_ID : reason === "filter" ? BOARD_FILTER_ID : null;
+    if (target) {
+      document.getElementById(target)?.focus();
+    }
+  }
 
   const visibleStages = useMemo(
     () => stages.filter((stage) => !isLaneHidden(stage.kind, hideOutcomeLanes)),
@@ -382,7 +417,13 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
     }
     return result;
   }, [grouped, filtering, filterQuery]);
-  const matchingCount = filtering ? applications.filter((app) => matchesBoardFilter(app, filterQuery)).length : applications.length;
+  // Counted over the lanes on screen, so the line agrees with the board; matches
+  // in hidden lanes are reported apart.
+  const onScreen = applications.filter((app) => !isLaneHidden(app.stageKind, hideOutcomeLanes));
+  const matchingCount = onScreen.filter((app) => matchesBoardFilter(app, filterQuery)).length;
+  const hiddenMatchingCount = applications.length - onScreen.length === 0
+    ? 0
+    : applications.filter((app) => isLaneHidden(app.stageKind, hideOutcomeLanes) && matchesBoardFilter(app, filterQuery)).length;
 
   // Reloads cards and lanes from the server. On failure the board is known to
   // be out of date, so say so and offer a full reload.
@@ -448,16 +489,19 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
       const updated = (await response.json()) as Application;
       setApplications((current) => current.map((item) => (item.id === id ? updated : item)));
       if (options.refocus) {
-        refocusCardId.current = id;
+        // A card that lands out of sight cannot take focus back; the control
+        // that hides it can, and it is always on the page.
+        if (whyNotShown(updated)) {
+          focusWhatHides(updated);
+        } else {
+          refocusCardId.current = id;
+        }
       }
 
       if (fromStage && toStage && fromStage.id !== toStage.id) {
         trackApplicationMoved({ fromStageKind: fromStage.kind, toStageKind: toStage.kind });
       }
-      // The menu lists every lane, hidden ones included; say where the card went.
-      if (toStage && isLaneHidden(toStage.kind, hideOutcomeLanes)) {
-        toast(`Moved to ${toStage.name}, which is hidden. Untick "Hide outcome lanes" to see it.`);
-      }
+      explainIfNotShown(updated);
     } finally {
       pendingMoveIdsRef.current.delete(id);
       setPendingMoveIds((current) => current.filter((pendingId) => pendingId !== id));
@@ -637,7 +681,8 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
             hideOutcomeLanes={hideOutcomeLanes}
             onHideOutcomeLanesChange={setHideOutcomeLanes}
             matching={matchingCount}
-            total={applications.length}
+            total={onScreen.length}
+            hiddenMatching={hiddenMatchingCount}
           />
         </div>
         {!readOnly && (
@@ -649,7 +694,10 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
             <AddApplicationDialog
               stages={stages}
               applications={applications}
-              onCreated={(app) => setApplications((current) => [app, ...current])}
+              onCreated={(app) => {
+                setApplications((current) => [app, ...current]);
+                explainIfNotShown(app);
+              }}
             />
           </div>
         )}
@@ -796,6 +844,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
             onUpdated={(updated) => {
               setApplications((current) => current.map((item) => (item.id === updated.id ? updated : item)));
               setEditingApplication(updated);
+              explainIfNotShown(updated);
             }}
             timeZone={timeZone}
             now={now}

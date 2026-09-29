@@ -17,7 +17,7 @@ test("an empty filter matches every card", () => {
   assert.equal(matchesBoardFilter(card, "   "), true);
 });
 
-test("the filter never looks at notes", () => {
+test("a card is not matched by its notes (a guard against adding them)", () => {
   assert.equal(matchesBoardFilter({ ...card, notes: "referral from a friend" }, "referral"), false);
 });
 
