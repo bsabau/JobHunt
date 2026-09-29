@@ -40,8 +40,8 @@ function isLane(id: number | null | undefined, name: string, lane: StageOrder): 
 //   - every edge before the first one that reaches or passes the target is kept;
 //   - if that boundary edge lands exactly on the target, it is kept with its
 //     original timestamp (this is what preserves the earliest interview date);
-//   - otherwise a reconnect edge `last_kept → target` is added, where
-//     `last_kept` falls back to the entry stage;
+//   - otherwise a reconnect edge `last_kept → target` is added with the
+//     boundary's timestamp, where `last_kept` falls back to the entry stage;
 //   - when the target sorts before the entry stage, the history is cleared.
 // Edges into a deleted lane are skipped when looking for the boundary.
 export function rewindTransitionPath(

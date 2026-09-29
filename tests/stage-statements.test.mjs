@@ -125,6 +125,14 @@ async function move(appId, toName) {
 
   const afterMove = await history(appId);
   assert.deepEqual(idShape(afterMove), idShape(expected), `SQL and rewindTransitionPath() disagree on ${fromName} -> ${toName}`);
+  if (expected.every((t) => t.transitionedAt)) {
+    // Rewinds keep or reuse existing timestamps, so those must agree too.
+    assert.deepEqual(
+      afterMove.map((t) => t.transitionedAt),
+      expected.map((t) => t.transitionedAt),
+      `SQL and rewindTransitionPath() disagree on timestamps for ${fromName} -> ${toName}`
+    );
+  }
   return { before: beforeMove, after: afterMove };
 }
 
@@ -158,6 +166,7 @@ describe("stage move statement", () => {
     const { after: path } = await move(app, "Interview");
     assert.deepEqual(shape(path), ["Applied->Interview"]);
     assert.notEqual(path[0].id, skipped.id);
+    assert.equal(path[0].transitionedAt, skipped.transitionedAt, "the reconnect edge keeps the boundary's time");
   });
 
   test("a rewind to the entry lane leaves no edges", async () => {

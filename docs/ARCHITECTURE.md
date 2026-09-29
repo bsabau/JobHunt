@@ -184,14 +184,14 @@ The rule is implemented twice and the two must stay in step:
 - **Rewind** (target ranks below the current lane):
   - keep every edge before the first one that reaches or passes the target;
   - if that boundary edge lands exactly on the target, keep it with its original timestamp;
-  - otherwise replace it with `last kept lane -> target`;
+  - otherwise replace it with `last kept lane -> target`, keeping the boundary's timestamp;
   - if the target ranks below the lane the application entered in, clear the path.
 
 There is no row for creation. The **entry lane** is derived, in one place: the view `application_entry_stage` gives where the earliest transition starts (`from_stage_id`, `from_status`), or the current lane when there are none. The move statement, the Sankey and the funnel all read it. When the entry lane is deleted the id is `NULL` and the name remains.
 
 Edges refer to lanes by id. An edge into a deleted lane (id `NULL`) is skipped when looking for the rewind boundary.
 
-The reference implementation is `rewindTransitionPath()` in `src/lib/transitions.ts`. The production implementation is the single SQL statement built by `stageMoveStatement()` in `src/lib/stage-statements.ts`, which also applies the `expectedStageId` guard so that a concurrent move produces a 409 instead of forked history. `tests/stage-statements.test.mjs` runs that statement on PGlite and checks every scenario, ids included, against the TypeScript version.
+The reference implementation is `rewindTransitionPath()` in `src/lib/transitions.ts`. The production implementation is the single SQL statement built by `stageMoveStatement()` in `src/lib/stage-statements.ts`, which also applies the `expectedStageId` guard so that a concurrent move produces a 409 instead of forked history. `tests/stage-statements.test.mjs` runs that statement on PGlite and checks every scenario, lane ids and rewind timestamps included, against the TypeScript version.
 
 ### Lane ids, names and renames
 
