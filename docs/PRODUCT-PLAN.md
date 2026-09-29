@@ -292,6 +292,12 @@ Done in PR #32:
 - The advance rates equal 100 minus the old drop-off percentages, for every pair the old chart showed on `dev`.
 - The page has two fewer charts and the reached counts are unchanged.
 
+Done in PR #33:
+
+- `buildFunnel()` in the new `src/lib/funnel.ts` ranks the lanes with `compareStageRank()` and gives each pipeline lane the share that went on to the next one, with the drop-off chart's rules: none for outcome lanes, the last pipeline lane, a lane nobody reached, or when the next lane was reached by more. Tested in `tests/funnel.test.mjs`.
+- One chart, "How Far Applications Got": a bar per lane with "30 · 13.3% on" beside it and the full sentence in the tooltip. It sits next to "Applications by Stage". "Pipeline Drop-off" and "Stage-to-Stage Conversion" are gone, with `stagePairs` and its query; per-pair detail stays on `/sankey`.
+- On `dev`, for all five pairs the old drop-off chart showed, the new share plus the old drop-off is exactly 100, and the reached counts are unchanged.
+
 ### 2.3 Applications over time, by week (R-2)
 
 **Goal:** a chart that stays readable once the total grows.

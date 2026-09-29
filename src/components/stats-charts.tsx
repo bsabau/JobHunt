@@ -8,15 +8,17 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { StageKind, StatsPayload } from "@/lib/types";
+import { StatsPayload } from "@/lib/types";
 import { daysUntil } from "@/lib/timezone";
-import { KIND_COLORS, KIND_LABELS, RESOLVED_KINDS, ResolvedKind, colorFor, compareStageRank, isTerminalKind } from "@/lib/stage-kinds";
+import { KIND_COLORS, KIND_LABELS, RESOLVED_KINDS, ResolvedKind, colorFor } from "@/lib/stage-kinds";
+import { buildFunnel } from "@/lib/funnel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 function formatDate(value: string): string {
@@ -105,76 +107,28 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
 
   // Pipeline rank of every current stage: outcome lanes come after the
   // pipeline wherever they sit on the board. History-only names rank last.
-  const rankedFunnel = useMemo(() => [...data.funnel].sort(compareStageRank), [data.funnel]);
+  const rankedFunnel = useMemo(() => buildFunnel(data.funnel), [data.funnel]);
   const stageRank = useMemo(
     () => new Map(rankedFunnel.map((row, index) => [row.stage, index])),
     [rankedFunnel]
   );
-
-  const conversionData = useMemo(() => {
-    const reachedMap = new Map<string, number>();
-    const kindMap = new Map<string, StageKind>();
-    for (const f of data.funnel) {
-      reachedMap.set(f.stage, f.reached);
-      kindMap.set(f.stage, f.kind);
-    }
-    const rows: { transition: string; rate: number; fill: string; fromSort: number; toSort: number }[] = [];
-    for (const p of data.stagePairs ?? []) {
-      const fromReached = reachedMap.get(p.from) ?? 0;
-      if (fromReached === 0) continue;
-      const rate = Math.round((p.count / fromReached) * 1000) / 10;
-      rows.push({
-        transition: `${p.from} → ${p.to}`,
-        rate,
-        fill: colorFor(p.to, kindMap.get(p.to)),
-        fromSort: stageRank.get(p.from) ?? Number.MAX_SAFE_INTEGER,
-        toSort: stageRank.get(p.to) ?? Number.MAX_SAFE_INTEGER,
-      });
-    }
-    rows.sort((a, b) => a.fromSort - b.fromSort || a.toSort - b.toSort);
-    return rows;
-  }, [data.funnel, data.stagePairs, stageRank]);
 
   const timeSeriesData = useMemo(
     () => data.applicationsOverTime.map((row) => ({ ...row, label: formatDate(row.date) })),
     [data.applicationsOverTime]
   );
 
+  // The label beside each bar: the count, and for a pipeline lane the share
+  // that went on to the next one.
   const funnelData = useMemo(
-    () => rankedFunnel.map((row) => ({ ...row, fill: colorFor(row.stage, row.kind) })),
+    () =>
+      rankedFunnel.map((row) => ({
+        ...row,
+        fill: colorFor(row.stage, row.kind),
+        label: row.advanced === null ? `${row.reached}` : `${row.reached} · ${row.advanced}% on`
+      })),
     [rankedFunnel]
   );
-
-  const dropOffData = useMemo(() => {
-    const pipeline = rankedFunnel.filter((row) => !isTerminalKind(row.kind));
-
-    const rows: {
-      transition: string;
-      dropOffPct: number;
-      dropped: number;
-      reachedFrom: number;
-      fill: string;
-    }[] = [];
-
-    for (let i = 0; i < pipeline.length - 1; i++) {
-      const from = pipeline[i];
-      const to = pipeline[i + 1];
-      if (from.reached <= 0 || to.reached > from.reached) {
-        continue;
-      }
-      const dropped = from.reached - to.reached;
-      const dropOffPct = Math.round((dropped / from.reached) * 1000) / 10;
-      rows.push({
-        transition: `${from.stage} → ${to.stage}`,
-        dropOffPct,
-        dropped,
-        reachedFrom: from.reached,
-        fill: colorFor(to.stage, to.kind, i + 1)
-      });
-    }
-
-    return rows;
-  }, [rankedFunnel]);
 
   // One row per stage applications left to reach an outcome, stacked by the
   // kind of outcome: shows where in the process applications end.
@@ -403,99 +357,41 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
 
             <Card>
               <CardHeader>
-                <CardTitle>Stage-to-Stage Conversion</CardTitle>
+                <CardTitle>How Far Applications Got</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Applications that reached each lane, and the share that went on to the next pipeline lane.
+                </p>
               </CardHeader>
               <CardContent className="h-[320px]">
-                {conversionData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
-                    <BarChart
-                      data={conversionData}
-                      layout="vertical"
-                      margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
-                    >
-                      <CartesianGrid stroke="rgba(148,163,184,0.15)" horizontal={false} />
-                      <XAxis
-                        type="number"
-                        domain={[0, 100]}
-                        unit="%"
-                        tick={{ fontSize: 12, fill: "#94a3b8" }}
-                      />
-                      <YAxis
-                        type="category"
-                        dataKey="transition"
-                        width={140}
-                        tick={{ fontSize: 12, fill: "#94a3b8" }}
-                      />
-                      <Tooltip
-                        cursor={{ fill: "rgba(148,163,184,0.08)" }}
-                        contentStyle={tooltipStyle}
-                        itemStyle={cellTooltipItemStyle}
-                        formatter={(value) => [`${value}%`, "Conversion"]}
-                      />
-                      <Bar dataKey="rate" radius={[0, 6, 6, 0]}>
-                        {conversionData.map((row) => (
-                          <Cell key={row.transition} fill={row.fill} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    Need at least two stages to compute conversion.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Pipeline Drop-off</CardTitle>
-            </CardHeader>
-            <CardContent className="h-[320px]">
-              {dropOffData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
-                  <BarChart
-                    data={dropOffData}
-                    layout="vertical"
-                    margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
-                  >
+                  <BarChart data={funnelData} layout="vertical" margin={{ top: 8, right: 96, left: 8, bottom: 8 }}>
                     <CartesianGrid stroke="rgba(148,163,184,0.15)" horizontal={false} />
-                    <XAxis
-                      type="number"
-                      domain={[0, 100]}
-                      unit="%"
-                      tick={{ fontSize: 12, fill: "#94a3b8" }}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="transition"
-                      width={140}
-                      tick={{ fontSize: 12, fill: "#94a3b8" }}
-                    />
+                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
+                    <YAxis type="category" dataKey="stage" width={90} tick={{ fontSize: 12, fill: "#94a3b8" }} />
                     <Tooltip
                       cursor={{ fill: "rgba(148,163,184,0.08)" }}
                       contentStyle={tooltipStyle}
                       itemStyle={cellTooltipItemStyle}
                       formatter={(value, _name, item) => {
-                        const row = item.payload as (typeof dropOffData)[number];
-                        return [`${value}% (${row.dropped} of ${row.reachedFrom} did not advance)`, "Drop-off"];
+                        const row = item.payload as (typeof funnelData)[number];
+                        return [
+                          row.advanced === null ? `${value}` : `${value}, ${row.advanced}% went on to the next lane`,
+                          "Reached"
+                        ];
                       }}
                     />
-                    <Bar dataKey="dropOffPct" radius={[0, 6, 6, 0]}>
-                      {dropOffData.map((row) => (
-                        <Cell key={row.transition} fill={row.fill} />
+                    <Bar dataKey="reached" radius={[0, 6, 6, 0]}>
+                      {funnelData.map((row) => (
+                        <Cell key={row.stage} fill={row.fill} />
                       ))}
+                      <LabelList dataKey="label" position="right" style={{ fontSize: 12, fill: "#94a3b8" }} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  Need at least two pipeline stages to compute drop-off.
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
+
 
           <Card>
             <CardHeader>
@@ -546,39 +442,6 @@ export function StatsCharts({ data, timeZone, now }: { data: StatsPayload; timeZ
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Funnel: Stages Visited</CardTitle>
-            </CardHeader>
-            <CardContent className="h-[320px]">
-              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
-                <BarChart
-                  data={funnelData}
-                  layout="vertical"
-                  margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
-                >
-                  <CartesianGrid stroke="rgba(148,163,184,0.15)" horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
-                  <YAxis
-                    type="category"
-                    dataKey="stage"
-                    width={90}
-                    tick={{ fontSize: 12, fill: "#94a3b8" }}
-                  />
-                  <Tooltip
-                    cursor={{ fill: "rgba(148,163,184,0.08)" }}
-                    contentStyle={tooltipStyle}
-                    itemStyle={cellTooltipItemStyle}
-                  />
-                  <Bar dataKey="reached" radius={[0, 6, 6, 0]}>
-                    {funnelData.map((row) => (
-                      <Cell key={row.stage} fill={row.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
 
           {data.topCompanies.some((row) => row.count > 1) && (
             <Card>

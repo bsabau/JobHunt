@@ -15,7 +15,6 @@ type StatsRows = [
   { day: string; count: number }[],
   { company: string; count: number }[],
   { stage_id: number; count: number }[],
-  { from_stage: string; to_stage: string; count: number }[],
   { company: string; role: string; interview_date: string; stage_name: string }[],
   { company: string; role: string; stage_name: string; days_since_update: number }[],
   { outcome_stage: string; kind: StageKind; from_stage: string | null; count: number }[]
@@ -39,7 +38,6 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     createdByDayRows,
     topCompanyRows,
     reachedRows,
-    stagePairRows,
     upcomingInterviewRows,
     staleApplicationRows,
     outcomeRows,
@@ -90,15 +88,6 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       ) visits
       WHERE stage_id IS NOT NULL
       GROUP BY stage_id;
-    `,
-    tx`
-      -- Moves between current lanes, labelled with their current names.
-      SELECT fs.name AS from_stage, ts.name AS to_stage,
-             COUNT(DISTINCT t.application_id)::int AS count
-      FROM application_transitions t
-      JOIN stages fs ON fs.id = t.from_stage_id
-      JOIN stages ts ON ts.id = t.to_stage_id
-      GROUP BY fs.id, fs.name, ts.id, ts.name;
     `,
     tx`
       SELECT a.company, a.role,
@@ -194,8 +183,6 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     kind: stage.kind
   }));
 
-  const stagePairs = stagePairRows.map((row) => ({ from: row.from_stage, to: row.to_stage, count: row.count }));
-
   const upcomingInterviews = upcomingInterviewRows.map((row) => ({
     company: row.company,
     role: row.role,
@@ -239,7 +226,6 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     applicationsOverTime,
     topCompanies,
     funnel,
-    stagePairs,
     upcomingInterviews,
     staleApplications,
     outcomes,

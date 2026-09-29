@@ -70,7 +70,6 @@ export interface StatsPayload {
   applicationsOverTime: { date: string; created: number; cumulative: number }[];
   topCompanies: { company: string; count: number }[];
   funnel: { stage: string; reached: number; sortOrder: number; kind: StageKind }[];
-  stagePairs: { from: string; to: string; count: number }[];
   upcomingInterviews: { company: string; role: string; interviewDate: string; stageName: string }[];
   staleApplications: { company: string; role: string; stageName: string; daysSinceUpdate: number }[];
   // Where applications that reached an outcome lane (offer, rejected, closed)
