@@ -155,7 +155,7 @@ Phase 2 result:
 - The header comment for the first migration went to `docs/ARCHITECTURE.md` instead, because `AGENTS.md` forbids editing applied migrations.
 - Catalog check on a copy of production against a fresh database: columns, constraints and indexes identical. The only difference is that PGlite runs Postgres 18, which records `NOT NULL` as constraint rows; Neon runs 17.
 - Review by Fable (PR #10) led to: constraint guards scoped to their table; the no-self-loop check moved from `1730000009000` into `1730000010000`, after the rows that would violate it (including legacy `created -> created`) are deleted; a failing `ROLLBACK` no longer hides the original error; tests for re-running the migrations and for the lock's re-check. Both migration files were edited before merge while applied only to `dev`, where the result is identical.
-- Applied to the `dev` branch. Production still needs `npm run migrate:prod` after merge.
+- Applied to `dev`, then to production with `npm run migrate:prod` on 2026-09-29 after PR #10 merged. Before: no rows violated the new constraints. After: data unchanged (9 lanes, 30 applications, 35 transitions), only the four app tables remain, and the schema matches `dev` exactly.
 
 ---
 
