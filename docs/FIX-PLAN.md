@@ -204,6 +204,16 @@ The entry event is cheap and recommended. The append-only log is a product decis
 
 **Done when:** a lane can be renamed from the board and the stats, Sankey and staleness figures are unchanged by the rename.
 
+Phase 3 result (3.1 to 3.4; 3.5 is left for its own PR):
+
+- Migration `1730000011000` adds the id columns (`ON DELETE SET NULL`), fills them by name and indexes both. Dual write and switched reads ship together rather than in three deploys: this app has one writer, and the migration runs right before the merge.
+- `stageMoveStatement()` (moved with the new `stageUpdateStatement()` to `src/lib/stage-statements.ts`) writes both ids and names and finds the entry lane, the boundary and the last kept lane by id. `rewindTransitionPath()` matches by id when a record has one; the tests compare ids as well as names.
+- Reads that join history to lanes use ids. Labels keep the stored names, which a rename rewrites. The Sankey query now has a fixed order, since a rename's `UPDATE` reordered its links.
+- Rename (decision 2: rewrites stored names) is one statement. 409 on a case-insensitive duplicate.
+- Verified on `dev`: all 35 edges backfilled with matching names; renaming a lane rewrote its 8 edges and left the Sankey payload identical apart from the name.
+- Review by Fable (PR #12) led to: charts (Sankey, funnel, conversion pairs, outcomes) grouped by lane id with labels from the live lane, deleted lanes shown as "(deleted)"; the no-self-loop check compares ids (`1730000012000`), so a rewind onto a re-created lane keeps an edge into it; a rewind without a resolvable boundary adds no edge, as in the twin; the backfill's re-run caveat documented. On `dev`, the id-based funnel and pairs equal the old name-based ones.
+- Production runbook: move no cards from step 1 to step 3. (1) `npm run migrate:prod`; the previous code keeps working, but any card it moves gets edges without ids. (2) Merge, and wait for the deploy. (3) Read-only check that no edge has a NULL id while its name matches a live lane. If some do, add a migration that repeats the backfill and apply it at once. That migration must first delete edges with `from_stage_id IS NULL`, a set `to_stage_id`, and a `from_status` equal to that lane's name: a rewind of such a card before the backfill writes `X (no id) -> X`, which the backfill would turn into `X -> X` and the distinct-lanes check would reject. A backfill migration in this PR would not help: `migrate:prod` applies all pending files together, before the deploy.
+
 ---
 
 ## Phase 4: restructure the data layer

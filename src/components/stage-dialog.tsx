@@ -23,8 +23,7 @@ const KIND_OPTIONS: StageKind[] = ["active", "interview", "offer", "rejected", "
 interface StageDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  // null adds a new lane; a stage edits that lane's type (names are fixed
-  // because the history references stages by name).
+  // null adds a new lane; a stage edits that lane's name and type.
   stage: Stage | null;
   onSaved: (stage: Stage, mode: "add" | "edit") => void;
 }
@@ -49,7 +48,7 @@ function StageForm({
   onSaved: StageDialogProps["onSaved"];
   onClose: () => void;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(stage?.name ?? "");
   const [kind, setKind] = useState<StageKind>(stage?.kind ?? "active");
   const [loading, setLoading] = useState(false);
 
@@ -62,7 +61,8 @@ function StageForm({
         ? await fetch(`/api/stages/${stage.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ kind })
+            // Only what changed, so an unchanged name never trips the unique check.
+            body: JSON.stringify({ ...(name.trim() !== stage.name ? { name } : {}), kind })
           })
         : await fetch("/api/stages", {
             method: "POST",
@@ -88,27 +88,25 @@ function StageForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{stage ? `Lane type: ${stage.name}` : "Add a stage"}</DialogTitle>
+        <DialogTitle>{stage ? `Edit lane: ${stage.name}` : "Add a stage"}</DialogTitle>
         <DialogDescription>
           The type decides how the lane counts in stats. Rejected and closed lanes are outcomes: their cards never go
           stale and moving a card into them keeps its history, wherever the lane sits on the board.
         </DialogDescription>
       </DialogHeader>
       <form className="space-y-4" onSubmit={onSubmit}>
-        {!stage && (
-          <div className="space-y-2">
-            <Label htmlFor="stageName">Name</Label>
-            <Input
-              id="stageName"
-              value={name}
-              placeholder="Interview Round 2"
-              onChange={(e) => setName(e.target.value)}
-              maxLength={TEXT_LIMITS.stageName}
-              required
-              autoFocus
-            />
-          </div>
-        )}
+        <div className="space-y-2">
+          <Label htmlFor="stageName">Name</Label>
+          <Input
+            id="stageName"
+            value={name}
+            placeholder="Interview Round 2"
+            onChange={(e) => setName(e.target.value)}
+            maxLength={TEXT_LIMITS.stageName}
+            required
+            autoFocus
+          />
+        </div>
         <div className="space-y-2">
           <Label>Type</Label>
           <Select value={kind} onValueChange={(value) => setKind(value as StageKind)}>
@@ -129,7 +127,7 @@ function StageForm({
           </Select>
         </div>
         <DialogFooter>
-          <Button type="submit" disabled={loading || (!stage && !name.trim())}>
+          <Button type="submit" disabled={loading || !name.trim()}>
             {loading ? "Saving..." : stage ? "Save" : "Add stage"}
           </Button>
         </DialogFooter>

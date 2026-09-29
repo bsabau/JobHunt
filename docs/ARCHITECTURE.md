@@ -46,7 +46,7 @@ All bodies are JSON and must be sent with `Content-Type: application/json` (415 
 | `PATCH /api/applications/:id/status` | `stageId`, `expectedStageId` | The drag-and-drop move. 409 if the card moved |
 | `GET /api/stages` | | |
 | `POST /api/stages` | `name`, optional `kind` | 409 on duplicate name. `new` and `created` are reserved |
-| `PATCH /api/stages/:id` | `kind` | Only the kind is editable, see "Why lanes cannot be renamed" |
+| `PATCH /api/stages/:id` | `name` and/or `kind` | A rename also rewrites the lane's names in history. 409 on a duplicate name (case-insensitive) |
 | `DELETE /api/stages/:id` | | 409 while the lane holds applications |
 | `PATCH /api/stages/reorder` | `stageIds` | Must list every lane exactly once |
 | `GET /api/sankey` | | |
@@ -105,7 +105,9 @@ application_transitions
   id              SERIAL PK
   application_id  INTEGER NOT NULL -> applications(id) ON DELETE CASCADE
   from_status     TEXT NOT NULL     -- a stage NAME, not an id
-  to_status       TEXT NOT NULL     -- a stage NAME, not an id; <> from_status
+  to_status       TEXT NOT NULL     -- the lane's name
+  from_stage_id   INTEGER -> stages(id) ON DELETE SET NULL
+  to_stage_id     INTEGER -> stages(id) ON DELETE SET NULL   -- <> from_stage_id when both are set
   transitioned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
 schema_migrations
@@ -113,7 +115,7 @@ schema_migrations
   applied_at  TIMESTAMPTZ
 ```
 
-Indexes beyond the primary keys and unique constraints: `application_transitions (application_id, transitioned_at, id)`, which serves the first/latest-transition subqueries in both directions, and `applications (stage_id)`.
+Indexes beyond the primary keys and unique constraints: `application_transitions (application_id, transitioned_at, id)`, which serves the first/latest-transition subqueries in both directions; `application_transitions (to_stage_id)` and `(from_stage_id)`; and `applications (stage_id)`.
 
 "Not blank" means `CHECK (btrim(col) <> '')`. The constraints repeat what the API validates, so a script cannot store what the app would not.
 
@@ -123,7 +125,9 @@ Migration notes:
 - `1730000001000` (adds `interview_date`) is a no-op on a fresh database, because the first migration was later edited to create the column.
 - `1730000002000` rewrote history using raw `sort_order`, before outcome lanes ranked last. It must never run again on current data, which `schema_migrations` guarantees.
 - `1730000007000` dropped `application_transitions_backup` and `pgmigrations`; production's rows were exported first to a local, uncommitted `backups/` file.
-- `1730000010000` deletes legacy `created` rows and any self-loop rows before adding the no-self-loop check.
+- `1730000010000` deletes legacy `created` rows and any self-loop rows before adding the no-self-loop check. It must run only once: since `1730000012000`, an edge from a deleted lane into a new lane of the same name is legitimate, and a re-run would delete it.
+- `1730000011000` adds `from_stage_id` / `to_stage_id` and fills them by name; names with no lane stay `NULL`. It must run only once: after a lane is deleted and another created under its name, a re-run would attach the old history to the new lane.
+- `1730000012000` replaces the name-based no-self-loop check with `application_transitions_distinct_lanes`, which compares ids, so a move from a deleted lane into a new lane of the same name can be stored.
 - The runner serialises concurrent runs with `pg_advisory_xact_lock` inside each migration's transaction, then re-checks `schema_migrations`. A session-level lock would not survive Neon's transaction pooler.
 
 ### Lane kinds
@@ -151,7 +155,7 @@ Rank is the pair `(is terminal, sort_order)`. Every terminal lane ranks after ev
 The rule is implemented twice and the two must stay in step:
 
 - TypeScript: `compareStageRank()` and `withPipelineRank()` in `stage-kinds.ts`
-- SQL: the `ranked_stages` CTE in `stageMoveStatement()` in `stage-move.ts`
+- SQL: the `ranked_stages` CTE in `stageMoveStatement()` in `stage-statements.ts`
 
 ### Transition history
 
@@ -164,13 +168,17 @@ The rule is implemented twice and the two must stay in step:
   - otherwise replace it with `last kept lane -> target`;
   - if the target ranks below the lane the application entered in, clear the path.
 
-There is no row for creation. The **entry lane** is derived: the `from_status` of the earliest transition, or the current lane when there are none.
+There is no row for creation. The **entry lane** is derived: where the earliest transition starts (`from_stage_id`, `from_status`), or the current lane when there are none.
 
-The reference implementation is `rewindTransitionPath()` in `src/lib/transitions.ts`. The production implementation is the single SQL statement built by `stageMoveStatement()` in `src/lib/stage-move.ts`, which also applies the `expectedStageId` guard so that a concurrent move produces a 409 instead of forked history. `tests/stage-move.test.mjs` runs that statement on PGlite and checks every scenario against the TypeScript version.
+Edges refer to lanes by id. An edge into a deleted lane (id `NULL`) is skipped when looking for the rewind boundary.
 
-### Why lanes cannot be renamed
+The reference implementation is `rewindTransitionPath()` in `src/lib/transitions.ts`. The production implementation is the single SQL statement built by `stageMoveStatement()` in `src/lib/stage-statements.ts`, which also applies the `expectedStageId` guard so that a concurrent move produces a 409 instead of forked history. `tests/stage-statements.test.mjs` runs that statement on PGlite and checks every scenario, ids included, against the TypeScript version.
 
-Transitions reference lanes by name. A rename would detach the lane from its own history, so the API only allows changing the kind. Deleting a lane leaves its name in history; the charts show such names without a kind.
+### Lane ids, names and renames
+
+Transitions reference lanes by id. The name columns are kept in step: `stageUpdateStatement()` renames the lane and rewrites `from_status` / `to_status` of its edges in one statement, so the stored name always equals the live lane's name. Deleting a lane sets its ids in history to `NULL` and keeps the last name; the charts show such names without a kind. A lane deleted and re-created under the same name gets a new id and does not inherit the old history.
+
+A rename is refused (409) when another lane has the name in any case. Charts group history by lane id and label it with the current name; history of a deleted lane is shown as `<name> (deleted)`, apart from any live lane that took the name.
 
 ### Derived values
 
@@ -178,7 +186,7 @@ Transitions reference lanes by name. A rename would detach the lane from its own
 |---|---|
 | Stage entered at | Latest transition into the current lane, else `created_at` |
 | Stale | In a lane that can go stale for 14 days or more since it was entered (`STALE_THRESHOLD_DAYS`) |
-| Reached (funnel) | Distinct applications whose entry lane or any `to_status` is the lane |
+| Reached (funnel) | Distinct applications whose entry lane or any lane moved into is the lane, by lane id |
 | Days to interview | First transition into any `interview` lane minus `created_at` |
 | Open count | Total minus applications in a resolved lane |
 
@@ -200,14 +208,14 @@ scripts/
   migrate-prod.mjs     migrates PRODUCTION_DATABASE_URL after confirmation
   migrate-create.mjs   scaffolds a migration
   reset-neon-db.mjs    DESTRUCTIVE, guarded: empties the tables, reseeds lanes
-tests/                 node --test files; stage-move runs the SQL on PGlite
+tests/                 node --test files; stage-statements runs the SQL on PGlite
 src/
   proxy.ts             auth gate, CSRF check, guest write block
   app/                 pages and API routes
   components/          client components; ui/ holds the primitives
   lib/
     db.ts              every query
-    stage-move.ts      the stage-move statement (no runtime imports)
+    stage-statements.ts  the move and rename statements (no runtime imports)
     stage-kinds.ts     lane kinds, rank, chart colours (no runtime imports)
     transitions.ts     reference rewind implementation
     sankey.ts          builds the Sankey graph as a DAG
@@ -229,7 +237,7 @@ src/
 | `sankey` | Graph is acyclic |
 | `transitions` | Rewind rule, TypeScript version |
 | `stage-kinds` | Rank ordering, stale kinds, colours |
-| `stage-move` | The production move SQL on PGlite, checked against the TypeScript version |
+| `stage-statements` | The production move and rename SQL on PGlite, the move checked against the TypeScript version |
 | `schema` | Indexes, constraints and cleanup built by the real migrations on PGlite; migrations re-run safely |
 
 ## Known limitations

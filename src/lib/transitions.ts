@@ -1,7 +1,12 @@
+// A history edge. The ids are the reference to the lanes; the names are the
+// lanes' names, kept in step on rename and all that is left once a lane is
+// deleted (id null). Records without ids (undefined) are matched by name.
 export interface TransitionRecord {
   id: number;
   fromStatus: string;
   toStatus: string;
+  fromStageId?: number | null;
+  toStageId?: number | null;
   transitionedAt: string;
 }
 
@@ -9,13 +14,27 @@ export interface TransitionRecord {
 // the board position: outcome lanes rank after every pipeline lane, so moving a
 // card into one is always forward and never truncates its history.
 export interface StageOrder {
+  id?: number;
   name: string;
   sortOrder: number;
 }
 
+// The current lane an edge endpoint refers to: by id when the record has one
+// (null means the lane was deleted), by name otherwise.
+function laneOf(stages: StageOrder[], id: number | null | undefined, name: string): StageOrder | undefined {
+  if (id !== undefined) {
+    return id === null ? undefined : stages.find((stage) => stage.id === id);
+  }
+  return stages.find((stage) => stage.name === name);
+}
+
+function isLane(id: number | null | undefined, name: string, lane: StageOrder): boolean {
+  return id !== undefined && lane.id !== undefined ? id === lane.id : name === lane.name;
+}
+
 // Reference implementation of the stage-rewind rule. `stageMoveStatement` in
-// stage-move.ts performs the same truncation atomically in a single SQL
-// statement; tests/stage-move.test.mjs runs both on the same scenarios.
+// stage-statements.ts performs the same truncation atomically in a single SQL
+// statement; tests/stage-statements.test.mjs runs both on the same scenarios.
 //
 // The history is treated as an ordered path `[entry, to₁, to₂, …]`:
 //   - every edge before the first one that reaches or passes the target is kept;
@@ -24,13 +43,13 @@ export interface StageOrder {
 //   - otherwise a reconnect edge `last_kept → target` is added, where
 //     `last_kept` falls back to the entry stage;
 //   - when the target sorts before the entry stage, the history is cleared.
+// Edges into a deleted lane are skipped when looking for the boundary.
 export function rewindTransitionPath(
   transitions: TransitionRecord[],
   target: StageOrder,
   currentStageName: string,
   stages: StageOrder[]
 ): TransitionRecord[] {
-  const sortOf = new Map(stages.map((stage) => [stage.name, stage.sortOrder]));
   const sorted = [...transitions].sort((a, b) => {
     if (a.transitionedAt !== b.transitionedAt) {
       return a.transitionedAt < b.transitionedAt ? -1 : 1;
@@ -38,17 +57,21 @@ export function rewindTransitionPath(
     return a.id - b.id;
   });
 
-  const entryName = sorted.length > 0 ? sorted[0].fromStatus : currentStageName;
-  const entrySort = sortOf.get(entryName);
+  const current = stages.find((stage) => stage.name === currentStageName);
+  const entry =
+    sorted.length > 0
+      ? { name: sorted[0].fromStatus, id: sorted[0].fromStageId }
+      : { name: currentStageName, id: current?.id };
+  const entryLane = laneOf(stages, entry.id, entry.name);
 
   // Moving before the stage the application entered in clears the path.
-  if (entrySort !== undefined && target.sortOrder < entrySort) {
+  if (entryLane !== undefined && target.sortOrder < entryLane.sortOrder) {
     return [];
   }
 
   const boundaryIndex = sorted.findIndex((transition) => {
-    const sort = sortOf.get(transition.toStatus);
-    return sort !== undefined && sort >= target.sortOrder;
+    const lane = laneOf(stages, transition.toStageId, transition.toStatus);
+    return lane !== undefined && lane.sortOrder >= target.sortOrder;
   });
 
   if (boundaryIndex === -1) {
@@ -59,16 +82,20 @@ export function rewindTransitionPath(
   const prefix = sorted.slice(0, boundaryIndex);
   const result = [...prefix];
 
-  if (boundary.toStatus === target.name) {
+  if (isLane(boundary.toStageId, boundary.toStatus, target)) {
     // Revisiting a stage keeps the edge that first led there, timestamp intact.
     result.push(boundary);
   } else {
-    const from = prefix.length > 0 ? prefix[prefix.length - 1].toStatus : entryName;
-    if (from !== target.name) {
+    const last = prefix[prefix.length - 1];
+    const from = last ? { name: last.toStatus, id: last.toStageId } : entry;
+    // A deleted lane that shared the target's name is a different lane.
+    if (!isLane(from.id, from.name, target)) {
       result.push({
         id: boundary.id,
-        fromStatus: from,
+        fromStatus: from.name,
         toStatus: target.name,
+        ...(from.id !== undefined ? { fromStageId: from.id } : {}),
+        ...(target.id !== undefined ? { toStageId: target.id } : {}),
         transitionedAt: boundary.transitionedAt
       });
     }

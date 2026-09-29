@@ -4,62 +4,112 @@ export interface SankeySourceData {
   // `sortOrder` is the pipeline rank (withPipelineRank in stage-kinds.ts), not
   // the board position: outcome lanes rank last so links into them always
   // point forward, wherever the lane sits on the board.
-  stages: { name: string; sortOrder: number; kind?: StageKind }[];
-  transitions: { fromStatus: string; toStatus: string; company: string }[];
-  entries: { entryStage: string; company: string }[];
-  current: { stageName: string; company: string }[];
+  stages: { id?: number; name: string; sortOrder: number; kind?: StageKind }[];
+  // Lane ids identify the nodes; a null id is a deleted lane, known only by its
+  // stored name. Rows without ids (undefined) are matched to lanes by name.
+  transitions: { fromStatus: string; toStatus: string; fromStageId?: number | null; toStageId?: number | null; company: string }[];
+  entries: { entryStage: string; entryStageId?: number | null; company: string }[];
+  current: { stageName: string; stageId?: number; company: string }[];
 }
 
 const ENTRY_NODE_NAME = "New";
 
 // Builds the Sankey graph from already-fetched rows. Node order is: the entry
-// node first, then the current stages in pipeline order, then any stage names
-// that only survive in history. Because every emitted link therefore points at
-// a strictly higher node index, the graph is a DAG by construction and Recharts'
+// node first, then the current stages in pipeline order, then any lanes that
+// only survive in history. Because every emitted link therefore points at a
+// strictly higher node index, the graph is a DAG by construction and Recharts'
 // unbounded depth recursion cannot loop. Links that would point backwards are
 // dropped and reported through `hiddenBackward` so the UI can explain them.
+//
+// Nodes are keyed by lane, not by name: a lane deleted and re-created under the
+// same name gets two nodes, the old one labelled "(deleted)", and each node is
+// labelled with the lane's current name.
 export function buildSankeyPayload(source: SankeySourceData): SankeyPayload {
   const { stages, transitions, entries, current } = source;
 
+  const orderedStages = [...stages].sort((a, b) => a.sortOrder - b.sortOrder);
+  const laneById = new Map(orderedStages.filter((stage) => stage.id !== undefined).map((stage) => [stage.id, stage]));
+  const laneByName = new Map(orderedStages.map((stage) => [stage.name, stage]));
+  const labels = new Map<string, string>();
+  const kinds = new Map<string, StageKind | undefined>();
+
+  const laneKey = (lane: SankeySourceData["stages"][number]) => {
+    const key = `lane:${lane.id ?? lane.name}`;
+    labels.set(key, lane.name);
+    kinds.set(key, lane.kind);
+    return key;
+  };
+
+  const nodeKey = (name: string, id: number | null | undefined) => {
+    const lane = typeof id === "number" ? laneById.get(id) : id === undefined ? laneByName.get(name) : undefined;
+    if (lane) {
+      return laneKey(lane);
+    }
+    const key = `gone:${name}`;
+    labels.set(key, id === null ? `${name} (deleted)` : name);
+    return key;
+  };
+
+  const currentStageKeys = orderedStages.map(laneKey);
+
   const transitionMap = new Map<string, { from: string; to: string; count: number; companies: string[] }>();
   for (const row of transitions) {
-    const key = `${row.fromStatus}|${row.toStatus}`;
-    const entry = transitionMap.get(key) ?? { from: row.fromStatus, to: row.toStatus, count: 0, companies: [] };
+    const from = nodeKey(row.fromStatus, row.fromStageId);
+    const to = nodeKey(row.toStatus, row.toStageId);
+    const key = `${from}|${to}`;
+    const entry = transitionMap.get(key) ?? { from, to, count: 0, companies: [] };
     entry.count += 1;
     entry.companies.push(row.company);
     transitionMap.set(key, entry);
   }
 
-  const orderedStages = [...stages].sort((a, b) => a.sortOrder - b.sortOrder);
-  const currentStageNames = orderedStages.map((stage) => stage.name);
-  const kindByName = new Map(orderedStages.map((stage) => [stage.name, stage.kind]));
-
   const entryMap = new Map<string, { count: number; companies: string[] }>();
   for (const row of entries) {
-    const entry = entryMap.get(row.entryStage) ?? { count: 0, companies: [] };
+    const key = nodeKey(row.entryStage, row.entryStageId);
+    const entry = entryMap.get(key) ?? { count: 0, companies: [] };
     entry.count += 1;
     entry.companies.push(row.company);
-    entryMap.set(row.entryStage, entry);
+    entryMap.set(key, entry);
   }
 
   const currentCompanies = new Map<string, string[]>();
   for (const row of current) {
-    const list = currentCompanies.get(row.stageName) ?? [];
+    const key = nodeKey(row.stageName, row.stageId);
+    const list = currentCompanies.get(key) ?? [];
     list.push(row.company);
-    currentCompanies.set(row.stageName, list);
+    currentCompanies.set(key, list);
   }
 
   // The entry node is index 0; every real stage follows. Keeping the entry node
-  // out of this name-keyed list (and using an index offset instead) means a
-  // stage literally named "New" becomes its own node instead of merging with
-  // the entry node and having its entry links dropped as self-loops.
-  const stageNames = Array.from(new Set([
-    ...currentStageNames,
-    ...Array.from(transitionMap.values()).flatMap((t) => [t.from, t.to]),
-    ...Array.from(entryMap.keys())
-  ]));
+  // out of this keyed list (and using an index offset instead) means a stage
+  // literally named "New" becomes its own node instead of merging with the
+  // entry node and having its entry links dropped as self-loops.
+  //
+  // Lanes that only survive in history have no rank. Each goes just before the
+  // first live lane it flows into, so its outgoing links point forward, and
+  // at the end when it flows into no live lane.
+  const nodeKeys = [...currentStageKeys];
+  const historyOnlyKeys = new Set(
+    [...Array.from(transitionMap.values()).flatMap((t) => [t.from, t.to]), ...entryMap.keys()].filter(
+      (key) => !currentStageKeys.includes(key)
+    )
+  );
+  for (const key of historyOnlyKeys) {
+    const firstTarget = Math.min(
+      ...Array.from(transitionMap.values())
+        .filter((t) => t.from === key)
+        .map((t) => currentStageKeys.indexOf(t.to))
+        .filter((index) => index !== -1)
+        .map((index) => nodeKeys.indexOf(currentStageKeys[index]))
+    );
+    if (Number.isFinite(firstTarget)) {
+      nodeKeys.splice(firstTarget, 0, key);
+    } else {
+      nodeKeys.push(key);
+    }
+  }
 
-  const stageIndex = new Map(stageNames.map((name, index) => [name, index + 1]));
+  const nodeIndex = new Map(nodeKeys.map((key, index) => [key, index + 1]));
 
   // A node's hover should list every company that flowed through it, not only
   // the ones currently parked there.
@@ -75,11 +125,11 @@ export function buildSankeyPayload(source: SankeySourceData): SankeyPayload {
     nodeCompanySets.set(key, set);
   };
 
-  for (const [stage, companies] of currentCompanies) {
-    addCompanies(stage, companies);
+  for (const [key, companies] of currentCompanies) {
+    addCompanies(key, companies);
   }
-  for (const [stage, data] of entryMap) {
-    addCompanies(stage, data.companies);
+  for (const [key, data] of entryMap) {
+    addCompanies(key, data.companies);
   }
   for (const data of transitionMap.values()) {
     addCompanies(data.from, data.companies);
@@ -91,8 +141,8 @@ export function buildSankeyPayload(source: SankeySourceData): SankeyPayload {
   const links: { source: number; target: number; value: number; companies: string[] }[] = [];
 
   // Add entry links: New → entry stage for all applications
-  for (const [stage, data] of entryMap) {
-    const target = stageIndex.get(stage);
+  for (const [key, data] of entryMap) {
+    const target = nodeIndex.get(key);
     if (target !== undefined && data.count > 0) {
       links.push({ source: 0, target, value: data.count, companies: data.companies });
     }
@@ -100,8 +150,8 @@ export function buildSankeyPayload(source: SankeySourceData): SankeyPayload {
 
   // Add transition-based links between stages
   for (const data of transitionMap.values()) {
-    const source = stageIndex.get(data.from);
-    const target = stageIndex.get(data.to);
+    const source = nodeIndex.get(data.from);
+    const target = nodeIndex.get(data.to);
     if (source !== undefined && target !== undefined && data.count > 0) {
       links.push({ source, target, value: data.count, companies: data.companies });
     }
@@ -113,11 +163,11 @@ export function buildSankeyPayload(source: SankeySourceData): SankeyPayload {
   return {
     nodes: [
       { name: ENTRY_NODE_NAME, companies: entryCompanies },
-      ...stageNames.map((name) => {
-        const kind = kindByName.get(name);
+      ...nodeKeys.map((key) => {
+        const kind = kinds.get(key);
         return {
-          name,
-          companies: Array.from(nodeCompanySets.get(name) ?? []),
+          name: labels.get(key) ?? key,
+          companies: Array.from(nodeCompanySets.get(key) ?? []),
           ...(kind ? { kind } : {})
         };
       })
