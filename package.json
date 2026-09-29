@@ -10,15 +10,20 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit --incremental false",
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \"tests/**/*.test.mjs\"",
+    "check": "npm run lint && npm run typecheck && npm test",
     "migrate:up": "node scripts/migrate-up.mjs",
+    "migrate:prod": "node scripts/migrate-prod.mjs",
     "migrate:create": "node scripts/migrate-create.mjs",
-    "reset:db": "node scripts/reset-neon-db.mjs",
+    "reset:db": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/reset-neon-db.mjs",
     "cleanup:created": "node scripts/cleanup-created-transitions.mjs",
-    "verify:auth": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-auth.mjs",
-    "verify:timezone": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-timezone.mjs",
-    "verify:sankey": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-sankey.mjs",
-    "verify:transitions": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-transitions.mjs",
-    "verify:stage-kinds": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-stage-kinds.mjs"
+    "verify:auth": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/auth.test.mjs",
+    "verify:timezone": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/timezone.test.mjs",
+    "verify:sankey": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/sankey.test.mjs",
+    "verify:transitions": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/transitions.test.mjs",
+    "verify:stage-kinds": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stage-kinds.test.mjs",
+    "verify:stage-move": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stage-move.test.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -38,6 +43,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/postcss": "^4.3.0",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",

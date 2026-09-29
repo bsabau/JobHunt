@@ -6,6 +6,15 @@ export const STAGE_KINDS = ["intake", "active", "interview", "offer", "rejected"
 
 export type StageKind = (typeof STAGE_KINDS)[number];
 
+// Lanes seeded into an empty database (`npm run reset:db`).
+export const DEFAULT_STAGES: readonly { name: string; kind: StageKind }[] = [
+  { name: "Wishlist", kind: "intake" },
+  { name: "Applied", kind: "active" },
+  { name: "Interview", kind: "interview" },
+  { name: "Offer", kind: "offer" },
+  { name: "Rejected", kind: "rejected" }
+];
+
 export const KIND_LABELS: Record<StageKind, string> = {
   intake: "Wishlist",
   active: "Pipeline",

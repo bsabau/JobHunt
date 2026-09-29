@@ -1,54 +1,45 @@
-import { neon } from "@neondatabase/serverless";
-import { loadDatabaseUrl } from "./migration-utils.mjs";
+import { DEFAULT_STAGES } from "../src/lib/stage-kinds.ts";
+import { connect, databaseEndpoint, isProductionDatabase, loadDatabaseUrl, runMigrations } from "./migration-utils.mjs";
 
-const databaseUrl = loadDatabaseUrl();
-const sql = neon(databaseUrl);
-const defaults = [
-  ["Wishlist", "intake"],
-  ["Applied", "active"],
-  ["Interview", "interview"],
-  ["Offer", "offer"],
-  ["Rejected", "rejected"]
-];
+// Destructive: empties every table in DATABASE_URL and seeds the default
+// lanes. It refuses to run without --yes, against production, or when it
+// cannot tell whether the target is production.
+const url = loadDatabaseUrl();
+const endpoint = databaseEndpoint(url);
+console.log(`Target: ${endpoint}`);
 
-await sql`
-  CREATE TABLE IF NOT EXISTS stages (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    sort_order INTEGER NOT NULL,
-    kind TEXT NOT NULL DEFAULT 'active'
+const production = isProductionDatabase(url);
+
+if (production === undefined) {
+  console.error(
+    "Refusing: PRODUCTION_DATABASE_URL is not set, so this script cannot tell whether the target is production."
   );
-`;
-
-await sql`
-  CREATE TABLE IF NOT EXISTS applications (
-    id SERIAL PRIMARY KEY,
-    company TEXT NOT NULL,
-    role TEXT NOT NULL,
-    notes TEXT,
-    interview_date DATE,
-    source_url TEXT,
-    logo_url TEXT,
-    stage_id INTEGER NOT NULL REFERENCES stages(id) ON DELETE RESTRICT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  );
-`;
-
-await sql`
-  CREATE TABLE IF NOT EXISTS application_transitions (
-    id SERIAL PRIMARY KEY,
-    application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
-    from_status TEXT NOT NULL,
-    to_status TEXT NOT NULL,
-    transitioned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  );
-`;
-
-await sql`TRUNCATE TABLE application_transitions, applications, stages RESTART IDENTITY CASCADE;`;
-
-for (const [idx, [name, kind]] of defaults.entries()) {
-  await sql`INSERT INTO stages (name, sort_order, kind) VALUES (${name}, ${idx}, ${kind});`;
+  process.exit(1);
 }
 
-console.log("Database reset complete with default stages.");
+if (production) {
+  console.error("Refusing: DATABASE_URL points at the production database.");
+  process.exit(1);
+}
+
+if (!process.argv.includes("--yes")) {
+  console.error(`This deletes every application, transition and lane in ${endpoint}. Re-run with --yes to proceed.`);
+  process.exit(1);
+}
+
+const { sql, end } = await connect(url);
+
+try {
+  // The migrations are the only definition of the schema; running them first
+  // also builds it on an empty database.
+  await runMigrations(sql);
+  await sql`TRUNCATE TABLE application_transitions, applications, stages RESTART IDENTITY CASCADE;`;
+
+  for (const [index, stage] of DEFAULT_STAGES.entries()) {
+    await sql`INSERT INTO stages (name, sort_order, kind) VALUES (${stage.name}, ${index}, ${stage.kind});`;
+  }
+
+  console.log(`Database ${endpoint} reset with ${DEFAULT_STAGES.length} default lanes.`);
+} finally {
+  await end();
+}
