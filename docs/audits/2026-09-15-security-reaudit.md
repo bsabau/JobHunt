@@ -4,7 +4,7 @@
 
 ## Executive summary
 
-This is a follow-up review of the branch `cursor/dashboard-board-insights` at `cb624fd`, checked against `claude-security-bug-assessment.md` (20 findings) and `change_audit_report.md` (3 standards + 9 spec findings). Every high-impact item from both reports is now closed in code, and the routine verification suite passes on Node 24.
+This is a follow-up review of the branch `cursor/dashboard-board-insights` at `cb624fd`, checked against `2026-09-15-security-assessment.md` (20 findings) and `2026-09-15-change-audit.md` (3 standards + 9 spec findings). Every high-impact item from both reports is now closed in code, and the routine verification suite passes on Node 24.
 
 No new high-confidence security vulnerability was found. The review did find **one new Medium correctness regression** introduced on this branch (the Sankey page can crash on a cyclic flow), **two Low spec deviations** in the stage-rewind logic, and a handful of Low hardening and residual items.
 
@@ -29,7 +29,7 @@ Not run: `npm run build`, dev server, any SQL against Neon.
 
 ## Status of prior findings
 
-### `claude-security-bug-assessment.md`
+### `2026-09-15-security-assessment.md`
 
 | # | Finding | Status | Evidence |
 |---|---|---|---|
@@ -54,7 +54,7 @@ Not run: `npm run build`, dev server, any SQL against Neon.
 | 19 | UI data-loss nits | **Fixed** | Delete confirmations, id-keyed reorder rollback, same-column drop skipped. |
 | 20 | No input size limits | **Fixed** | `TEXT_LIMITS` enforced server-side and mirrored as `maxLength` on inputs. |
 
-### `change_audit_report.md`
+### `2026-09-15-change-audit.md`
 
 | ID | Finding | Status |
 |---|---|---|

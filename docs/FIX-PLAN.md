@@ -360,6 +360,8 @@ Pick one:
 
 Keep the in-memory map as a first line either way.
 
+Done on 2026-09-29 (decision 5), in the Vercel dashboard rather than in a PR: the project firewall has a custom rule "Login rate limit" on `POST /api/auth/login`, 10 requests per 60 seconds per IP (fixed window), answering 429 when exceeded. It sits above the in-memory throttle (5 failures per minute per instance), which stays as the first line. Check it with `vercel firewall rules list --project job-hunt --expand`.
+
 ### 6.2 Response headers (SEC-2)
 
 Add `Permissions-Policy: camera=(), microphone=(), geolocation=()`. Introduce a full Content Security Policy in report-only mode first; Next's inline scripts need a nonce, which is set up in `proxy.ts`. Allow `img-src` for `www.google.com` and `logo.clearbit.com` only.
@@ -381,6 +383,11 @@ Done in PR #22 (6.2 and 6.3):
 ### 6.5 Local files (TOOL-2)
 
 Delete `data/` after confirming with the owner that the SQLite file holds nothing that was not migrated.
+
+Done in PR #24 (6.4 and 6.5):
+
+- 6.4: the three reports are in `docs/audits/` as `2026-09-15-change-audit.md`, `2026-09-15-security-assessment.md` and `2026-09-15-security-reaudit.md` (dates from the commit that added them; the re-audit's references follow the new names). `ROADMAP.md` lists what shipped and puts CSV import, the application timeline and a board filter first.
+- 6.5: `data/jobhunt.sqlite` held 2 applications and 4 transitions; both applications exist in production. The directory was never tracked (`.gitignore` covers `*.sqlite`), so the removal is local: it was moved to `backups/` rather than deleted outright.
 
 ### 6.6 Dependencies
 

@@ -1,114 +1,41 @@
 # Roadmap
 
-Feature backlog for the JobHunt app, ordered by priority. The app currently has ~6 applications — these features are planned for when daily applying ramps up.
+Feature backlog, in priority order. The app is in daily use, so these are the next things worth building. Measured ideas for the stats page, and more features, are in `docs/PRODUCT-AUDIT-2026-09-29.md` (IDs such as F-3 refer to it).
 
----
+## Shipped
 
-## Phase 1 — Essentials (do first)
+- **Board search**: find a card by company or role and jump to it.
+- **Stats page** (`/`): pipeline totals, funnel and drop-off, applications and transitions over time, outcomes, upcoming interviews.
+- **Stale alerts**: cards that have sat for 14 days or more in a lane that can go stale (not a wishlist, offer or outcome lane) are flagged on the board and listed on the stats page.
+- **Sankey flow** (`/sankey`), lane types that carry the meaning of each lane, the applied date, and moving cards by keyboard.
 
-### Bulk Import from CSV
-**Why:** Adding 10+ applications one by one is tedious. This removes the biggest friction to daily use.
+## Next
 
-**Implementation:**
-- Add an "Import CSV" button next to "Add Application" in the kanban header
-- Accept CSV with columns: `company, role, source_url, notes` (all optional except company+role)
-- Parse client-side with a simple CSV parser (no library needed for basic CSV)
-- Preview table before confirming import
-- POST to a new `/api/applications/bulk` endpoint
-- Each row runs through `findCompanyLogo()` for logo lookup
-- All imported apps land in the "Applied" stage by default
-- Show a summary after import: X added, Y failed (with reasons)
+### 1. Bulk import from CSV
 
-**Files to touch:**
-- `src/components/import-csv-dialog.tsx` (new)
-- `src/app/api/applications/bulk/route.ts` (new)
-- `src/lib/db.ts` — add `createApplicationsBulk()`
-- `src/components/kanban-board.tsx` — add import button
+**Why:** adding many applications one by one is the biggest friction left in daily use.
 
----
+- An "Import CSV" button next to "Add Application", with a preview table before anything is saved.
+- Columns `company, role, source_url, notes`; company and role are required.
+- A new owner-only endpoint that inserts the rows in one transaction and schedules the logo lookup for each (`scheduleLogoLookup()`), as a single create does.
+- Imported cards land in the default lane (`DEFAULT_CREATE_KIND`). The result says how many were added and why any row failed.
+- The duplicate-company check applies per row.
+- Look up each company's logo once, not once per row, and cap the rows per file: every lookup calls Clearbit.
 
-### Search & Filter on the Board
-**Why:** Once past ~15 cards, finding a specific company becomes slow.
+### 2. Application timeline (F-3)
 
-**Implementation:**
-- Add a search input above the kanban columns
-- Filter cards client-side by company name, role, or notes (case-insensitive substring match)
-- Highlight matching text in cards
-- Optional: filter by stage dropdown (useful when columns overflow horizontally)
-- All filtering is client-side on `initialApplications` — no API changes needed
+**Why:** see how one application moved and how long it sat in each lane.
 
-**Files to touch:**
-- `src/components/kanban-board.tsx` — add search state, filter logic, and input UI
+- Show the path with dates in the card dialog. The rows are already in `application_transitions`; the dialog needs an endpoint that returns them for one card, owner and guest alike (no notes involved).
+- The path shows where the application stands, not every move ever made: rewinds rewrite it.
 
----
+### 3. Board filter (F-4)
 
-## Phase 2 — Insights (do once applying daily)
+The search jumps to a card; a filter would narrow the board instead. A text filter over company and role, and a toggle that hides `rejected` and `closed` lanes. Client side only.
 
-### Dashboard Stats Bar
-**Why:** Quick overview of pipeline health without counting cards manually.
+### Later
 
-**Implementation:**
-- Stats row above the kanban columns showing:
-  - Total applications
-  - Response rate: `(apps that left "Applied") / total`
-  - Applications this week
-  - Average days in current stage
-- Compute client-side from `initialApplications` + stage data (no new API)
-- Simple horizontal card row, responsive
-
-**Files to touch:**
-- `src/components/dashboard-stats.tsx` (new)
-- `src/app/page.tsx` — render stats above KanbanBoard
-
----
-
-### Application Timeline
-**Why:** See the full history of a single application — when it moved, how long it sat in each stage.
-
-**Implementation:**
-- Click a card → show timeline in the edit dialog or a new detail panel
-- New API: `GET /api/applications/[id]/timeline` returning transitions ordered by date
-- New DB function: `getApplicationTimeline(id)` querying `application_transitions`
-- Render as a vertical timeline with stage names, dates, and durations between steps
-
-**Files to touch:**
-- `src/lib/db.ts` — add `getApplicationTimeline()`
-- `src/app/api/applications/[id]/timeline/route.ts` (new)
-- `src/components/edit-application-dialog.tsx` — add timeline tab/section
-
----
-
-## Phase 3 — Automation (do once volume is high)
-
-### Stale Application Alerts
-**Why:** Applications sitting in "Applied" or "Screening" for 14+ days are likely ghosted.
-
-**Implementation:**
-- Add a subtle visual indicator (border glow or badge) on cards where `updatedAt` is older than a configurable threshold (default: 14 days)
-- Threshold stored in localStorage (user preference)
-- Optional: "Move stale to Ghosting" bulk action button that appears when stale cards exist
-- All client-side logic — compare `updatedAt` against `Date.now()`
-
-**Files to touch:**
-- `src/components/kanban-board.tsx` — stale detection + visual indicator
-- `src/lib/constants.ts` — default stale threshold
-
----
-
-### Weekly Digest View
-**Why:** Track momentum — am I applying more or less than last week?
-
-**Implementation:**
-- New page at `/stats` linked from the main nav
-- Show:
-  - Applications added per week (bar chart)
-  - Transitions per week (line chart)
-  - Current pipeline funnel (horizontal bar)
-- New API: `GET /api/stats` returning weekly aggregates
-- Uses Recharts (already a dependency) for charts
-
-**Files to touch:**
-- `src/app/stats/page.tsx` (new)
-- `src/app/api/stats/route.ts` (new)
-- `src/lib/db.ts` — add `getWeeklyStats()`
-- `src/components/kanban-board.tsx` — add nav link to `/stats`
+- Actions on stale applications: followed up, snooze, close (F-1).
+- Close ghosted applications in bulk (F-2).
+- CSV export, which doubles as a personal backup (F-5).
+- The stats ideas in the product audit: rate tiles, time to hear back, results by application week (M-1 to M-3).
