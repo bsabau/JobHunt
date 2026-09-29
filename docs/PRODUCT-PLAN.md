@@ -292,6 +292,12 @@ Done in PR #32:
 - The advance rates equal 100 minus the old drop-off percentages, for every pair the old chart showed on `dev`.
 - The page has two fewer charts and the reached counts are unchanged.
 
+Done in PR #33:
+
+- Changed from the plan after Fable's review: the plan's `reached(next) / reached(this)` is the share that went on only when every card passes every lane; a card added mid-pipeline or a skipped lane inflates it (in the review's data, "66.7% on" from a lane where no card went on). `buildFunnel()` in the new `src/lib/funnel.ts` instead counts, per lane, the cards that reached it and also reached any pipeline lane ranked after it. It runs on the server over each application's visited lanes (the reached query now returns the visits), ranks with `compareStageRank()`, and gives no share for outcome lanes, the last pipeline lane or a lane nobody reached. Tested in `tests/funnel.test.mjs`, including the mid-pipeline and skipped-lane cases.
+- One chart, "How Far Applications Got": a bar per lane with "30 · 13.3% further" beside it and the full sentence in the tooltip. It sits next to "Applications by Stage". "Pipeline Drop-off" and "Stage-to-Stage Conversion" are gone, with `stagePairs` and its query; per-pair detail stays on `/sankey`.
+- On `dev` the reached counts are unchanged and each share matches a hand count in SQL. Every card there started in "Applied", so the shares also equal 100 minus the old drop-off; the plan's acceptance check no longer holds in general, by design.
+
 ### 2.3 Applications over time, by week (R-2)
 
 **Goal:** a chart that stays readable once the total grows.

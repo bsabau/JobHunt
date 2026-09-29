@@ -1,6 +1,7 @@
 import { STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { DEFAULT_TIME_ZONE, normalizeTimeZone } from "@/lib/timezone";
 import { RESOLVED_KINDS, STALE_EXCLUDED_KINDS, TERMINAL_KINDS, StageKind } from "@/lib/stage-kinds";
+import { buildFunnel } from "@/lib/funnel";
 import { MilestoneStatsRow, milestoneStatsStatement } from "@/lib/stats-statements";
 import { StatsPayload } from "@/lib/types";
 import { ensureSchema, transaction } from "./client";
@@ -14,8 +15,7 @@ type StatsRows = [
   { days: string }[],
   { day: string; count: number }[],
   { company: string; count: number }[],
-  { stage_id: number; count: number }[],
-  { from_stage: string; to_stage: string; count: number }[],
+  { application_id: number; stage_id: number }[],
   { company: string; role: string; interview_date: string; stage_name: string }[],
   { company: string; role: string; stage_name: string; days_since_update: number }[],
   { outcome_stage: string; kind: StageKind; from_stage: string | null; count: number }[]
@@ -38,8 +38,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     avgCurrentStageRows,
     createdByDayRows,
     topCompanyRows,
-    reachedRows,
-    stagePairRows,
+    visitRows,
     upcomingInterviewRows,
     staleApplicationRows,
     outcomeRows,
@@ -76,11 +75,11 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       LIMIT 8;
     `,
     tx`
-      -- Applications that visited each lane: the entry lane (where the first
-      -- edge starts, else the current lane) plus every lane moved into.
-      -- Counted by lane id, so a deleted lane's history never counts for a
-      -- later lane with the same name.
-      SELECT stage_id, COUNT(DISTINCT application_id)::int AS count
+      -- The lanes each application visited: its entry lane (where the first
+      -- edge starts, else the current lane) plus every lane moved into. By
+      -- lane id, so a deleted lane's history never counts for a later lane
+      -- with the same name. buildFunnel() counts them per lane and per card.
+      SELECT DISTINCT application_id, stage_id
       FROM (
         SELECT application_id, stage_id
         FROM application_entry_stage
@@ -88,17 +87,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
         SELECT application_id, to_stage_id
         FROM application_transitions
       ) visits
-      WHERE stage_id IS NOT NULL
-      GROUP BY stage_id;
-    `,
-    tx`
-      -- Moves between current lanes, labelled with their current names.
-      SELECT fs.name AS from_stage, ts.name AS to_stage,
-             COUNT(DISTINCT t.application_id)::int AS count
-      FROM application_transitions t
-      JOIN stages fs ON fs.id = t.from_stage_id
-      JOIN stages ts ON ts.id = t.to_stage_id
-      GROUP BY fs.id, fs.name, ts.id, ts.name;
+      WHERE stage_id IS NOT NULL;
     `,
     tx`
       SELECT a.company, a.role,
@@ -182,19 +171,10 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
 
   const topCompanies = topCompanyRows.map((row) => ({ company: row.company, count: row.count }));
 
-  const reachedMap = new Map<number, number>();
-  for (const row of reachedRows) {
-    reachedMap.set(row.stage_id, row.count);
-  }
-
-  const funnel = stages.map((stage) => ({
-    stage: stage.name,
-    reached: reachedMap.get(stage.id) ?? 0,
-    sortOrder: stage.sortOrder,
-    kind: stage.kind
-  }));
-
-  const stagePairs = stagePairRows.map((row) => ({ from: row.from_stage, to: row.to_stage, count: row.count }));
+  const funnel = buildFunnel(
+    stages,
+    visitRows.map((row) => ({ applicationId: row.application_id, stageId: row.stage_id }))
+  );
 
   const upcomingInterviews = upcomingInterviewRows.map((row) => ({
     company: row.company,
@@ -239,7 +219,6 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
     applicationsOverTime,
     topCompanies,
     funnel,
-    stagePairs,
     upcomingInterviews,
     staleApplications,
     outcomes,

@@ -5,7 +5,7 @@ Feature backlog, in priority order. The app is in daily use, so these are the ne
 ## Shipped
 
 - **Board search**: find a card by company or role and jump to it.
-- **Stats page** (`/`): pipeline totals, funnel and drop-off, applications over time, outcomes, upcoming interviews.
+- **Stats page** (`/`): response, interview, offer and ghosted rates, one funnel with the share that went on from each lane, applications over time, outcomes, upcoming interviews.
 - **Stale alerts**: cards that have sat for 14 days or more in a lane that can go stale (not a wishlist, offer or outcome lane) are flagged on the board and listed on the stats page.
 - **Board filter**: narrows every lane by company or role, and a remembered toggle hides the rejected and closed lanes.
 - **Application timeline**: the card dialog shows the lanes a card passed through, with dates and time in each; the guest gets a read-only version.
@@ -17,7 +17,7 @@ In the order of `docs/PRODUCT-PLAN.md`.
 
 ### 1. A stats page that says each thing once
 
-Response, interview, offer and ghosted rates; one funnel chart instead of three; applications per week (M-1, R-1 to R-4).
+Applications per week with a running total (R-2). The rates and the single funnel have shipped.
 
 ### Later
 

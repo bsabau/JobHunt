@@ -14,7 +14,7 @@ A single-owner job application tracker with three views: pipeline stats (`/`), a
 - `npm run build`: production build
 - `npm run check`: lint, typecheck and every test. Run it before every commit; CI runs it on every push.
 - `npm run lint`, `npm run typecheck`, `npm test`: the three parts on their own
-- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`, `milestones`)
+- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`, `milestones`, `funnel`)
 - `npm run migrate:up`: apply migrations to `DATABASE_URL`. Refuses when that is production.
 - `npm run migrate:prod`: apply migrations to `PRODUCTION_DATABASE_URL`. Asks for the endpoint id; only run it when the user asks.
 - `npm run migrate:create -- <name>`: scaffold a migration
@@ -51,6 +51,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/application-statements.ts`: read statements about one application (its timeline), built with `sqlFragment`. Its only runtime import is `./stage-statements.ts`, by relative path with the extension, so the tests still load it from Node and run it on PGlite.
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
 - `src/lib/stats-statements.ts`: statements for the stats page (the rates over `application_milestones`), run inside the page's snapshot with `tx.query()`.
+- `src/lib/funnel.ts`: the stats funnel (lanes in pipeline rank, and per lane the share of its cards that reached a later pipeline lane); it imports `compareStageRank()`, so the rank rule is not copied a third time.
 - `src/lib/board-filter.ts`: the board filter's rules (company and role only, never notes; outcome lanes hidden by kind).
 - `src/lib/sankey.ts`: builds the Sankey graph as a DAG.
 - `src/lib/auth.ts`: session tokens, credential check, `requireSession()`.

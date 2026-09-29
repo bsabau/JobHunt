@@ -69,8 +69,9 @@ export interface StatsPayload {
   rates: { applied: number; responded: number; interviewed: number; offered: number; ghosted: number };
   applicationsOverTime: { date: string; created: number; cumulative: number }[];
   topCompanies: { company: string; count: number }[];
-  funnel: { stage: string; reached: number; sortOrder: number; kind: StageKind }[];
-  stagePairs: { from: string; to: string; count: number }[];
+  // In pipeline rank, from buildFunnel(): `advanced` is the percent of the
+  // lane's applications that reached a later pipeline lane (null where none).
+  funnel: { stage: string; reached: number; sortOrder: number; kind: StageKind; advanced: number | null }[];
   upcomingInterviews: { company: string; role: string; interviewDate: string; stageName: string }[];
   staleApplications: { company: string; role: string; stageName: string; daysSinceUpdate: number }[];
   // Where applications that reached an outcome lane (offer, rejected, closed)
