@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CREATED, setupBoard } from "./helpers/pglite-board.mjs";
-import { milestoneStatsStatement, timeToHearBackStatement, weeklySentStatement } from "../src/lib/stats-statements.ts";
+import { milestoneStatsStatement, timeToHearBackStatement, weeklyStatement } from "../src/lib/stats-statements.ts";
 
 const { sql, idOf, createApp, move, edgeAt, run } = setupBoard();
 
@@ -40,7 +40,11 @@ test("the stats statement on an empty board: zeros, and no average", async () =>
 });
 
 async function weekly(zone) {
-  return (await run(weeklySentStatement(zone))).map((row) => [row.week_start, row.sent]);
+  return (await run(weeklyStatement(zone))).map((row) => [row.week_start, row.sent]);
+}
+
+async function weeklyResults(zone) {
+  return (await run(weeklyStatement(zone))).map((row) => [row.week_start, row.sent, row.responded, row.interviewed, row.offered]);
 }
 
 async function sentAt(instant) {
@@ -172,4 +176,24 @@ test("time to hear back: a rejection dated before the sending is left out", asyn
   // Screening, and the "rejection" the earlier edge into Applied.
   await sql`UPDATE stages SET kind = 'rejected' WHERE name = 'Applied'`;
   assert.equal((await hearBack()).rejection_count, 0);
+});
+
+test("weekly results: each week's applications with their replies, interviews and offers", async () => {
+  const at = (day) => `2026-09-${day}T10:00:00Z`;
+  const inWeek = async (day, ...lanes) => {
+    const app = await createApp("Applied", at(day));
+    if (lanes.length) await move(app, ...lanes);
+  };
+  await inWeek("01"); // week of Aug 31: no reply
+  await inWeek("02", "Screening"); // replied
+  await inWeek("08", "Interview", "Offer"); // week of Sep 7: interview and offer
+  await inWeek("09", "Rejected");
+  await inWeek("15", "Ghosted"); // week of Sep 14: closed, not a reply
+  const wishlist = await createApp("Wishlist", at("15")); // not sent: in no week
+  assert.ok(wishlist);
+  assert.deepEqual(await weeklyResults("UTC"), [
+    ["2026-08-31", 2, 1, 0, 0],
+    ["2026-09-07", 2, 2, 1, 1],
+    ["2026-09-14", 1, 0, 0, 0]
+  ]);
 });

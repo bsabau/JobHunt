@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addDays, fillWeeks, weekStartOf } from "../src/lib/weeks.ts";
+import { addDays, fillWeeks, isWeekOpen, weekStartOf } from "../src/lib/weeks.ts";
 
 test("weeks start on Monday", () => {
   assert.equal(weekStartOf("2026-09-28"), "2026-09-28", "a Monday is its own week start");
@@ -40,4 +40,12 @@ test("a row newer than the current week still ends the chart (clocks a moment ap
 test("one week, and no weeks", () => {
   assert.deepEqual(fillWeeks([{ weekStart: "2026-09-28", sent: 4 }], "2026-09-28"), [{ weekStart: "2026-09-28", sent: 4, cumulative: 4 }]);
   assert.deepEqual(fillWeeks([], "2026-09-28"), []);
+});
+
+test("a week stays open until `days` have passed since its Sunday", () => {
+  // The week of Mon 2026-09-14 ends on Sun 2026-09-20.
+  assert.equal(isWeekOpen("2026-09-14", 14, "2026-10-03"), true, "13 days after the Sunday");
+  assert.equal(isWeekOpen("2026-09-14", 14, "2026-10-04"), false, "14 days after the Sunday");
+  assert.equal(isWeekOpen("2026-09-28", 14, "2026-09-30"), true, "the current week");
+  assert.equal(isWeekOpen("2026-09-14", 60, "2026-10-04"), true, "a longer median keeps it open");
 });

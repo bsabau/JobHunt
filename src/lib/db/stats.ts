@@ -7,7 +7,8 @@ import {
   TimeToHearBackRow,
   milestoneStatsStatement,
   timeToHearBackStatement,
-  weeklySentStatement
+  WeekRow,
+  weeklyStatement
 } from "@/lib/stats-statements";
 import { StatsPayload } from "@/lib/types";
 import { ensureSchema, transaction } from "./client";
@@ -20,7 +21,7 @@ type StatsRows = [
   MilestoneStatsRow[],
   TimeToHearBackRow[],
   { days: string }[],
-  { week_start: string; sent: number }[],
+  WeekRow[],
   { company: string; count: number }[],
   { application_id: number; stage_id: number }[],
   { company: string; role: string; interview_date: string; stage_name: string }[],
@@ -44,14 +45,14 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
   // One request and one snapshot: the totals, lists and charts cannot disagree
   // because a write landed between two of these queries.
   const milestones = milestoneStatsStatement();
-  const weeklySent = weeklySentStatement(zone);
+  const weekly = weeklyStatement(zone);
   const hearBack = timeToHearBackStatement();
   const [
     stageCountRows,
     milestoneRows,
     hearBackRows,
     avgCurrentStageRows,
-    weeklySentRows,
+    weekRows,
     topCompanyRows,
     visitRows,
     upcomingInterviewRows,
@@ -74,7 +75,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       JOIN application_stage_entry e ON e.application_id = a.id
       WHERE s.kind <> ALL(${[...TERMINAL_KINDS]}::text[]);
     `,
-    tx.query(weeklySent.text, weeklySent.params),
+    tx.query(weekly.text, weekly.params),
     tx`
       -- Grouped the way the duplicate warning compares names (trimmed, any
       -- case), shown with the most common spelling. On a tie MODE() takes the
@@ -171,7 +172,13 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
 
   // Weeks without applications are filled in by the page, which knows the
   // current week (fillWeeks() with its `now`).
-  const applicationsOverTime = weeklySentRows.map((row) => ({ weekStart: row.week_start, sent: row.sent }));
+  const weeks = weekRows.map((row) => ({
+    weekStart: row.week_start,
+    sent: row.sent,
+    responded: row.responded,
+    interviewed: row.interviewed,
+    offered: row.offered
+  }));
 
   const topCompanies = topCompanyRows.map((row) => ({ company: row.company, count: row.count }));
 
@@ -226,7 +233,7 @@ export async function getStatsData(timeZone: string = DEFAULT_TIME_ZONE): Promis
       rejectionMedianDays: roundOrNull(hearBackRows[0]?.rejection_median_days ?? null),
       rejectionCount: hearBackRows[0]?.rejection_count ?? 0
     },
-    applicationsOverTime,
+    weeks,
     topCompanies,
     funnel,
     upcomingInterviews,

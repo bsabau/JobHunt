@@ -402,6 +402,13 @@ Done in PR #35:
 - The weekly rates, weighted by their counts, reproduce the rate tiles.
 - The newest week is marked open.
 
+Done in PR #36:
+
+- The weekly statement from 2.3 now also counts, per week, the applications that replied, reached an interview and got an offer (`weeklyStatement()`, over `application_milestones`), so one query serves the chart and the table. The payload field is `weeks` (was `applicationsOverTime`).
+- "Results by Week Sent": a table, newest week first, with "N (P%)" and a small bar per figure. `isWeekOpen()` in `weeks.ts` marks a week "still open" while fewer than N days have passed since its Sunday, with N the median days to a first reply rounded up, or `STALE_THRESHOLD_DAYS` below `MEDIAN_MIN_SAMPLE`; open weeks are dimmed, and the subtitle says which N applies.
+- On `dev` the weeks add up to the tiles exactly (30 sent, 14 replied, 3 interviewed, 0 offers). With a 59.8-day median, N is 60 and the five newest weeks are open.
+- Tests: the per-week counts over three weeks (a closed card is not a reply; an unsent card is in no week) and `isWeekOpen()` on its boundary day.
+
 ### 3.3 Results by source (M-4)
 
 **Goal:** see which channels lead to replies.
