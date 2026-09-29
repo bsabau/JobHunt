@@ -36,3 +36,18 @@ export function milestoneStatsStatement(): SqlStatement {
     WHERE m.applied_at IS NOT NULL;
   `);
 }
+
+// Applications sent per week, by applied date: the Monday that starts the week
+// in the viewer's zone (`zone` is validated by normalizeTimeZone()), as a
+// YYYY-MM-DD string. Weeks without applications are absent; fillWeeks() in
+// weeks.ts adds them.
+export function weeklySentStatement(zone: string): SqlStatement {
+  return compileSql(sqlFragment`
+    SELECT to_char(date_trunc('week', p.applied_at AT TIME ZONE ${zone})::date, 'YYYY-MM-DD') AS week_start,
+           COUNT(*)::int AS sent
+    FROM application_applied_at p
+    WHERE p.applied_at IS NOT NULL
+    GROUP BY 1
+    ORDER BY 1;
+  `);
+}

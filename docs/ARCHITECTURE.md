@@ -235,12 +235,13 @@ A rename is refused (409) when another lane has the name in any case. Charts gro
 | Response, interview, offer rates | Shares of the sent applications (applied at set) that replied, reached an `interview` lane (or entered in one), reached an `offer` lane (or entered in one). On the current path: a card moved back out of an interview lane no longer counts as interviewed |
 | Ghosted | Share of the sent applications currently in a `closed` lane |
 | Open count | Total minus applications in a resolved lane |
+| Sent per week | Applications by the week of their applied date, weeks from Monday in the viewer's zone; cards not sent yet are in no week |
 
 A deleted entry lane has no kind, so its cards count as sent at creation (as in `application_applied_at`); for a card that entered in a since-deleted wishlist lane, the edge that sent it then counts as its reply.
 
 ## Time zones
 
-Timestamps are stored as `TIMESTAMPTZ`; `interview_date` is a plain `DATE`. The viewer's zone comes from the `tz` cookie written by `TimezoneSync`, then Vercel's `x-vercel-ip-timezone` header, then UTC. It is validated with `Intl` before it reaches SQL, where day buckets use `AT TIME ZONE`. Date formatting pins both locale and zone so server and browser render the same text. Relative ages ("3d", "in 2 days", stale, upcoming) are computed from one `now` that the page reads on the server and passes to the client component, so the server HTML and hydration agree.
+Timestamps are stored as `TIMESTAMPTZ`; `interview_date` is a plain `DATE`. The viewer's zone comes from the `tz` cookie written by `TimezoneSync`, then Vercel's `x-vercel-ip-timezone` header, then UTC. It is validated with `Intl` before it reaches SQL, where day and week buckets use `AT TIME ZONE` (weeks start on Monday: `date_trunc('week', ...)`, returned as `YYYY-MM-DD`; `src/lib/weeks.ts` does the week arithmetic on those strings and fills empty weeks up to the current one). Date formatting pins both locale and zone so server and browser render the same text. Relative ages ("3d", "in 2 days", stale, upcoming) are computed from one `now` that the page reads on the server and passes to the client component, so the server HTML and hydration agree.
 
 ## Logo lookup
 
@@ -270,6 +271,7 @@ src/
     stage-kinds.ts     lane kinds, rank, chart colours (no runtime imports)
     transitions.ts     reference rewind implementation
     board-filter.ts    the board filter's match and hidden-lane rules
+    weeks.ts           week arithmetic on YYYY-MM-DD strings; fills empty weeks
     funnel.ts          the stats funnel: lanes in rank, and per lane the share of its cards that went further
     sankey.ts          builds the Sankey graph as a DAG
     auth.ts            tokens, credentials, requireSession
@@ -298,8 +300,9 @@ src/
 | `schema` | Indexes, constraints and cleanup built by the real migrations on PGlite; migrations re-run safely |
 | `timeline` | The timeline statement on PGlite after real moves: rewinds, renamed and deleted lanes |
 | `board-filter` | The filter matches company and role only; only rejected and closed lanes hide |
+| `weeks` | Monday week starts, month and year ends, empty weeks up to the current one |
 | `funnel` | Rank order with outcome lanes last; the share counted per card, not from lane totals (cards added mid-pipeline, skipped lanes) |
-| `milestones` | The milestones view and the rates statement on PGlite after real moves: replies, interviews, wishlist cards, rewinds, deleted lanes, kind changes |
+| `milestones` | The milestones view and the stats statements on PGlite after real moves: replies, interviews, wishlist cards, rewinds, deleted lanes, kind changes; weekly counts by zone and across a clock change |
 
 ## Known limitations
 
