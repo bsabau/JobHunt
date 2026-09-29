@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
+import { Branch as DismissableLayerBranch } from "@radix-ui/react-dismissable-layer";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -96,12 +97,27 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   return (
     <FeedbackContext.Provider value={value}>
       {children}
-      {/* Each toast is its own live region (role status or alert). */}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-full max-w-sm flex-col gap-2">
-        {toasts.map((item) => (
-          <ToastView key={item.id} item={item} dismiss={dismiss} />
-        ))}
-      </div>
+      {/* Two live regions: errors are announced at once, other messages when
+          the reader is idle. aria-live also keeps them readable while a dialog
+          is open (Radix hides everything else outside it from assistive tech).
+          As a dismissable-layer branch, the region counts as part of any open
+          dialog, so dismissing a "save failed" toast keeps the dialog and form. */}
+      <DismissableLayerBranch className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-full max-w-sm flex-col gap-2">
+        <div aria-live="assertive" className="flex flex-col gap-2">
+          {toasts
+            .filter((item) => item.tone === "error")
+            .map((item) => (
+              <ToastView key={item.id} item={item} dismiss={dismiss} />
+            ))}
+        </div>
+        <div aria-live="polite" className="flex flex-col gap-2">
+          {toasts
+            .filter((item) => item.tone !== "error")
+            .map((item) => (
+              <ToastView key={item.id} item={item} dismiss={dismiss} />
+            ))}
+        </div>
+      </DismissableLayerBranch>
       <AlertDialog open={pending !== null} onOpenChange={(open) => !open && answer(false)}>
         <AlertDialogContent
           onCloseAutoFocus={(event) => {
@@ -148,7 +164,6 @@ function ToastView({ item, dismiss }: { item: ToastItem; dismiss: (id: number) =
 
   return (
     <div
-      role={item.tone === "error" ? "alert" : "status"}
       className={`pointer-events-auto flex items-start gap-3 rounded-lg border px-4 py-3 text-sm shadow-lg ${
         item.tone === "error" ? "border-rose-400/40 bg-rose-950 text-rose-50" : "border-border bg-popover text-popover-foreground"
       }`}
