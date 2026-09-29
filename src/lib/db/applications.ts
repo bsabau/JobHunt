@@ -1,6 +1,7 @@
-import { ConflictError, InvalidInputError } from "@/lib/api-errors";
+import { ConflictError, InvalidInputError, NotFoundError } from "@/lib/api-errors";
 import { SqlFragment, sqlFragment, stageMoveStatement } from "@/lib/stage-statements";
 import { TERMINAL_KINDS } from "@/lib/stage-kinds";
+import { StaleAction, staleActionStatement } from "@/lib/application-statements";
 import type { Role } from "@/lib/auth";
 import { Application } from "@/lib/types";
 import { ensureSchema, getSql, isStageForeignKeyViolation, sql } from "./client";
@@ -25,11 +26,15 @@ async function selectApplicationById(id: number): Promise<Application | null> {
       a.created_at,
       a.updated_at,
       e.entered_at AS stage_entered_at,
-      p.applied_at
+      p.applied_at,
+      c.clock_started_at AS stale_clock_at,
+      c.followed_up_at,
+      c.snoozed_until
     FROM applications a
     JOIN stages s ON s.id = a.stage_id
     JOIN application_stage_entry e ON e.application_id = a.id
     JOIN application_applied_at p ON p.application_id = a.id
+    JOIN application_stale_clock c ON c.application_id = a.id
     WHERE a.id = ${id};
   `) as ApplicationRow[];
 
@@ -61,15 +66,34 @@ export async function listApplications(viewer: Role): Promise<Application[]> {
       a.created_at,
       a.updated_at,
       e.entered_at AS stage_entered_at,
-      p.applied_at
+      p.applied_at,
+      c.clock_started_at AS stale_clock_at,
+      c.followed_up_at,
+      c.snoozed_until
     FROM applications a
     JOIN stages s ON s.id = a.stage_id
     JOIN application_stage_entry e ON e.application_id = a.id
     JOIN application_applied_at p ON p.application_id = a.id
+    JOIN application_stale_clock c ON c.application_id = a.id
     ORDER BY a.updated_at DESC, a.id DESC;
   `) as ApplicationRow[];
 
   return rows.map((row) => mapApplication(row, viewer));
+}
+
+// Records what the owner did about a stale application (see
+// staleActionStatement()); throws NotFoundError for an unknown one.
+export async function recordStaleAction(id: number, action: StaleAction): Promise<Application> {
+  await ensureSchema();
+
+  const statement = staleActionStatement(id, action, new Date().toISOString());
+  const rows = (await getSql().query(statement.text, statement.params)) as { id: number }[];
+
+  const updated = rows.length === 0 ? null : await selectApplicationById(id);
+  if (!updated) {
+    throw new NotFoundError("Application not found");
+  }
+  return updated;
 }
 
 // Stores a looked-up logo. The lookup runs after the response, so it only

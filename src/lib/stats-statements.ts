@@ -10,7 +10,7 @@
 // such a card has no applied date and drops out.
 
 import { type SqlFragment, type SqlStatement, compileSql, sqlFragment } from "./stage-statements.ts";
-import { CLOSED_KIND, RESOLVED_KINDS, type StageKind } from "./stage-kinds.ts";
+import { CLOSED_KIND, RESOLVED_KINDS, STALE_EXCLUDED_KINDS, type StageKind } from "./stage-kinds.ts";
 
 // `applied` is the alias of a column holding application_applied_at's value.
 function sentSince(start: string | null, applied: SqlFragment): SqlFragment {
@@ -197,5 +197,35 @@ export function outcomesStatement(start: string | null): SqlStatement {
       AND ${sentSince(start, sqlFragment`p.applied_at`)}
     GROUP BY s.id, s.name, s.kind, s.sort_order, fs.id, 3
     ORDER BY s.sort_order ASC, count DESC;
+  `);
+}
+
+export interface StaleApplicationRow {
+  id: number;
+  stage_id: number;
+  company: string;
+  role: string;
+  stage_name: string;
+  days_stale: number;
+  followed_up_at: string | Date | null;
+}
+
+// The SQL twin of isApplicationStale() in stale.ts: applications in a lane
+// that can go stale (not STALE_EXCLUDED_KINDS), `thresholdDays` or more since
+// their stale clock started (application_stale_clock: lane entry or a later
+// follow-up), and not snoozed past `now`. `now` is the page's clock, so the
+// list and the board's markers agree. Oldest clock first.
+export function staleApplicationsStatement(now: string, thresholdDays: number): SqlStatement {
+  return compileSql(sqlFragment`
+    SELECT a.id, a.stage_id, a.company, a.role, s.name AS stage_name,
+           FLOOR(EXTRACT(EPOCH FROM (${now}::timestamptz - c.clock_started_at)) / 86400.0)::int AS days_stale,
+           c.followed_up_at
+    FROM applications a
+    JOIN stages s ON s.id = a.stage_id
+    JOIN application_stale_clock c ON c.application_id = a.id
+    WHERE s.kind <> ALL(${[...STALE_EXCLUDED_KINDS]}::text[])
+      AND EXTRACT(EPOCH FROM (${now}::timestamptz - c.clock_started_at)) / 86400.0 >= ${thresholdDays}
+      AND (c.snoozed_until IS NULL OR c.snoozed_until <= ${now}::timestamptz)
+    ORDER BY c.clock_started_at ASC, a.id ASC;
   `);
 }

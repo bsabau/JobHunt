@@ -38,3 +38,30 @@ export function applicationTimelineStatement(applicationId: number): SqlStatemen
       WHERE a.id = ${applicationId};
     `);
 }
+
+export type StaleAction = "followed_up" | "snooze" | "clear";
+
+// How long a snooze hides a stale application.
+export const SNOOZE_DAYS = 7;
+
+// Records what the owner did about a stale application, at `now`: a follow-up
+// restarts the stale clock (and ends a snooze), a snooze hides the card for
+// SNOOZE_DAYS, "clear" undoes both. updated_at stays: it orders the board, and
+// a follow-up must not move the card to the top. Returns the id, or no row
+// for an unknown application.
+export function staleActionStatement(applicationId: number, action: StaleAction, now: string): SqlStatement {
+  return compileSql(sqlFragment`
+    UPDATE applications
+    SET followed_up_at = CASE ${action}::text
+          WHEN 'followed_up' THEN ${now}::timestamptz
+          WHEN 'clear' THEN NULL
+          ELSE followed_up_at
+        END,
+        snoozed_until = CASE ${action}::text
+          WHEN 'snooze' THEN ${now}::timestamptz + make_interval(days => ${SNOOZE_DAYS})
+          ELSE NULL
+        END
+    WHERE id = ${applicationId}
+    RETURNING id;
+  `);
+}

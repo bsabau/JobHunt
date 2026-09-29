@@ -49,3 +49,7 @@ export function trackStageDeleted() {
 export function trackStageReordered() {
   track("stage_reordered");
 }
+
+export function trackStaleAction(props: { action: "followed_up" | "snooze" | "close" }) {
+  track("stale_action", props);
+}

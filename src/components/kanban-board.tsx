@@ -252,6 +252,11 @@ function KanbanApplicationCard({
                   : `Applied ${formatDay(app.appliedAt, timeZone, { year: false })} · ${formatAge(daysSince(app.appliedAt, now))}`}
               </p>
             ) : null}
+            {/* Only while the follow-up is what the stale clock counts from: one
+                made before the card entered its lane no longer matters. */}
+            {app.followedUpAt !== null && app.followedUpAt === app.staleClockAt && !isTerminalKind(app.stageKind) ? (
+              <p className="text-xs text-muted-foreground/70">Followed up {formatAge(daysSince(app.followedUpAt, now))}</p>
+            ) : null}
             {app.sourceUrl ? (
               <a
                 className="text-xs font-medium text-sky-400 hover:text-sky-300"
@@ -769,7 +774,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                 <div className="space-y-3">
                   {(shown[stage.id] ?? []).map((app) => {
                     const stale = isApplicationStale(app, now);
-                    const staleDays = stale ? daysSince(app.stageEnteredAt ?? app.updatedAt, now) : 0;
+                    const staleDays = stale ? daysSince(app.staleClockAt, now) : 0;
                     return (
                       <KanbanApplicationCard
                         key={app.id}

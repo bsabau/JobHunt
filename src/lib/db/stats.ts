@@ -1,6 +1,6 @@
 import { MEDIAN_MIN_SAMPLE, STALE_THRESHOLD_DAYS } from "@/lib/constants";
 import { normalizeTimeZone } from "@/lib/timezone";
-import { STALE_EXCLUDED_KINDS, TERMINAL_KINDS } from "@/lib/stage-kinds";
+import { CLOSED_KIND, TERMINAL_KINDS, compareStageRank } from "@/lib/stage-kinds";
 import { buildFunnel } from "@/lib/funnel";
 import { groupBySource } from "@/lib/sources";
 import { StatsRange, rangeStart } from "@/lib/stats-range";
@@ -8,11 +8,13 @@ import {
   MilestoneStatsRow,
   OutcomeRow,
   SourceApplicationRow,
+  StaleApplicationRow,
   TimeToHearBackRow,
   WeekRow,
   milestoneStatsStatement,
   outcomesStatement,
   sourceApplicationsStatement,
+  staleApplicationsStatement,
   timeToHearBackStatement,
   topCompaniesStatement,
   visitsStatement,
@@ -35,7 +37,7 @@ type StatsRows = [
   { company: string; count: number }[],
   { application_id: number; stage_id: number }[],
   { company: string; role: string; interview_date: string; stage_name: string }[],
-  { company: string; role: string; stage_name: string; days_since_update: number }[],
+  StaleApplicationRow[],
   OutcomeRow[]
 ];
 
@@ -69,6 +71,7 @@ export async function getStatsData(timeZone: string, options: { now: number; ran
   const topCompaniesQuery = topCompaniesStatement(start);
   const visits = visitsStatement(start);
   const outcomesQuery = outcomesStatement(start);
+  const staleQuery = staleApplicationsStatement(new Date(options.now).toISOString(), STALE_THRESHOLD_DAYS);
   const [
     stageCountRows,
     milestoneRows,
@@ -115,16 +118,7 @@ export async function getStatsData(timeZone: string, options: { now: number; ran
       ORDER BY a.interview_date ASC
       LIMIT 10;
     `,
-    tx`
-      SELECT a.company, a.role, s.name AS stage_name,
-             FLOOR(EXTRACT(EPOCH FROM (NOW() - e.entered_at)) / 86400.0)::int AS days_since_update
-      FROM applications a
-      JOIN stages s ON s.id = a.stage_id
-      JOIN application_stage_entry e ON e.application_id = a.id
-      WHERE s.kind <> ALL(${[...STALE_EXCLUDED_KINDS]}::text[])
-        AND EXTRACT(EPOCH FROM (NOW() - e.entered_at)) / 86400.0 >= ${STALE_THRESHOLD_DAYS}
-      ORDER BY e.entered_at ASC;
-    `,
+    tx.query(staleQuery.text, staleQuery.params),
     tx.query(outcomesQuery.text, outcomesQuery.params),
   ], { readOnly: true, isolationLevel: "RepeatableRead" })) as StatsRows;
 
@@ -173,11 +167,18 @@ export async function getStatsData(timeZone: string, options: { now: number; ran
   }));
 
   const staleApplications = staleApplicationRows.map((row) => ({
+    id: row.id,
+    stageId: row.stage_id,
     company: row.company,
     role: row.role,
     stageName: row.stage_name,
-    daysSinceUpdate: row.days_since_update
+    daysSinceUpdate: row.days_stale,
+    followedUpAt: row.followed_up_at === null ? null : new Date(row.followed_up_at).toISOString()
   }));
+
+  // Where "Close" on a stale application moves it: the first closed lane by
+  // board order, or none when the board has no closed lane.
+  const closeStageId = stages.filter((stage) => stage.kind === CLOSED_KIND).sort(compareStageRank)[0]?.id ?? null;
 
   const outcomes = outcomeRows.map((row) => ({
     fromStage: row.from_stage ?? OUTCOME_DIRECT_ENTRY,
@@ -239,6 +240,7 @@ export async function getStatsData(timeZone: string, options: { now: number; ran
     funnel,
     upcomingInterviews,
     staleApplications,
+    closeStageId,
     outcomes,
     openCount: scopeTotal - resolvedCount
   };
