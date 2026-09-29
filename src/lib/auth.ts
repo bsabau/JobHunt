@@ -181,7 +181,7 @@ export interface Session {
 // session, and a typed 403 when a guest attempts a write.
 export async function requireSession(options: { write?: boolean } = {}): Promise<Session> {
   // Imported lazily so this module remains importable outside the Next runtime
-  // (e.g. scripts/verify-auth.mjs), which only exercises the pure helpers.
+  // (e.g. tests/auth.test.mjs), which only exercises the pure helpers.
   const [{ cookies }, { ForbiddenError, UnauthorizedError }] = await Promise.all([
     import("next/headers"),
     import("@/lib/api-errors")

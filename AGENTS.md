@@ -12,14 +12,15 @@ A single-owner job application tracker with three views: pipeline stats (`/`), a
 
 - `npm run dev`: dev server (Next.js with Turbopack) at localhost:3000
 - `npm run build`: production build
-- `npm run lint`: ESLint
-- `npx tsc --noEmit --incremental false`: typecheck
-- `npm run verify:auth`, `verify:timezone`, `verify:sankey`, `verify:transitions`, `verify:stage-kinds`: assert-based checks for the pure helpers
-- `npm run migrate:up`: apply migrations (required before first run)
+- `npm run check`: lint, typecheck and every test. Run it before every commit; CI runs it on every push.
+- `npm run lint`, `npm run typecheck`, `npm test`: the three parts on their own
+- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-move`)
+- `npm run migrate:up`: apply migrations to `DATABASE_URL`. Refuses when that is production.
+- `npm run migrate:prod`: apply migrations to `PRODUCTION_DATABASE_URL`. Asks for the endpoint id; only run it when the user asks.
 - `npm run migrate:create -- <name>`: scaffold a migration
-- `npm run reset:db`: **destructive.** Truncates every table in whatever `DATABASE_URL` points at, with no confirmation. `.env.local` normally points at the real database. Do not run it unless the user asks for it by name.
+- `npm run reset:db -- --yes`: **destructive.** Empties every table in `DATABASE_URL` and reseeds the default lanes. Refuses against production and when `PRODUCTION_DATABASE_URL` is unset. Do not run it unless the user asks for it by name.
 
-Before finishing a change, run lint, typecheck and the verify scripts. Run `npm audit` and `npm run build` when dependencies or config changed.
+Tests never touch a real database: `tests/stage-move.test.mjs` runs the production SQL on PGlite, built by the real migrations. Run `npm audit` and `npm run build` when dependencies or config changed.
 
 ## Architecture
 
@@ -59,8 +60,8 @@ These are easy to break and not obvious from any single file.
 
 - **The lane kind carries the meaning, not the board position.** Kinds are `intake`, `active`, `interview`, `offer`, `rejected`, `closed`. Never infer meaning from a lane's name or index.
 - **Pipeline rank is `(is terminal, sort_order)`.** `rejected` and `closed` lanes rank after every pipeline lane. Moving a card into one is always a forward move and never truncates history. They are excluded from staleness and drop-off.
-- **The rank rule exists twice**: `compareStageRank()` in `stage-kinds.ts` and the `ranked_stages` CTE in `stageMoveQuery()` in `db.ts`. Change both together.
-- **The rewind rule exists twice**: `rewindTransitionPath()` in `transitions.ts` and `stageMoveQuery()` in `db.ts`. Only the TypeScript one is tested. Change both together and extend `scripts/verify-transitions.mjs`.
+- **The rank rule exists twice**: `compareStageRank()` in `stage-kinds.ts` and the `ranked_stages` CTE in `stageMoveStatement()` in `stage-move.ts`. Change both together.
+- **The rewind rule exists twice**: `rewindTransitionPath()` in `transitions.ts` and `stageMoveStatement()` in `stage-move.ts`. `tests/stage-move.test.mjs` runs the SQL on PGlite and fails when the two disagree; add a scenario there when you change either.
 - **`application_transitions` is the current path, not an audit log.** Backward moves delete and rewrite rows.
 - **Transitions reference lanes by name.** Lanes therefore cannot be renamed; the API only allows changing the kind. `new` and `created` are reserved names.
 - **Stage moves need `expectedStageId`.** It is the concurrency guard; a mismatch returns 409.

@@ -13,9 +13,9 @@ export interface StageOrder {
   sortOrder: number;
 }
 
-// Reference implementation of the stage-rewind rule. `stageMoveQuery` in
-// db.ts performs the same truncation atomically in a single SQL statement; keep
-// the two in step and exercise this one with `npm run verify:transitions`.
+// Reference implementation of the stage-rewind rule. `stageMoveStatement` in
+// stage-move.ts performs the same truncation atomically in a single SQL
+// statement; tests/stage-move.test.mjs runs both on the same scenarios.
 //
 // The history is treated as an ordered path `[entry, to₁, to₂, …]`:
 //   - every edge before the first one that reaches or passes the target is kept;

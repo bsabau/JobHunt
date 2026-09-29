@@ -81,16 +81,16 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Checks
 
 ```bash
-npm run lint
-npx tsc --noEmit --incremental false
-npm run verify:auth && npm run verify:timezone && npm run verify:sankey && npm run verify:transitions && npm run verify:stage-kinds
+npm run check
 ```
+
+Runs lint, typecheck and every test. The tests need no database.
 
 ## Reset database
 
 ```bash
-npm run reset:db
+npm run reset:db -- --yes
 ```
 
-**Destructive.** This deletes every application, transition and stage in the database that `DATABASE_URL` points at, without asking, and recreates the default stages:
+**Destructive.** This deletes every application, transition and stage in the database that `DATABASE_URL` points at and recreates the default stages. It refuses to run without `--yes`, against production, or when `PRODUCTION_DATABASE_URL` is not set. The default stages are:
 `Wishlist`, `Applied`, `Interview`, `Offer`, `Rejected`.
