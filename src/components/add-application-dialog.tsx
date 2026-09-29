@@ -19,7 +19,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { trackApplicationCreated } from "@/lib/analytics";
 import { TEXT_LIMITS } from "@/lib/limits";
-import { applicationsForCompany, confirmDuplicateCompany } from "@/lib/utils";
+import { applicationsForCompany, duplicateCompanyWarning } from "@/lib/utils";
+import { useFeedback } from "@/components/feedback";
 
 interface AddApplicationDialogProps {
   stages: Stage[];
@@ -33,6 +34,7 @@ function getDefaultStageId(stages: Stage[]): number {
 }
 
 export function AddApplicationDialog({ stages, applications, onCreated }: AddApplicationDialogProps) {
+  const { confirm, toast } = useFeedback();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const defaultStageId = getDefaultStageId(stages);
@@ -49,8 +51,8 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    const duplicates = applicationsForCompany(form.company, applications);
-    if (!confirmDuplicateCompany(form.company, duplicates, "add")) {
+    const warning = duplicateCompanyWarning(form.company, applicationsForCompany(form.company, applications));
+    if (warning && !(await confirm({ title: "Add another application?", description: warning, confirmLabel: "Add anyway" }))) {
       return;
     }
 
@@ -79,7 +81,7 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
       setForm({ company: "", role: "", sourceUrl: "", notes: "", interviewDate: "", stageId: defaultStageId });
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Could not add application.");
+      toast(error instanceof Error ? error.message : "Could not add application.", { tone: "error" });
     } finally {
       setLoading(false);
     }

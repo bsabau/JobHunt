@@ -55,6 +55,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/types.ts`: shared interfaces (`Stage`, `Application`, `SankeyPayload`, `StatsPayload`).
 - `src/lib/limits.ts`: text length limits used by both the forms and the API.
 - `src/components/ui/`: shadcn/ui-style primitives (Radix and Tailwind).
+- `src/components/feedback.tsx`: `useFeedback()` gives `toast()` and a promise-based `confirm()`. Use them instead of `window.alert()` / `window.confirm()`.
 
 ## Domain rules
 

@@ -260,6 +260,6 @@ src/
 ## Known limitations
 
 - The login throttle is an in-memory map per server instance; it resets on cold start and is not shared between instances.
-- Cards can only be moved by mouse drag or through the edit dialog, which opens on double-click.
+- Cards are moved by dragging, by the "Move to" menu on each card, or in the edit dialog (double-click, or Enter on a focused card). There is no touch drag (owner decision); on touch screens use the menu.
 - Reordering lanes or changing a lane's kind changes rank, so older history can contain edges that now point backwards. The Sankey drops those and reports the count.
 - See `docs/AUDIT-2026-09-29.md` for the full list and `docs/FIX-PLAN.md` for the planned fixes.

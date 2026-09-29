@@ -334,6 +334,12 @@ Compute `daysSince` on the server with a single `now` passed down as a prop, or 
 
 Show a message when `refreshBoard()` fails and offer a reload.
 
+Done in PR #19 (5.3 and 5.6):
+
+- 5.3: cards are focusable (label: company, role, lane) with a focus ring; Enter opens the edit dialog; a "Move to" menu (Radix Select, keyboard-operable) on each owner's card moves it through the same path as a drop. `FeedbackProvider` (`src/components/feedback.tsx`) replaces every `alert()` / `confirm()` with toasts (`aria-live`, errors as `role="alert"`) and a Radix alert dialog (new dependency `@radix-ui/react-alert-dialog`); the duplicate-company check now returns a message for that dialog. No touch drag (decision 4); the menu covers touch screens.
+- 5.6: `refreshBoard()` reports a failure with an error toast and a "Reload page" action; after a 409 the "moved elsewhere" note only appears when the refresh worked.
+- Checked in a browser on a production build: keyboard edit and move, bin delete confirmation (Escape cancels, Delete deletes), the duplicate warning, and the refresh-failure toast; no native dialog was opened.
+
 ---
 
 ## Phase 6: hardening and housekeeping
