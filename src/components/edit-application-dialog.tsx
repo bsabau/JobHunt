@@ -20,6 +20,7 @@ import { TEXT_LIMITS } from "@/lib/limits";
 import { applicationsForCompany, duplicateCompanyWarning } from "@/lib/utils";
 import { useFeedback } from "@/components/feedback";
 import { ApplicationTimeline } from "@/components/application-timeline";
+import { OptionalFieldsInputs } from "@/components/optional-fields";
 
 interface EditApplicationDialogProps {
   open: boolean;
@@ -60,7 +61,14 @@ interface EditApplicationFormProps {
   onUpdated: (application: Application) => void;
 }
 
-function EditApplicationForm({ application, applications, stages, onOpenChange, onUpdated }: EditApplicationFormProps) {
+function EditApplicationForm({
+  application,
+  applications,
+  stages,
+  onOpenChange,
+  onUpdated,
+  children
+}: EditApplicationFormProps & { children?: React.ReactNode }) {
   const { confirm, toast } = useFeedback();
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
@@ -69,7 +77,11 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
     sourceUrl: application.sourceUrl ?? "",
     notes: application.notes ?? "",
     interviewDate: normalizeDateForInput(application.interviewDate),
-    stageId: application.stageId
+    stageId: application.stageId,
+    referral: application.referral,
+    workMode: application.workMode ?? ("" as const),
+    location: application.location ?? "",
+    salary: application.salary ?? ""
   });
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -114,74 +126,85 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
   }
 
   return (
-    <form className="space-y-4" onSubmit={onSubmit}>
-      <div className="space-y-2">
-        <Label htmlFor="edit-company">Company</Label>
-        <Input
-          id="edit-company"
-          value={form.company}
-          onChange={(e) => setForm((current) => ({ ...current, company: e.target.value }))}
-          maxLength={TEXT_LIMITS.company}
-          required
+    // The fields scroll and the footer stays: "Save changes" is always in
+    // view, however many fields there are. `children` (the history) scrolls
+    // with the fields, below them.
+    <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
+      <div className="-mx-6 space-y-4 overflow-y-auto px-6">
+        <div className="space-y-2">
+          <Label htmlFor="edit-company">Company</Label>
+          <Input
+            id="edit-company"
+            value={form.company}
+            onChange={(e) => setForm((current) => ({ ...current, company: e.target.value }))}
+            maxLength={TEXT_LIMITS.company}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="edit-role">Role</Label>
+          <Input
+            id="edit-role"
+            value={form.role}
+            onChange={(e) => setForm((current) => ({ ...current, role: e.target.value }))}
+            maxLength={TEXT_LIMITS.role}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="edit-source-url">Job link</Label>
+          <Input
+            id="edit-source-url"
+            type="url"
+            value={form.sourceUrl}
+            onChange={(e) => setForm((current) => ({ ...current, sourceUrl: e.target.value }))}
+            maxLength={TEXT_LIMITS.url}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="edit-interview-date">Interview date</Label>
+          <Input
+            id="edit-interview-date"
+            type="date"
+            value={form.interviewDate}
+            onChange={(e) => setForm((current) => ({ ...current, interviewDate: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Stage</Label>
+          <Select
+            value={String(form.stageId)}
+            onValueChange={(value) => setForm((current) => ({ ...current, stageId: Number(value) }))}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {stages.map((stage) => (
+                <SelectItem value={String(stage.id)} key={stage.id}>
+                  {stage.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <OptionalFieldsInputs
+          idPrefix="edit"
+          value={{ referral: form.referral, workMode: form.workMode, location: form.location, salary: form.salary }}
+          onChange={(fields) => setForm((current) => ({ ...current, ...fields }))}
         />
+        <div className="space-y-2">
+          <Label htmlFor="edit-notes">Notes</Label>
+          <Textarea
+            id="edit-notes"
+            value={form.notes}
+            onChange={(e) => setForm((current) => ({ ...current, notes: e.target.value }))}
+            maxLength={TEXT_LIMITS.notes}
+          />
+        </div>
+        {children}
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="edit-role">Role</Label>
-        <Input
-          id="edit-role"
-          value={form.role}
-          onChange={(e) => setForm((current) => ({ ...current, role: e.target.value }))}
-          maxLength={TEXT_LIMITS.role}
-          required
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="edit-source-url">Job link</Label>
-        <Input
-          id="edit-source-url"
-          type="url"
-          value={form.sourceUrl}
-          onChange={(e) => setForm((current) => ({ ...current, sourceUrl: e.target.value }))}
-          maxLength={TEXT_LIMITS.url}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="edit-interview-date">Interview date</Label>
-        <Input
-          id="edit-interview-date"
-          type="date"
-          value={form.interviewDate}
-          onChange={(e) => setForm((current) => ({ ...current, interviewDate: e.target.value }))}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Stage</Label>
-        <Select
-          value={String(form.stageId)}
-          onValueChange={(value) => setForm((current) => ({ ...current, stageId: Number(value) }))}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {stages.map((stage) => (
-              <SelectItem value={String(stage.id)} key={stage.id}>
-                {stage.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="edit-notes">Notes</Label>
-        <Textarea
-          id="edit-notes"
-          value={form.notes}
-          onChange={(e) => setForm((current) => ({ ...current, notes: e.target.value }))}
-          maxLength={TEXT_LIMITS.notes}
-        />
-      </div>
-      <DialogFooter>
+      <DialogFooter className="pt-4">
         <Button type="submit" disabled={loading}>
           {loading ? "Saving..." : "Save changes"}
         </Button>
@@ -210,17 +233,16 @@ export function EditApplicationDialog({
           <DialogDescription>Update details and interview planning for this application.</DialogDescription>
         </DialogHeader>
         {application ? (
-          <div className="-mx-6 space-y-6 overflow-y-auto px-6">
-            <EditApplicationForm
-              key={application.id}
-              application={application}
-              applications={applications}
-              stages={stages}
-              onOpenChange={onOpenChange}
-              onUpdated={onUpdated}
-            />
-            {/* Below the form: the owner opens this dialog to edit, and the
-                form must not move when the history arrives. */}
+          <EditApplicationForm
+            key={application.id}
+            application={application}
+            applications={applications}
+            stages={stages}
+            onOpenChange={onOpenChange}
+            onUpdated={onUpdated}
+          >
+            {/* Below the fields: the owner opens this dialog to edit, and the
+                fields must not move when the history arrives. */}
             <div className="border-t border-border/60 pt-4">
               <ApplicationTimeline
                 // A moved or edited card loads its path again.
@@ -230,7 +252,7 @@ export function EditApplicationDialog({
                 now={now}
               />
             </div>
-          </div>
+          </EditApplicationForm>
         ) : null}
       </DialogContent>
     </Dialog>

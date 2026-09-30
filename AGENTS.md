@@ -6,7 +6,7 @@ Deeper reference: `docs/ARCHITECTURE.md` (domain model, schema, API, auth). Open
 
 ## What this is
 
-A single-owner job application tracker with three views: pipeline stats (`/`), a Kanban board (`/board`) and a Sankey flow chart (`/sankey`). An optional guest account is read-only and never sees notes.
+A single-owner job application tracker with three views: pipeline stats (`/`), a Kanban board (`/board`) and a Sankey flow chart (`/sankey`). An optional guest account is read-only and never sees notes or salary.
 
 ## Commands
 
@@ -82,7 +82,7 @@ These are easy to break and not obvious from any single file.
 - **Whether and when an application got a reply, an interview or an offer comes from the view `application_milestones`.** Rates use the sent applications as their denominator.
 - **Transitions reference lanes by id** (`from_stage_id`, `to_stage_id`); join history to lanes by id, never by name. `from_status` / `to_status` hold the lane's name: a rename rewrites them in the same statement (`stageUpdateStatement()`), and after a lane is deleted its id becomes `NULL` and the name is all that remains. `new` and `created` are reserved names.
 - **Stage moves need `expectedStageId`.** It is the concurrency guard; a mismatch returns 409.
-- **Notes are owner-only.** `listApplications(viewer)` leaves them out for a guest viewer, through `mapApplication()` in `db/rows.ts`. Pass the session's role; never read applications for a guest another way.
+- **Notes and salary are owner-only.** `listApplications(viewer)` leaves them out for a guest viewer, through `mapApplication()` in `db/rows.ts`. Salary also never enters the stats, the timeline, an analytics event or a log line. Pass the session's role; never read applications for a guest another way.
 - **Dates and zones.** `interview_date` is a `DATE` and must be handled as a `YYYY-MM-DD` string, never parsed with `new Date(string)`. Anything formatted on both server and client must pin locale and time zone, and relative ages take the `now` prop the page reads once with `requestNow()`; `daysSince()` and `daysUntil()` require it.
 
 ## Database

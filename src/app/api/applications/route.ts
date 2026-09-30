@@ -5,6 +5,7 @@ import { errorResponse } from "@/lib/api-errors";
 import { requireSession } from "@/lib/auth";
 import {
   TEXT_LIMITS,
+  optionalApplicationFields,
   optionalDateOnly,
   optionalHttpUrl,
   optionalPositiveInteger,
@@ -41,7 +42,8 @@ export async function POST(request: NextRequest) {
       notes,
       interviewDate,
       sourceUrl,
-      stageId
+      stageId,
+      ...optionalApplicationFields(payload)
     });
     scheduleLogoLookup(application.id, application.company);
 

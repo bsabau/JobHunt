@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, ArrowRightLeft, Plus, Settings2, Trash2 } from "lucide-react";
 import { KIND_TONES, STAGE_TONES, isApplicationStale, isStaleEligibleStage } from "@/lib/constants";
+import { WORK_MODE_LABELS } from "@/lib/limits";
 import { daysSince, daysUntil, formatDateOnly, formatDay } from "@/lib/timezone";
 import { INTAKE_KIND, KIND_LABELS, isTerminalKind } from "@/lib/stage-kinds";
 import { Application, Stage } from "@/lib/types";
@@ -245,6 +246,13 @@ function KanbanApplicationCard({
               <CompanyLogo company={app.company} logoUrl={app.logoUrl} logoBgClass={logoBgClass} />
               <p className="text-sm text-muted-foreground">{app.role}</p>
             </div>
+            {app.workMode !== null || app.referral ? (
+              <p className="text-xs text-muted-foreground/70">
+                {[app.workMode === null ? null : WORK_MODE_LABELS[app.workMode], app.referral ? "Referral" : null]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            ) : null}
             {!isTerminalKind(app.stageKind) ? (
               <p className="text-xs text-muted-foreground/70">
                 {app.stageKind === INTAKE_KIND || app.appliedAt === null

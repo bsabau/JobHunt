@@ -1,4 +1,5 @@
 import type { StageKind } from "@/lib/stage-kinds";
+import type { WorkMode } from "@/lib/limits";
 
 export type { StageKind };
 
@@ -23,6 +24,11 @@ export interface Application {
   createdAt: string;
   updatedAt: string;
   stageEnteredAt?: string;
+  referral: boolean;
+  workMode: WorkMode | null;
+  location: string | null;
+  // Owner-only, like notes: always null for the guest (mapApplication()).
+  salary: string | null;
   // When it was sent: its creation, or its first move out of a wishlist
   // (intake) lane; null while it has not left one (view application_applied_at).
   appliedAt: string | null;
@@ -115,6 +121,16 @@ export interface StatsPayload {
   }[];
   // The lane "Close" moves a stale application to: the first closed lane.
   closeStage: { id: number; name: string } | null;
+  // Sent applications (in the range) by referral ("referral", "no-referral")
+  // and by work mode (a WorkMode or "not-set"). Never by salary.
+  fieldResults: {
+    dimension: "referral" | "work_mode";
+    group: string;
+    sent: number;
+    responded: number;
+    interviewed: number;
+    offered: number;
+  }[];
   // Sent at least 14 days ago, no reply, in a lane that can go stale, not
   // snoozed: what "Close ghosted applications" offers. Empty for the guest.
   ghostCandidates: {

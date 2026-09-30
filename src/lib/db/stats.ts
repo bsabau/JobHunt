@@ -6,6 +6,7 @@ import { groupBySource } from "@/lib/sources";
 import { StatsRange, rangeStart } from "@/lib/stats-range";
 import type { Role } from "@/lib/auth";
 import {
+  FieldResultRow,
   GhostCandidateRow,
   MilestoneStatsRow,
   OutcomeRow,
@@ -13,6 +14,7 @@ import {
   StaleApplicationRow,
   TimeToHearBackRow,
   WeekRow,
+  fieldResultsStatement,
   ghostCandidatesStatement,
   milestoneStatsStatement,
   outcomesStatement,
@@ -42,6 +44,7 @@ type StatsRows = [
   { company: string; role: string; interview_date: string; stage_name: string }[],
   StaleApplicationRow[],
   GhostCandidateRow[],
+  FieldResultRow[],
   OutcomeRow[]
 ];
 
@@ -82,6 +85,7 @@ export async function getStatsData(
   const staleQuery = staleApplicationsStatement(new Date(options.now).toISOString(), STALE_THRESHOLD_DAYS);
   // Every candidate from STALE_THRESHOLD_DAYS on; the dialog narrows by its N.
   const ghostQuery = ghostCandidatesStatement(new Date(options.now).toISOString(), STALE_THRESHOLD_DAYS);
+  const fieldQuery = fieldResultsStatement(start);
   const [
     stageCountRows,
     milestoneRows,
@@ -95,6 +99,7 @@ export async function getStatsData(
     upcomingInterviewRows,
     staleApplicationRows,
     ghostCandidateRows,
+    fieldResultRows,
     outcomeRows,
   ] = (await transaction((tx) => [
     tx`
@@ -131,6 +136,7 @@ export async function getStatsData(
     `,
     tx.query(staleQuery.text, staleQuery.params),
     tx.query(ghostQuery.text, ghostQuery.params),
+    tx.query(fieldQuery.text, fieldQuery.params),
     tx.query(outcomesQuery.text, outcomesQuery.params),
   ], { readOnly: true, isolationLevel: "RepeatableRead" })) as StatsRows;
 
@@ -255,6 +261,14 @@ export async function getStatsData(
     upcomingInterviews,
     staleApplications,
     closeStage,
+    fieldResults: fieldResultRows.map((row) => ({
+      dimension: row.dimension,
+      group: row.group_key,
+      sent: row.sent,
+      responded: row.responded,
+      interviewed: row.interviewed,
+      offered: row.offered
+    })),
     ghostCandidates:
       options.viewer === "guest"
         ? []

@@ -3,11 +3,12 @@
 import { ApplicationTimeline } from "@/components/application-timeline";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatDateOnly, formatDay } from "@/lib/timezone";
+import { WORK_MODE_LABELS } from "@/lib/limits";
 import type { Application } from "@/lib/types";
 
 // The guest's view of a card: read-only, and built from the Application the
-// guest already has, whose notes are always null. There is deliberately no
-// notes field, so nothing here can show them.
+// guest already has, whose notes and salary are always null. There is
+// deliberately no field for either, so nothing here can show them.
 export function ApplicationDetailsDialog({
   application,
   open,
@@ -39,6 +40,24 @@ export function ApplicationDetailsDialog({
                 <dd>{application.stageName}</dd>
                 <dt className="text-muted-foreground">{application.appliedAt ? "Applied" : "Added"}</dt>
                 <dd>{formatDay(application.appliedAt ?? application.createdAt, timeZone)}</dd>
+                {application.workMode !== null ? (
+                  <>
+                    <dt className="text-muted-foreground">Work mode</dt>
+                    <dd>{WORK_MODE_LABELS[application.workMode]}</dd>
+                  </>
+                ) : null}
+                {application.location ? (
+                  <>
+                    <dt className="text-muted-foreground">Location</dt>
+                    <dd>{application.location}</dd>
+                  </>
+                ) : null}
+                {application.referral ? (
+                  <>
+                    <dt className="text-muted-foreground">Referral</dt>
+                    <dd>Yes</dd>
+                  </>
+                ) : null}
                 {application.interviewDate ? (
                   <>
                     <dt className="text-muted-foreground">Interview</dt>

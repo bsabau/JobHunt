@@ -1,5 +1,6 @@
 import type { Role } from "@/lib/auth";
 import type { StageKind } from "@/lib/stage-kinds";
+import type { WorkMode } from "@/lib/limits";
 import type { Application, Stage, TimelinePayload } from "@/lib/types";
 
 // Type-only imports, so the tests can load this file straight from Node.
@@ -20,6 +21,10 @@ export interface ApplicationRow {
   interview_date: string | null;
   source_url: string | null;
   logo_url: string | null;
+  referral: boolean;
+  work_mode: WorkMode | null;
+  location: string | null;
+  salary: string | null;
   stage_id: number;
   stage_name: string;
   stage_kind: StageKind;
@@ -43,8 +48,8 @@ function toIsoString(value: Timestamp): string {
   return (value instanceof Date ? value : new Date(value)).toISOString();
 }
 
-// Notes are owner-only: every application handed to a guest goes through here
-// with viewer "guest", so no caller has to remember to redact.
+// Notes and salary are owner-only: every application handed to a guest goes
+// through here with viewer "guest", so no caller has to remember to redact.
 export function mapApplication(row: ApplicationRow, viewer: Role): Application {
   return {
     id: row.id,
@@ -54,6 +59,10 @@ export function mapApplication(row: ApplicationRow, viewer: Role): Application {
     interviewDate: row.interview_date || null,
     sourceUrl: row.source_url || null,
     logoUrl: row.logo_url || null,
+    referral: row.referral,
+    workMode: row.work_mode,
+    location: row.location,
+    salary: viewer === "guest" ? null : row.salary,
     stageId: row.stage_id,
     stageName: row.stage_name,
     stageKind: row.stage_kind,

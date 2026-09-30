@@ -263,3 +263,41 @@ export function ghostCandidatesStatement(now: string, minDays: number): SqlState
     ORDER BY m.applied_at ASC, a.id ASC;
   `);
 }
+
+export interface FieldResultRow {
+  dimension: "referral" | "work_mode";
+  group_key: string;
+  sent: number;
+  responded: number;
+  interviewed: number;
+  offered: number;
+}
+
+// Sent applications (in the range) split by referral and by work mode, with
+// how many replied, reached an interview and got an offer. A card without a
+// work mode forms its own group, "not-set". Salary is never read here: it is
+// owner-only and has no place in the stats.
+export function fieldResultsStatement(start: string | null): SqlStatement {
+  const scope = sqlFragment`
+    FROM application_milestones m
+    JOIN applications a ON a.id = m.application_id
+    WHERE m.applied_at IS NOT NULL
+      AND ${sentSince(start, sqlFragment`m.applied_at`)}
+  `;
+  const counts = sqlFragment`
+    COUNT(*)::int AS sent,
+    COUNT(*) FILTER (WHERE m.responded)::int AS responded,
+    COUNT(*) FILTER (WHERE m.interviewed)::int AS interviewed,
+    COUNT(*) FILTER (WHERE m.offered)::int AS offered
+  `;
+  return compileSql(sqlFragment`
+    SELECT 'referral' AS dimension, CASE WHEN a.referral THEN 'referral' ELSE 'no-referral' END AS group_key, ${counts}
+    ${scope}
+    GROUP BY 1, 2
+    UNION ALL
+    SELECT 'work_mode' AS dimension, COALESCE(a.work_mode, 'not-set') AS group_key, ${counts}
+    ${scope}
+    GROUP BY 1, 2
+    ORDER BY 1, 2;
+  `);
+}

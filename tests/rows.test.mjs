@@ -10,6 +10,10 @@ const row = {
   interview_date: "2026-10-02",
   source_url: "",
   logo_url: null,
+  referral: true,
+  work_mode: "hybrid",
+  location: "Utrecht",
+  salary: "70-80k",
   stage_id: 3,
   stage_name: "Interview",
   stage_kind: "interview",
@@ -36,6 +40,10 @@ test("snake_case columns map to the Application shape", () => {
     interviewDate: "2026-10-02",
     sourceUrl: null,
     logoUrl: null,
+    referral: true,
+    workMode: "hybrid",
+    location: "Utrecht",
+    salary: "70-80k",
     stageId: 3,
     stageName: "Interview",
     stageKind: "interview",
@@ -62,4 +70,11 @@ test("a wishlist card that was never sent has no applied date", () => {
 test("the stale clock and follow-up reach the guest too: the board's stale marker needs them", () => {
   const guest = mapApplication(row, "guest");
   assert.deepEqual([guest.staleClockAt, guest.followedUpAt, guest.snoozedUntil], ["2026-09-05T10:00:00.000Z", "2026-09-05T10:00:00.000Z", null]);
+});
+
+test("salary is owner-only like notes; referral, work mode and location reach the guest", () => {
+  assert.equal(mapApplication(row, "user").salary, "70-80k");
+  const guest = mapApplication(row, "guest");
+  assert.equal(guest.salary, null);
+  assert.deepEqual([guest.referral, guest.workMode, guest.location], [true, "hybrid", "Utrecht"]);
 });

@@ -21,6 +21,7 @@ import { trackApplicationCreated } from "@/lib/analytics";
 import { TEXT_LIMITS } from "@/lib/limits";
 import { applicationsForCompany, duplicateCompanyWarning } from "@/lib/utils";
 import { useFeedback } from "@/components/feedback";
+import { EMPTY_OPTIONAL_FIELDS, OptionalFieldsInputs } from "@/components/optional-fields";
 
 interface AddApplicationDialogProps {
   stages: Stage[];
@@ -44,7 +45,8 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
     sourceUrl: "",
     notes: "",
     interviewDate: "",
-    stageId: defaultStageId
+    stageId: defaultStageId,
+    ...EMPTY_OPTIONAL_FIELDS
   });
   const selectedStageId = stages.some((stage) => stage.id === form.stageId) ? form.stageId : defaultStageId;
 
@@ -78,7 +80,7 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
         hasNotes: Boolean(form.notes.trim())
       });
       setOpen(false);
-      setForm({ company: "", role: "", sourceUrl: "", notes: "", interviewDate: "", stageId: defaultStageId });
+      setForm({ company: "", role: "", sourceUrl: "", notes: "", interviewDate: "", stageId: defaultStageId, ...EMPTY_OPTIONAL_FIELDS });
     } catch (error) {
       console.error(error);
       toast(error instanceof Error ? error.message : "Could not add application.", { tone: "error" });
@@ -92,82 +94,90 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
       <DialogTrigger asChild>
         <Button>Add Application</Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="flex max-h-[90vh] flex-col">
         <DialogHeader>
           <DialogTitle>Add a new application</DialogTitle>
           <DialogDescription>
             We will search a matching company logo online and attach it to the card automatically.
           </DialogDescription>
         </DialogHeader>
-        <form className="space-y-4" onSubmit={onSubmit}>
-          <div className="space-y-2">
-            <Label htmlFor="company">Company</Label>
-            <Input
-              id="company"
-              value={form.company}
-              onChange={(e) => setForm((current) => ({ ...current, company: e.target.value }))}
-              maxLength={TEXT_LIMITS.company}
-              required
+        {/* The fields scroll and the footer stays, as in the edit dialog. */}
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
+          <div className="-mx-6 space-y-4 overflow-y-auto px-6">
+            <div className="space-y-2">
+              <Label htmlFor="company">Company</Label>
+              <Input
+                id="company"
+                value={form.company}
+                onChange={(e) => setForm((current) => ({ ...current, company: e.target.value }))}
+                maxLength={TEXT_LIMITS.company}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="role">Role</Label>
+              <Input
+                id="role"
+                value={form.role}
+                onChange={(e) => setForm((current) => ({ ...current, role: e.target.value }))}
+                maxLength={TEXT_LIMITS.role}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sourceUrl">Job link</Label>
+              <Input
+                id="sourceUrl"
+                type="url"
+                placeholder="https://..."
+                value={form.sourceUrl}
+                onChange={(e) => setForm((current) => ({ ...current, sourceUrl: e.target.value }))}
+                maxLength={TEXT_LIMITS.url}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="interviewDate">Interview date</Label>
+              <Input
+                id="interviewDate"
+                type="date"
+                value={form.interviewDate}
+                onChange={(e) => setForm((current) => ({ ...current, interviewDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Initial stage</Label>
+              <Select
+                value={String(selectedStageId)}
+                onValueChange={(value) => setForm((current) => ({ ...current, stageId: Number(value) }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {stages.map((stage) => (
+                    <SelectItem value={String(stage.id)} key={stage.id}>
+                      {stage.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <OptionalFieldsInputs
+              idPrefix="add"
+              value={{ referral: form.referral, workMode: form.workMode, location: form.location, salary: form.salary }}
+              onChange={(fields) => setForm((current) => ({ ...current, ...fields }))}
             />
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                value={form.notes}
+                onChange={(e) => setForm((current) => ({ ...current, notes: e.target.value }))}
+                maxLength={TEXT_LIMITS.notes}
+              />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="role">Role</Label>
-            <Input
-              id="role"
-              value={form.role}
-              onChange={(e) => setForm((current) => ({ ...current, role: e.target.value }))}
-              maxLength={TEXT_LIMITS.role}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="sourceUrl">Job link</Label>
-            <Input
-              id="sourceUrl"
-              type="url"
-              placeholder="https://..."
-              value={form.sourceUrl}
-              onChange={(e) => setForm((current) => ({ ...current, sourceUrl: e.target.value }))}
-              maxLength={TEXT_LIMITS.url}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="interviewDate">Interview date</Label>
-            <Input
-              id="interviewDate"
-              type="date"
-              value={form.interviewDate}
-              onChange={(e) => setForm((current) => ({ ...current, interviewDate: e.target.value }))}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Initial stage</Label>
-            <Select
-              value={String(selectedStageId)}
-              onValueChange={(value) => setForm((current) => ({ ...current, stageId: Number(value) }))}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {stages.map((stage) => (
-                  <SelectItem value={String(stage.id)} key={stage.id}>
-                    {stage.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="notes">Notes</Label>
-            <Textarea
-              id="notes"
-              value={form.notes}
-              onChange={(e) => setForm((current) => ({ ...current, notes: e.target.value }))}
-              maxLength={TEXT_LIMITS.notes}
-            />
-          </div>
-          <DialogFooter>
+          <DialogFooter className="pt-4">
             <Button type="submit" disabled={loading || stages.length === 0}>
               {loading ? "Saving..." : "Create"}
             </Button>

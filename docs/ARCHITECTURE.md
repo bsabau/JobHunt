@@ -4,7 +4,7 @@ Reference for how the JobHunt app is put together. `AGENTS.md` holds the short r
 
 ## What the app does
 
-A single-owner job application tracker. The owner adds applications, drags them between lanes on a Kanban board, and reads pipeline statistics and a Sankey flow chart. An optional read-only guest account can view everything except notes.
+A single-owner job application tracker. The owner adds applications, drags them between lanes on a Kanban board, and reads pipeline statistics and a Sankey flow chart. An optional read-only guest account can view everything except notes and salary.
 
 ## Stack
 
@@ -41,9 +41,9 @@ All bodies are JSON and must be sent with `Content-Type: application/json` (415 
 |---|---|---|
 | `POST /api/auth/login` | `user`, `pass` | Sets the `session` cookie. 401 on bad credentials, 429 after 5 failures per minute per IP |
 | `POST /api/auth/logout` | none | Clears the cookie; works without a session |
-| `GET /api/applications` | | Returns `{ applications, stages }`; `notes` is `null` for guests (redacted in the data layer) |
-| `POST /api/applications` | `company`, `role`, optional `notes`, `interviewDate`, `sourceUrl`, `stageId` | Returns at once; the logo is looked up after the response. Default lane is the first `active` lane |
-| `PUT /api/applications/:id` | all editable fields, `stageId`, `expectedStageId` | Full replacement. 409 if the card moved |
+| `GET /api/applications` | | Returns `{ applications, stages }`; `notes` and `salary` are `null` for guests (redacted in the data layer) |
+| `POST /api/applications` | `company`, `role`, optional `notes`, `referral` (boolean), `workMode` (`remote`, `hybrid`, `onsite`), `location`, `salary`, `interviewDate`, `sourceUrl`, `stageId` | Returns at once; the logo is looked up after the response. Default lane is the first `active` lane |
+| `PUT /api/applications/:id` | all editable fields, `stageId`, `expectedStageId` | Full replacement: a body without the optional fields clears them. 409 if the card moved |
 | `DELETE /api/applications/:id` | | Transitions cascade. `{ ok: true }` |
 | `PATCH /api/applications/:id/status` | `stageId`, `expectedStageId` | The drag-and-drop move. 409 if the card moved |
 | `PATCH /api/applications/:id/follow-up` | `action`: `followed_up`, `snooze`, `unsnooze` or `unfollow` | Owner only. Followed up sets `followed_up_at` to now and ends a snooze; snooze sets `snoozed_until` to now plus 7 days; the two undos empty one field each (`unsnooze` keeps any follow-up). Does not touch `updated_at`. Returns the application; 404 for an unknown one |
@@ -113,6 +113,10 @@ applications
   stage_id        INTEGER NOT NULL -> stages(id) ON DELETE RESTRICT
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()   -- set by the app, no trigger
+  referral        BOOLEAN NOT NULL DEFAULT false
+  work_mode       TEXT              -- remote, hybrid or onsite (WORK_MODES)
+  location        TEXT              -- not blank when set
+  salary          TEXT              -- not blank when set; owner-only, like notes
   followed_up_at  TIMESTAMPTZ       -- last "Followed up" on a stale application; set by the server
   snoozed_until   TIMESTAMPTZ       -- a snoozed stale application is hidden until then
 
@@ -178,6 +182,7 @@ Migration notes:
 - `1730000015000` creates the view `application_applied_at` on top of `application_entry_stage`. It reads `applications.id` and `.created_at`, `stages.id` and `.kind`, and the transitions' `application_id`, `to_stage_id` and `transitioned_at`; the same rule applies, and dropping `application_entry_stage` now needs this view dropped first. `1730000016000` replaces it so that a move into a `rejected` or `closed` lane does not count as sending.
 - `1730000017000` creates the view `application_milestones` on top of `application_applied_at` and `application_entry_stage`. It reads `applications.id`, `stages.id` and `.kind`, and the transitions' `id`, `application_id`, `to_stage_id` and `transitioned_at`; the same rule applies, and dropping either view it builds on now needs this one dropped first. `1730000018000` replaces it with the same columns, so that `responded`, `interviewed` and `offered` are never `NULL` (they were when the entry lane had been deleted).
 - `1730000019000` adds `applications.followed_up_at` and `.snoozed_until`, and the view `application_stale_clock` on top of `application_stage_entry`. It reads `applications.id`, `.followed_up_at` and `.snoozed_until`; the same drop-and-re-create rule applies.
+- `1730000020000` adds `referral`, `work_mode`, `location` and `salary` to `applications`, with guarded checks: `work_mode` in `WORK_MODES`, `location` and `salary` not blank.
 - Every new migration also updates `LATEST_MIGRATION` in `src/lib/db/schema-version.ts`. `ensureSchema()` compares it with the newest row in `schema_migrations` once per process and refuses to query a database that is behind; a test fails when the constant falls behind the `migrations/` folder.
 - The runner serialises concurrent runs with `pg_advisory_xact_lock` inside each migration's transaction, then re-checks `schema_migrations`. A session-level lock would not survive Neon's transaction pooler.
 
@@ -244,6 +249,7 @@ A rename is refused (409) when another lane has the name in any case. Charts gro
 | Replied | The first edge after the application was sent whose target is not `intake` or `closed` (a deleted lane counts); for a card that entered in intake, after the edge that sent it, compared by `(transitioned_at, id)`. Also true, with no time, for a card that entered in an `interview`, `offer` or `rejected` lane, and for any card that reached an interview or an offer (view `application_milestones`) |
 | Response, interview, offer rates | Shares of the sent applications (applied at set) that replied, reached an `interview` lane (or entered in one), reached an `offer` lane (or entered in one). On the current path: a card moved back out of an interview lane no longer counts as interviewed |
 | Ghosted | Share of the sent applications currently in a `closed` lane |
+| Results by referral and work mode | Sent applications (in the range) by `referral` and by `work_mode` ("Not set" is its own group), with replied, interview and offer counts (`fieldResultsStatement()`); never by salary |
 | Ghost candidates | Sent at least 14 days before the page's `now`, no reply (`application_milestones.responded` false), in a lane that can go stale, not snoozed; a follow-up is not a reply (`ghostCandidatesStatement()`). The bulk-close dialog narrows them by its N (default 21) and moves the ticked ones one by one through `PATCH .../status`, at most 50 per run. Empty for the guest |
 | Open count | Total minus applications in a resolved lane |
 | Days to first reply, to rejection | Medians of `responded_at - applied_at` and `rejected_at - applied_at` (`percentile_cont(0.5)`) over the sent applications where both times are known; shown from 5 applications (`MEDIAN_MIN_SAMPLE`), "—" below |
@@ -324,7 +330,7 @@ src/
 | `sources` | Host extraction (case, `www.`, port, bad links) and the Other and Unknown groups |
 | `funnel` | Rank order with outcome lanes last; the share counted per card, not from lane totals (cards added mid-pipeline, skipped lanes) |
 | `milestones` | The milestones view on PGlite after real moves: replies, interviews, wishlist cards, rewinds, deleted lanes, kind changes |
-| `stats-statements` | The stats page's statements on PGlite: the rates, weekly counts by zone and across a clock change, the medians to a reply and to a rejection, results by week, each sent application's link and flags, the funnel's visits, repeat companies and outcomes, each with and without a date range. Shares its board setup with `milestones` through `tests/helpers/pglite-board.mjs` |
+| `stats-statements` | The stats page's statements on PGlite: the rates, weekly counts by zone and across a clock change, the medians to a reply and to a rejection, results by week, each sent application's link and flags, the funnel's visits, repeat companies and outcomes, each with and without a date range; the ghost candidates; results by referral and work mode. Shares its board setup with `milestones` through `tests/helpers/pglite-board.mjs` |
 
 ## Known limitations
 
