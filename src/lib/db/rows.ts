@@ -19,6 +19,8 @@ export interface ApplicationRow {
   role: string;
   notes: string | null;
   interview_date: string | null;
+  interview_time: string | null;
+  interview_time_zone: string | null;
   source_url: string | null;
   logo_url: string | null;
   referral: boolean;
@@ -57,6 +59,8 @@ export function mapApplication(row: ApplicationRow, viewer: Role): Application {
     role: row.role,
     notes: viewer === "guest" ? null : row.notes || null,
     interviewDate: row.interview_date || null,
+    interviewTime: row.interview_time,
+    interviewTimeZone: row.interview_time_zone,
     sourceUrl: row.source_url || null,
     logoUrl: row.logo_url || null,
     referral: row.referral,

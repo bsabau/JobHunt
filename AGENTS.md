@@ -14,7 +14,7 @@ A single-owner job application tracker with three views: pipeline stats (`/`), a
 - `npm run build`: production build
 - `npm run check`: lint, typecheck and every test. Run it before every commit; CI runs it on every push.
 - `npm run lint`, `npm run typecheck`, `npm test`: the three parts on their own
-- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`, `milestones`, `funnel`, `weeks`, `stats-statements`, `sources`, `stats-range`, `stale-clock`)
+- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`, `milestones`, `funnel`, `weeks`, `stats-statements`, `sources`, `stats-range`, `stale-clock`, `ics`, `interview-time`)
 - `npm run migrate:up`: apply migrations to `DATABASE_URL`. Refuses when that is production.
 - `npm run migrate:prod`: apply migrations to `PRODUCTION_DATABASE_URL`. Asks for the endpoint id; only run it when the user asks.
 - `npm run migrate:create -- <name>`: scaffold a migration
@@ -37,7 +37,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 
 ### Request pipeline
 
-1. `src/proxy.ts` (Next 16's middleware) checks the session, rejects cross-site writes and blocks guest writes. It also gives every page a CSP nonce and an enforced policy (`src/lib/csp.ts`). A new external host for scripts, images or requests must be added there.
+1. `src/proxy.ts` (Next 16's middleware) checks the session, rejects cross-site writes and blocks guest writes. Owner-only reads (the calendar file) pass `{ owner: true }` to `requireSession()`. It also gives every page a CSP nonce and an enforced policy (`src/lib/csp.ts`). A new external host for scripts, images or requests must be added there.
 2. Every route handler calls `requireSession()` and every page calls `requirePageSession()` **before** any database access. The proxy is not the authority. New routes and pages must do the same; pass `{ write: true }` for anything that changes data.
 3. Parse input with the helpers in `src/lib/api-validation.ts`.
 4. Query through `src/lib/db/` (imported as `@/lib/db`).
@@ -55,6 +55,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/sources.ts`: results by source (job-link host, the "Other" and "Unknown" groups), grouped on the server so only totals reach the page. Hosts are shown as text, never as links or images, so the CSP needs no new host.
 - `src/lib/stats-range.ts`: the stats page's date range (`?range=30|90`), parsed through an allowlist; ranged statements take its start, `NULL` for all time.
 - `src/lib/stale.ts`: the stale rule and `STALE_THRESHOLD_DAYS` (re-exported by `constants.ts`); loadable from Node for the twin test.
+- `src/lib/ics.ts`: writes the interview calendar file (RFC 5545: CRLF, folding at 75 octets, escaping).
 - `src/lib/funnel.ts`: the stats funnel (lanes in pipeline rank, and per lane the share of its cards that reached a later pipeline lane); it imports `compareStageRank()`, so the rank rule is not copied a third time.
 - `src/lib/board-filter.ts`: the board filter's rules (company and role only, never notes; outcome lanes hidden by kind).
 - `src/lib/sankey.ts`: builds the Sankey graph as a DAG.
@@ -83,7 +84,7 @@ These are easy to break and not obvious from any single file.
 - **Transitions reference lanes by id** (`from_stage_id`, `to_stage_id`); join history to lanes by id, never by name. `from_status` / `to_status` hold the lane's name: a rename rewrites them in the same statement (`stageUpdateStatement()`), and after a lane is deleted its id becomes `NULL` and the name is all that remains. `new` and `created` are reserved names.
 - **Stage moves need `expectedStageId`.** It is the concurrency guard; a mismatch returns 409.
 - **Notes and salary are owner-only.** `listApplications(viewer)` leaves them out for a guest viewer, through `mapApplication()` in `db/rows.ts`. Salary also never enters the stats, the timeline, an analytics event or a log line. Pass the session's role; never read applications for a guest another way.
-- **Dates and zones.** `interview_date` is a `DATE` and must be handled as a `YYYY-MM-DD` string, never parsed with `new Date(string)`. Anything formatted on both server and client must pin locale and time zone, and relative ages take the `now` prop the page reads once with `requestNow()`; `daysSince()` and `daysUntil()` require it.
+- **Dates and zones.** `interview_date` is a `DATE` and must be handled as a `YYYY-MM-DD` string, never parsed with `new Date(string)`. An interview time is `interview_time` (a `TIME`, read as an `HH:MM` string) in `interview_time_zone` (an IANA name); only Postgres turns the two into an instant (`AT TIME ZONE`), never JavaScript. Anything formatted on both server and client must pin locale and time zone, and relative ages take the `now` prop the page reads once with `requestNow()`; `daysSince()` and `daysUntil()` require it.
 
 ## Database
 

@@ -428,9 +428,9 @@ export function StatsCharts({
               <CardContent>
                 {upcomingInterviews.length > 0 ? (
                   <ul className="space-y-3">
-                    {upcomingInterviews.map((row, index) => (
+                    {upcomingInterviews.map((row) => (
                       <li
-                        key={`${index}-${row.company}-${row.interviewDate}`}
+                        key={row.id}
                         className="flex items-start justify-between gap-3 rounded-md border border-border/60 bg-background/50 px-3 py-2"
                       >
                         <div>
@@ -438,8 +438,22 @@ export function StatsCharts({
                           <p className="text-xs text-muted-foreground">{row.role}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-xs font-medium text-amber-300">{formatDate(row.interviewDate)}</p>
+                          <p className="text-xs font-medium text-amber-300">
+                            {formatDate(row.interviewDate)}
+                            {row.interviewTime
+                              ? ` · ${row.interviewTime}${row.interviewTimeZone && row.interviewTimeZone !== timeZone ? ` (${row.interviewTimeZone})` : ""}`
+                              : ""}
+                          </p>
                           <p className="text-xs text-muted-foreground">{row.stageName}</p>
+                          {readOnly ? null : (
+                            <a
+                              href={`/api/applications/${row.id}/interview.ics`}
+                              className="text-xs text-sky-400 hover:text-sky-300"
+                              aria-label={`Add the interview with ${row.company} to a calendar`}
+                            >
+                              Add to calendar
+                            </a>
+                          )}
                         </div>
                       </li>
                     ))}

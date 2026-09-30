@@ -1,7 +1,7 @@
 import { ConflictError, InvalidInputError, NotFoundError } from "@/lib/api-errors";
 import { SqlFragment, sqlFragment, stageMoveStatement } from "@/lib/stage-statements";
 import { TERMINAL_KINDS } from "@/lib/stage-kinds";
-import { StaleAction, staleActionStatement } from "@/lib/application-statements";
+import { InterviewEventRow, StaleAction, interviewEventStatement, staleActionStatement } from "@/lib/application-statements";
 import type { Role } from "@/lib/auth";
 import type { WorkMode } from "@/lib/limits";
 import { Application } from "@/lib/types";
@@ -19,6 +19,8 @@ async function selectApplicationById(id: number): Promise<Application | null> {
       a.role,
       a.notes,
       a.interview_date::text AS interview_date,
+      to_char(a.interview_time, 'HH24:MI') AS interview_time,
+      a.interview_time_zone,
       a.source_url,
       a.logo_url,
       a.referral,
@@ -63,6 +65,8 @@ export async function listApplications(viewer: Role): Promise<Application[]> {
       a.role,
       a.notes,
       a.interview_date::text AS interview_date,
+      to_char(a.interview_time, 'HH24:MI') AS interview_time,
+      a.interview_time_zone,
       a.source_url,
       a.logo_url,
       a.referral,
@@ -122,6 +126,9 @@ export async function setApplicationLogo(id: number, company: string, logoUrl: s
 // The optional fields shared by create and update. A full update replaces
 // them all, so a body without them clears them.
 interface OptionalFields {
+  // Set together or not at all (validated by the route; the database checks it).
+  interviewTime?: string;
+  interviewTimeZone?: string;
   referral: boolean;
   workMode?: WorkMode;
   location?: string;
@@ -168,6 +175,8 @@ export async function createApplication(input: CreateApplicationInput): Promise<
         role,
         notes,
         interview_date,
+        interview_time,
+        interview_time_zone,
         source_url,
         referral,
         work_mode,
@@ -181,6 +190,8 @@ export async function createApplication(input: CreateApplicationInput): Promise<
         ${input.role.trim()},
         ${input.notes?.trim() || null},
         ${input.interviewDate ? input.interviewDate : null},
+        ${input.interviewTime ?? null},
+        ${input.interviewTimeZone ?? null},
         ${input.sourceUrl?.trim() || null},
         ${input.referral},
         ${input.workMode ?? null},
@@ -314,6 +325,8 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
       notes = ${input.notes?.trim() || null},
       interview_date = ${input.interviewDate ? input.interviewDate : null},
       source_url = ${input.sourceUrl?.trim() || null},
+      interview_time = ${input.interviewTime ?? null},
+      interview_time_zone = ${input.interviewTimeZone ?? null},
       referral = ${input.referral},
       work_mode = ${input.workMode ?? null},
       location = ${input.location?.trim() || null},
@@ -335,4 +348,21 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
   }
 
   return selectApplicationById(id);
+}
+
+// Whether Postgres knows a time zone name: the calendar file converts with
+// AT TIME ZONE, so a zone that passes Intl but not Postgres is refused on save.
+export async function isKnownTimeZone(zone: string): Promise<boolean> {
+  await ensureSchema();
+  const rows = (await sql`SELECT 1 FROM pg_timezone_names WHERE name = ${zone} LIMIT 1;`) as unknown[];
+  return rows.length > 0;
+}
+
+// The calendar event for one application (interviewEventStatement()), or null
+// for an unknown one. Owner-only: the route checks the session.
+export async function getInterviewEvent(id: number): Promise<InterviewEventRow | null> {
+  await ensureSchema();
+  const statement = interviewEventStatement(id);
+  const rows = (await getSql().query(statement.text, statement.params)) as InterviewEventRow[];
+  return rows[0] ?? null;
 }

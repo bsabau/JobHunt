@@ -8,7 +8,10 @@ const config = [
   ...nextTypescript,
   {
     rules: {
-      "@typescript-eslint/no-explicit-any": "warn"
+      "@typescript-eslint/no-explicit-any": "warn",
+      // An escape that does nothing is usually a meant one that went wrong:
+      // "\;" in a string is just ";" (PR #42's calendar escaping).
+      "no-useless-escape": "error"
     }
   }
 ];

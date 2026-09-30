@@ -4,6 +4,8 @@ export { addStage, deleteStage, listStages, reorderStages, updateStage } from ".
 export {
   createApplication,
   deleteApplication,
+  getInterviewEvent,
+  isKnownTimeZone,
   listApplications,
   recordStaleAction,
   setApplicationLogo,

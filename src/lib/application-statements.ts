@@ -69,3 +69,28 @@ export function staleActionStatement(applicationId: number, action: StaleAction,
     RETURNING id;
   `);
 }
+
+export interface InterviewEventRow {
+  company: string;
+  role: string;
+  source_url: string | null;
+  interview_date: string | null;
+  // The interview's instant, computed by Postgres from the date, the time and
+  // its zone (so a clock change is handled by the database), or null when no
+  // time is set.
+  starts_at: string | Date | null;
+}
+
+// What the calendar file needs about one application. Never notes or salary:
+// a calendar is often shared or synced elsewhere. No row for an unknown one.
+export function interviewEventStatement(applicationId: number): SqlStatement {
+  return compileSql(sqlFragment`
+    SELECT a.company, a.role, a.source_url,
+           to_char(a.interview_date, 'YYYY-MM-DD') AS interview_date,
+           CASE WHEN a.interview_time IS NULL THEN NULL
+                ELSE (a.interview_date + a.interview_time) AT TIME ZONE a.interview_time_zone
+           END AS starts_at
+    FROM applications a
+    WHERE a.id = ${applicationId};
+  `);
+}

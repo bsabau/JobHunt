@@ -24,6 +24,9 @@ export interface Application {
   createdAt: string;
   updatedAt: string;
   stageEnteredAt?: string;
+  // "HH:MM" in interviewTimeZone (an IANA name), or both null.
+  interviewTime: string | null;
+  interviewTimeZone: string | null;
   referral: boolean;
   workMode: WorkMode | null;
   location: string | null;
@@ -107,7 +110,16 @@ export interface StatsPayload {
   // In pipeline rank, from buildFunnel(): `advanced` is the percent of the
   // lane's applications that reached a later pipeline lane (null where none).
   funnel: { stage: string; reached: number; sortOrder: number; kind: StageKind; advanced: number | null }[];
-  upcomingInterviews: { company: string; role: string; interviewDate: string; stageName: string }[];
+  upcomingInterviews: {
+    id: number;
+    company: string;
+    role: string;
+    interviewDate: string;
+    // "HH:MM" in interviewTimeZone, or both null.
+    interviewTime: string | null;
+    interviewTimeZone: string | null;
+    stageName: string;
+  }[];
   // Stale now (application_stale_clock and the stale rule), oldest clock first.
   // daysSinceUpdate counts from the clock's start: lane entry or a follow-up.
   staleApplications: {

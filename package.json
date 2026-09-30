@@ -34,7 +34,9 @@
     "verify:stats-statements": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stats-statements.test.mjs",
     "verify:sources": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/sources.test.mjs",
     "verify:stats-range": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stats-range.test.mjs",
-    "verify:stale-clock": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stale-clock.test.mjs"
+    "verify:stale-clock": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/stale-clock.test.mjs",
+    "verify:ics": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/ics.test.mjs",
+    "verify:interview-time": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/interview-time.test.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

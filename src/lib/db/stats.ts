@@ -41,7 +41,15 @@ type StatsRows = [
   WeekRow[],
   { company: string; count: number }[],
   { application_id: number; stage_id: number }[],
-  { company: string; role: string; interview_date: string; stage_name: string }[],
+  {
+    id: number;
+    company: string;
+    role: string;
+    interview_date: string;
+    interview_time: string | null;
+    interview_time_zone: string | null;
+    stage_name: string;
+  }[],
   StaleApplicationRow[],
   GhostCandidateRow[],
   FieldResultRow[],
@@ -124,14 +132,19 @@ export async function getStatsData(
     tx.query(topCompaniesQuery.text, topCompaniesQuery.params),
     tx.query(visits.text, visits.params),
     tx`
-      SELECT a.company, a.role,
+      SELECT a.id, a.company, a.role,
              to_char(a.interview_date, 'YYYY-MM-DD') AS interview_date,
+             to_char(a.interview_time, 'HH24:MI') AS interview_time,
+             a.interview_time_zone,
              s.name AS stage_name
       FROM applications a
       JOIN stages s ON s.id = a.stage_id
       WHERE a.interview_date >= (CURRENT_TIMESTAMP AT TIME ZONE ${zone})::date - 1
         AND s.kind <> ALL(${[...TERMINAL_KINDS]}::text[])
-      ORDER BY a.interview_date ASC
+      -- By day, then by the actual instant, so 09:00 in one zone and 14:00 in
+      -- another come in the order they happen; date-only interviews last.
+      ORDER BY a.interview_date ASC,
+               (a.interview_date + a.interview_time) AT TIME ZONE a.interview_time_zone ASC NULLS LAST
       LIMIT 10;
     `,
     tx.query(staleQuery.text, staleQuery.params),
@@ -178,6 +191,9 @@ export async function getStatsData(
   );
 
   const upcomingInterviews = upcomingInterviewRows.map((row) => ({
+    id: row.id,
+    interviewTime: row.interview_time,
+    interviewTimeZone: row.interview_time_zone,
     company: row.company,
     role: row.role,
     interviewDate: row.interview_date,

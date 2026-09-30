@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createApplication, listApplications, listStages } from "@/lib/db";
+import { createApplication, isKnownTimeZone, listApplications, listStages } from "@/lib/db";
 import { scheduleLogoLookup } from "@/lib/logo-lookup";
 import { errorResponse } from "@/lib/api-errors";
 import { requireSession } from "@/lib/auth";
 import {
   TEXT_LIMITS,
+  ApiValidationError,
   optionalApplicationFields,
+  optionalInterviewTime,
   optionalDateOnly,
   optionalHttpUrl,
   optionalPositiveInteger,
@@ -33,6 +35,10 @@ export async function POST(request: NextRequest) {
     const role = requiredString(payload, "role", { maxLength: TEXT_LIMITS.role });
     const notes = optionalString(payload, "notes", { maxLength: TEXT_LIMITS.notes });
     const interviewDate = optionalDateOnly(payload, "interviewDate");
+    const interviewTime = optionalInterviewTime(payload, interviewDate);
+    if (interviewTime.interviewTimeZone && !(await isKnownTimeZone(interviewTime.interviewTimeZone))) {
+      throw new ApiValidationError("interviewTimeZone is not a time zone the database knows");
+    }
     const sourceUrl = optionalHttpUrl(payload, "sourceUrl");
     const stageId = optionalPositiveInteger(payload, "stageId");
 
@@ -43,6 +49,7 @@ export async function POST(request: NextRequest) {
       interviewDate,
       sourceUrl,
       stageId,
+      ...interviewTime,
       ...optionalApplicationFields(payload)
     });
     scheduleLogoLookup(application.id, application.company);
