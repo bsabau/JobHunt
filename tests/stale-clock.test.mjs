@@ -116,6 +116,10 @@ test("the follow-up statement: follow up, snooze, the two undos, and updated_at 
   await run(staleActionStatement(app, "unfollow", now));
   assert.deepEqual(await state(), [null, null, iso(before)], "undoing a follow-up removes only it");
 
+  await sql`UPDATE applications SET snoozed_until = ${daysAgo(-3)}, followed_up_at = ${now} WHERE id = ${app}`;
+  await run(staleActionStatement(app, "unfollow", now));
+  assert.deepEqual(await state(), [null, daysAgo(-3), iso(before)], "undoing a follow-up keeps a snooze");
+
   assert.deepEqual(await run(staleActionStatement(999, "snooze", now)), [], "an unknown application changes nothing");
 });
 
