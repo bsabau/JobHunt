@@ -141,7 +141,10 @@ export async function getStatsData(
       JOIN stages s ON s.id = a.stage_id
       WHERE a.interview_date >= (CURRENT_TIMESTAMP AT TIME ZONE ${zone})::date - 1
         AND s.kind <> ALL(${[...TERMINAL_KINDS]}::text[])
-      ORDER BY a.interview_date ASC, a.interview_time ASC NULLS LAST
+      -- By day, then by the actual instant, so 09:00 in one zone and 14:00 in
+      -- another come in the order they happen; date-only interviews last.
+      ORDER BY a.interview_date ASC,
+               (a.interview_date + a.interview_time) AT TIME ZONE a.interview_time_zone ASC NULLS LAST
       LIMIT 10;
     `,
     tx.query(staleQuery.text, staleQuery.params),

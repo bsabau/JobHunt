@@ -786,6 +786,7 @@ Done in PR #42:
 - `GET /api/applications/:id/interview.ics` (owner only, the new `requireSession({ owner: true })`): all-day without a time, else 60 minutes (decision 17) from the instant Postgres computes (`interviewEventStatement()`); `UID` from the application id and the host name; company, role and job link, never notes or salary. `src/lib/ics.ts` writes the file. "Add to calendar" links on cards and in the upcoming list, owner only.
 - Checked on `dev`: a card added through the dialog at 14:30 America/New_York gave `DTSTART:20261026T183000Z` and `DURATION:PT60M`; a date-only interview gave an all-day event; bad inputs are 400, a card without a date and an unknown id 404, the guest 403 and no links. Not checked: importing the file into two calendar applications, which needs a person.
 - Tests: `tests/ics.test.mjs`, `tests/interview-time.test.mjs` (the instant on both sides of Berlin's and New York's clock changes, the constraints).
+- After Fable's review: semicolons are now escaped in the file (`"\\;"`; the old `"\;"` was a plain semicolon, and the test could not tell), the test checks the escaping character by character, and ESLint's `no-useless-escape` is on. The upcoming list orders a day's interviews by their instant across zones; the `UID` uses a fixed domain part, so a file from a preview and one from production are the same entry; the docs say what happens to a time that does not exist on the night the clocks go forward.
 
 ### 5.3 Bulk import from CSV (IMP, optional)
 

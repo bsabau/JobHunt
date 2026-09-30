@@ -15,7 +15,7 @@ const INTERVIEW_MINUTES = 60;
 // The interview as a calendar file: an all-day event on the date, or a
 // 60-minute event at the time in its zone. Owner only. It holds the company,
 // the role and the job link, never notes or salary.
-export async function GET(request: NextRequest, { params }: Params) {
+export async function GET(_request: NextRequest, { params }: Params) {
   const { id } = await params;
 
   try {
@@ -27,7 +27,9 @@ export async function GET(request: NextRequest, { params }: Params) {
     }
 
     const ics = interviewCalendar({
-      uid: `application-${applicationId}@${request.nextUrl.hostname}`,
+      // A fixed domain part: the same interview has the same UID whether the
+      // file came from production or a preview, so a calendar never holds it twice.
+      uid: `application-${applicationId}@jobhunt`,
       stamp: new Date(),
       summary: `Interview: ${event.company}, ${event.role}`,
       url: event.source_url,

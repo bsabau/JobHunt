@@ -23,9 +23,12 @@ test("every line ends in CRLF, and there is no bare LF", () => {
 });
 
 test("text escapes backslash, semicolon, comma and line breaks", () => {
-  assert.equal(escapeText("a\\b;c,d\ne"), "a\\\\b\;c\\,d\\ne");
+  // Checked character by character, so an escape that does nothing in a JS
+  // string ("\;" is just ";") cannot pass unnoticed.
+  const B = String.fromCharCode(92); // one backslash
+  assert.deepEqual([...escapeText("a" + B + "b;c,d\ne")], ["a", B, B, "b", B, ";", "c", B, ",", "d", B, "n", "e"]);
   const ics = interviewCalendar({ ...base, summary: "Interview: Smith, Jones; Partners", when: { date: "2026-10-05" } });
-  assert.match(ics, /SUMMARY:Interview: Smith\\, Jones\; Partners/);
+  assert.ok(ics.includes("SUMMARY:Interview: Smith" + B + ", Jones" + B + "; Partners"), ics);
 });
 
 test("long lines fold at 75 octets, never inside a multi-byte character", () => {
