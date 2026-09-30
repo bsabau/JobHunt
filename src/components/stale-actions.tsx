@@ -17,18 +17,22 @@ export function StaleActions({
   applicationId,
   company,
   stageId,
+  followedUpAt,
   closeStage
 }: {
   applicationId: number;
   company: string;
   stageId: number;
+  // The follow-up the row showed before any action: a new one can only be
+  // undone when there was none, since the undo cannot restore an older one.
+  followedUpAt: string | null;
   closeStage: { id: number; name: string } | null;
 }) {
   const router = useRouter();
   const { toast } = useFeedback();
   const [pending, setPending] = useState(false);
 
-  function followUpRequest(action: "followed_up" | "snooze" | "clear") {
+  function followUpRequest(action: "followed_up" | "snooze" | "unsnooze" | "unfollow") {
     return fetch(`/api/applications/${applicationId}/follow-up`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -41,9 +45,9 @@ export function StaleActions({
     document.getElementById(STALE_LIST_HEADING_ID)?.focus();
   }
 
-  // Undoes a follow-up or a snooze from the toast.
-  async function undo() {
-    const response = await followUpRequest("clear").catch(() => null);
+  // Undoes a follow-up or a snooze from the toast, touching only that field.
+  async function undo(action: "unsnooze" | "unfollow") {
+    const response = await followUpRequest(action).catch(() => null);
     if (response?.ok) {
       toast(`Undone for ${company}.`);
     } else {
@@ -75,12 +79,12 @@ export function StaleActions({
         trackStaleAction({ action });
         if (action === "close") {
           toast(`${company} moved to ${closeStage?.name}.`);
+        } else if (action === "snooze") {
+          toast(`${company} is snoozed for 7 days.`, { action: { label: "Undo", onClick: () => void undo("unsnooze") } });
         } else {
           toast(
-            action === "followed_up"
-              ? `Follow-up recorded for ${company}; its stale clock restarts.`
-              : `${company} is snoozed for 7 days.`,
-            { action: { label: "Undo", onClick: () => void undo() } }
+            `Follow-up recorded for ${company}; its stale clock restarts.`,
+            followedUpAt === null ? { action: { label: "Undo", onClick: () => void undo("unfollow") } } : undefined
           );
         }
       }
@@ -109,7 +113,7 @@ export function StaleActions({
         variant="outline"
         className="h-7 px-2 text-xs"
         disabled={pending}
-        aria-label={`Snooze ${company} for 7 days`}
+        aria-label={`Snooze 7 days: ${company}`}
         onClick={() => void send("snooze")}
       >
         Snooze 7 days

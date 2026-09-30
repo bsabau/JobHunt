@@ -46,7 +46,7 @@ All bodies are JSON and must be sent with `Content-Type: application/json` (415 
 | `PUT /api/applications/:id` | all editable fields, `stageId`, `expectedStageId` | Full replacement. 409 if the card moved |
 | `DELETE /api/applications/:id` | | Transitions cascade. `{ ok: true }` |
 | `PATCH /api/applications/:id/status` | `stageId`, `expectedStageId` | The drag-and-drop move. 409 if the card moved |
-| `PATCH /api/applications/:id/follow-up` | `action`: `followed_up`, `snooze` or `clear` | Owner only. Followed up sets `followed_up_at` to now and ends a snooze; snooze sets `snoozed_until` to now plus 7 days; clear empties both. Does not touch `updated_at`. Returns the application; 404 for an unknown one |
+| `PATCH /api/applications/:id/follow-up` | `action`: `followed_up`, `snooze`, `unsnooze` or `unfollow` | Owner only. Followed up sets `followed_up_at` to now and ends a snooze; snooze sets `snoozed_until` to now plus 7 days; the two undos empty one field each (`unsnooze` keeps any follow-up). Does not touch `updated_at`. Returns the application; 404 for an unknown one |
 | `GET /api/applications/:id/timeline` | | The card's current path: `{ lanes: [{ stageId, stageName, stageKind, enteredAt }] }`, the entry lane first (entered at creation), then every lane moved into. A deleted lane has `null` id and kind and its name ends in ` (deleted)`. Owner and guest; no notes. 404 for an unknown card |
 | `GET /api/stages` | | |
 | `POST /api/stages` | `name`, optional `kind` | 409 on duplicate name. `new` and `created` are reserved |

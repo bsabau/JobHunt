@@ -39,27 +39,31 @@ export function applicationTimelineStatement(applicationId: number): SqlStatemen
     `);
 }
 
-export type StaleAction = "followed_up" | "snooze" | "clear";
+export type StaleAction = "followed_up" | "snooze" | "unsnooze" | "unfollow";
 
 // How long a snooze hides a stale application.
 export const SNOOZE_DAYS = 7;
 
 // Records what the owner did about a stale application, at `now`: a follow-up
 // restarts the stale clock (and ends a snooze), a snooze hides the card for
-// SNOOZE_DAYS, "clear" undoes both. updated_at stays: it orders the board, and
-// a follow-up must not move the card to the top. Returns the id, or no row
-// for an unknown application.
+// SNOOZE_DAYS. The two undos touch one field each: "unsnooze" ends a snooze
+// and keeps any follow-up, "unfollow" removes the follow-up (offered only
+// where there was none before, since it cannot bring an older one back).
+// updated_at stays: it orders the board, and a follow-up must not move the
+// card to the top. Returns the id, or no row for an unknown application.
 export function staleActionStatement(applicationId: number, action: StaleAction, now: string): SqlStatement {
   return compileSql(sqlFragment`
     UPDATE applications
     SET followed_up_at = CASE ${action}::text
           WHEN 'followed_up' THEN ${now}::timestamptz
-          WHEN 'clear' THEN NULL
+          WHEN 'unfollow' THEN NULL
           ELSE followed_up_at
         END,
         snoozed_until = CASE ${action}::text
           WHEN 'snooze' THEN ${now}::timestamptz + make_interval(days => ${SNOOZE_DAYS})
-          ELSE NULL
+          WHEN 'followed_up' THEN NULL
+          WHEN 'unsnooze' THEN NULL
+          ELSE snoozed_until
         END
     WHERE id = ${applicationId}
     RETURNING id;

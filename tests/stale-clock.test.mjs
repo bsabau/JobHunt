@@ -98,7 +98,7 @@ test("the stale list reports the days since the clock started, and the follow-up
   assert.deepEqual([row.id, row.days_stale, iso(row.followed_up_at)], [app, 16, daysAgo(16)]);
 });
 
-test("the follow-up statement: follow up, snooze, clear, and updated_at untouched", async () => {
+test("the follow-up statement: follow up, snooze, the two undos, and updated_at untouched", async () => {
   const app = await createApp("Applied", daysAgo(30));
   const [{ updated_at: before }] = await sql`SELECT updated_at FROM applications WHERE id = ${app}`;
   const state = async () => {
@@ -113,11 +113,20 @@ test("the follow-up statement: follow up, snooze, clear, and updated_at untouche
   await run(staleActionStatement(app, "followed_up", now));
   assert.deepEqual(await state(), [now, null, iso(before)], "a follow-up ends the snooze");
 
-  await run(staleActionStatement(app, "snooze", now));
-  assert.deepEqual(await state(), [now, daysAgo(-7), iso(before)], "a snooze keeps the follow-up");
-
-  await run(staleActionStatement(app, "clear", now));
-  assert.deepEqual(await state(), [null, null, iso(before)]);
+  await run(staleActionStatement(app, "unfollow", now));
+  assert.deepEqual(await state(), [null, null, iso(before)], "undoing a follow-up removes only it");
 
   assert.deepEqual(await run(staleActionStatement(999, "snooze", now)), [], "an unknown application changes nothing");
+});
+
+test("undoing a snooze keeps an earlier follow-up", async () => {
+  const app = await createApp("Applied", daysAgo(40));
+  await sql`UPDATE applications SET followed_up_at = ${daysAgo(16)} WHERE id = ${app}`;
+  const now = new Date(NOW).toISOString();
+  await run(staleActionStatement(app, "snooze", now));
+  assert.deepEqual(await staleBoth(), []);
+  await run(staleActionStatement(app, "unsnooze", now));
+  const [row] = await sql`SELECT followed_up_at, snoozed_until FROM applications WHERE id = ${app}`;
+  assert.deepEqual([iso(row.followed_up_at), row.snoozed_until], [daysAgo(16), null]);
+  assert.deepEqual(await staleBoth(), [app], "stale again, counted from the kept follow-up");
 });

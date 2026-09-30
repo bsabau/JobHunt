@@ -404,6 +404,7 @@ export function StatsCharts({
                             applicationId={row.id}
                             company={row.company}
                             stageId={row.stageId}
+                            followedUpAt={row.followedUpAt}
                             closeStage={data.closeStage}
                           />
                         )}

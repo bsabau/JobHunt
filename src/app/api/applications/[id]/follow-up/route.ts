@@ -8,11 +8,12 @@ interface Params {
   params: Promise<{ id: string }>;
 }
 
-const STALE_ACTIONS = ["followed_up", "snooze", "clear"] as const;
+const STALE_ACTIONS = ["followed_up", "snooze", "unsnooze", "unfollow"] as const;
 
 // What the owner did about a stale application: followed up (restarts the
-// stale clock), snoozed it for a week, or cleared both. The server sets the
-// times. Closing it is a normal stage move (PATCH .../status).
+// stale clock), snoozed it for a week, or one of the two undos, which touch
+// one field each. The server sets the times. Closing it is a normal stage
+// move (PATCH .../status).
 export async function PATCH(request: NextRequest, { params }: Params) {
   const { id } = await params;
 
