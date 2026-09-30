@@ -382,7 +382,7 @@ export function StatsCharts({
                     <CloseGhostedDialog
                       candidates={data.ghostCandidates}
                       closeStage={data.closeStage}
-                      medianReplyDays={data.openWeeks.fromMedian ? data.openWeeks.days : null}
+                      medianReplyDays={data.openWeeks.medianReplyDays}
                     />
                   )}
                 </div>

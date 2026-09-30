@@ -67,7 +67,8 @@ export interface StatsPayload {
   scopeTotal: number;
   // How many days after its Sunday a week in "Results by week" stays open, and
   // whether that comes from the all-time median days to a first reply.
-  openWeeks: { days: number; fromMedian: boolean };
+  // medianReplyDays is that all-time median itself (one decimal), or null.
+  openWeeks: { days: number; fromMedian: boolean; medianReplyDays: number | null };
   totals: {
     applications: number;
     activeStages: number;

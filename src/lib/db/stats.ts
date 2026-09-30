@@ -215,7 +215,8 @@ export async function getStatsData(
     scopeTotal,
     openWeeks: {
       days: openWeeksFromMedian ? Math.ceil(allTimeReply.reply_median_days as number) : STALE_THRESHOLD_DAYS,
-      fromMedian: openWeeksFromMedian
+      fromMedian: openWeeksFromMedian,
+      medianReplyDays: openWeeksFromMedian ? roundOrNull(allTimeReply.reply_median_days) : null
     },
     totals: {
       applications: totalApps,

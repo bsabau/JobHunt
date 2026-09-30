@@ -44,14 +44,15 @@ export function CloseGhostedDialog({
   const router = useRouter();
   const { toast } = useFeedback();
   const [open, setOpen] = useState(false);
-  // The field keeps what is typed ("3" on the way to "30"); the list uses
-  // the number, never below MIN_DAYS.
+  // The field keeps what is typed ("3" on the way to "30"). Until it holds a
+  // whole number of at least MIN_DAYS nothing is listed and nothing can be
+  // closed, so the number on screen is always the one in effect.
   const [daysText, setDaysText] = useState(String(DEFAULT_DAYS));
-  const days = Math.max(MIN_DAYS, Number.parseInt(daysText, 10) || MIN_DAYS);
+  const days = /^\d+$/.test(daysText.trim()) && Number(daysText) >= MIN_DAYS ? Number(daysText) : null;
   const [unticked, setUnticked] = useState<Set<number>>(new Set());
   const [progress, setProgress] = useState<string | null>(null);
 
-  const shown = candidates.filter((candidate) => candidate.daysSinceApplied >= days);
+  const shown = days === null ? [] : candidates.filter((candidate) => candidate.daysSinceApplied >= days);
   const ticked = shown.filter((candidate) => !unticked.has(candidate.id));
   const toMove = ticked.slice(0, MAX_PER_RUN);
 
@@ -65,31 +66,48 @@ export function CloseGhostedDialog({
   }
 
   async function closeAll() {
+    if (days === null) return;
     let moved = 0;
+    // A 409 or 404 means the card was moved or deleted meanwhile, which is
+    // expected; anything else is a failure. After a lost session or network
+    // the run stops rather than sending the rest.
     const skipped: string[] = [];
+    const failed: string[] = [];
+    let stopped = false;
     for (const [index, candidate] of toMove.entries()) {
       setProgress(`Closing ${index + 1} of ${toMove.length}…`);
+      let status: number | null = null;
       try {
         const response = await fetch(`/api/applications/${candidate.id}/status`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ stageId: closeStage.id, expectedStageId: candidate.stageId })
         });
-        if (response.ok) moved++;
-        else skipped.push(candidate.company);
+        status = response.status;
       } catch {
+        status = null;
+      }
+      if (status !== null && status >= 200 && status < 300) {
+        moved++;
+      } else if (status === 409 || status === 404) {
         skipped.push(candidate.company);
+      } else {
+        failed.push(candidate.company);
+        if (status === null || status === 401) {
+          stopped = true;
+          break;
+        }
       }
     }
     setProgress(null);
     setOpen(false);
     setUnticked(new Set());
     if (moved > 0) trackGhostedClosed({ count: moved, days });
-    toast(
-      `${moved} application${moved === 1 ? "" : "s"} moved to ${closeStage.name}.` +
-        (skipped.length > 0 ? ` Skipped, moved or deleted elsewhere: ${skipped.join(", ")}.` : ""),
-      skipped.length > 0 && moved === 0 ? { tone: "error" } : undefined
-    );
+    const parts = [`${moved} application${moved === 1 ? "" : "s"} moved to ${closeStage.name}.`];
+    if (skipped.length > 0) parts.push(`Skipped, moved or deleted elsewhere: ${skipped.join(", ")}.`);
+    if (failed.length > 0) parts.push(`Could not be moved, try again: ${failed.join(", ")}.`);
+    if (stopped) parts.push("The run stopped early: the connection or the session was lost.");
+    toast(parts.join(" "), failed.length > 0 ? { tone: "error" } : undefined);
     router.refresh();
   }
 
@@ -117,16 +135,20 @@ export function CloseGhostedDialog({
               min={MIN_DAYS}
               value={daysText}
               onChange={(event) => setDaysText(event.target.value)}
-              onBlur={() => setDaysText(String(days))}
               className="w-28"
             />
+            {days === null ? (
+              <p className="text-xs text-destructive" role="alert">
+                Enter a whole number of {MIN_DAYS} days or more.
+              </p>
+            ) : null}
             <p className="text-xs text-muted-foreground">
               {medianReplyDays !== null
                 ? `Your median time to a first reply is ${medianReplyDays} days.`
                 : "There are not enough replies yet for a median time to a reply."}
             </p>
           </div>
-          {shown.length === 0 ? (
+          {days === null ? null : shown.length === 0 ? (
             <p className="py-4 text-sm text-muted-foreground">No application has waited {days} days or more without a reply.</p>
           ) : (
             <ul className="space-y-1">
