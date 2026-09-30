@@ -19,7 +19,7 @@ export default async function HomePage({
   const now = requestNow();
   // Anything but an allowed range (?range=30 or 90) means all time.
   const range = parseStatsRange((await searchParams).range);
-  const stats = await getStatsData(timeZone, { now, range });
+  const stats = await getStatsData(timeZone, { now, range, viewer: session.role });
 
   return (
     <main className="mx-auto min-h-screen max-w-[1500px] px-6 py-10">

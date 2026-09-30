@@ -3,8 +3,10 @@
 // database.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CREATED, setupBoard } from "./helpers/pglite-board.mjs";
+import { CREATED, iso, setupBoard } from "./helpers/pglite-board.mjs";
+import { STALE_THRESHOLD_DAYS } from "../src/lib/stale.ts";
 import {
+  ghostCandidatesStatement,
   milestoneStatsStatement,
   outcomesStatement,
   sourceApplicationsStatement,
@@ -274,4 +276,33 @@ test("ranged: the funnel, the companies and the outcomes count the unsent card o
     counts[label] = [visitedApplications.size, companies, outcomes];
   }
   assert.deepEqual(counts, { "all time": [5, 5, 4], "90 days": [3, 3, 3], "30 days": [2, 2, 2] });
+});
+
+test("ghost candidates: sent long enough ago, no reply, in a lane that can go stale, not snoozed", async () => {
+  const at = (days) => new Date(NOW - days * 86_400_000).toISOString();
+  const tooRecent = await createApp("Applied", at(10));
+  const twenty = await createApp("Applied", at(20));
+  const forty = await createApp("Applied", at(40));
+  const replied = await createApp("Applied", at(40));
+  await move(replied, "Screening"); // a reply
+  const snoozed = await createApp("Applied", at(40));
+  await sql`UPDATE applications SET snoozed_until = ${at(-3)} WHERE id = ${snoozed}`;
+  const followed = await createApp("Applied", at(30));
+  await sql`UPDATE applications SET followed_up_at = ${at(1)} WHERE id = ${followed}`; // not a reply
+  await createApp("Wishlist", at(40)); // never sent
+  const closed = await createApp("Applied", at(40));
+  await move(closed, "Ghosted"); // already in an outcome lane
+  const createdInInterview = await createApp("Interview", at(40)); // replied at an unknown time
+  const waited = await createApp("Wishlist", at(60)); // added 60 days ago, sent 20 days ago
+  await move(waited, "Applied");
+  await sql`UPDATE application_transitions SET transitioned_at = ${at(20)} WHERE application_id = ${waited}`;
+  assert.ok(tooRecent && replied && snoozed && closed && createdInInterview);
+
+  const rows = await run(ghostCandidatesStatement(new Date(NOW).toISOString(), STALE_THRESHOLD_DAYS));
+  assert.deepEqual(
+    rows.map((row) => [row.id, row.days_since_applied]).sort((a, b) => b[1] - a[1] || a[0] - b[0]),
+    [[forty, 40], [followed, 30], [twenty, 20], [waited, 20]],
+    "counted from the sending; a card that replied at an unknown time is not offered"
+  );
+  assert.equal(iso(rows.find((row) => row.id === followed).followed_up_at), at(1), "the row carries the follow-up");
 });

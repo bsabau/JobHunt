@@ -67,7 +67,8 @@ export interface StatsPayload {
   scopeTotal: number;
   // How many days after its Sunday a week in "Results by week" stays open, and
   // whether that comes from the all-time median days to a first reply.
-  openWeeks: { days: number; fromMedian: boolean };
+  // medianReplyDays is that all-time median itself (one decimal), or null.
+  openWeeks: { days: number; fromMedian: boolean; medianReplyDays: number | null };
   totals: {
     applications: number;
     activeStages: number;
@@ -114,6 +115,17 @@ export interface StatsPayload {
   }[];
   // The lane "Close" moves a stale application to: the first closed lane.
   closeStage: { id: number; name: string } | null;
+  // Sent at least 14 days ago, no reply, in a lane that can go stale, not
+  // snoozed: what "Close ghosted applications" offers. Empty for the guest.
+  ghostCandidates: {
+    id: number;
+    stageId: number;
+    company: string;
+    role: string;
+    stageName: string;
+    daysSinceApplied: number;
+    followedUpAt: string | null;
+  }[];
   // Where applications that reached an outcome lane (offer, rejected, closed)
   // came from: the stage they left to get there.
   outcomes: { fromStage: string; outcomeStage: string; kind: StageKind; count: number }[];

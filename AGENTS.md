@@ -50,7 +50,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/stage-statements.ts`: the SQL that moves cards and renames lanes, compiled to text and parameters. No runtime imports, so the tests run it on PGlite.
 - `src/lib/application-statements.ts`: read statements about one application (its timeline), built with `sqlFragment`. Its only runtime import is `./stage-statements.ts`, by relative path with the extension, so the tests still load it from Node and run it on PGlite.
 - `src/lib/transitions.ts`: reference implementation of the rewind rule.
-- `src/lib/stats-statements.ts`: statements for the stats page (the rates over `application_milestones`, the weekly results, the medians to a reply), run inside the page's snapshot with `tx.query()`. Their tests go in `tests/stats-statements.test.mjs`.
+- `src/lib/stats-statements.ts`: statements for the stats page (the rates over `application_milestones`, the weekly results, the medians to a reply), run inside the page's snapshot with `tx.query()`. Their tests go in `tests/stats-statements.test.mjs`, except the stale list's, which sits with its TypeScript twin in `tests/stale-clock.test.mjs`.
 - `src/lib/weeks.ts`: week arithmetic on `YYYY-MM-DD` strings (Monday week starts, empty weeks filled up to the current one, whether a week is still open).
 - `src/lib/sources.ts`: results by source (job-link host, the "Other" and "Unknown" groups), grouped on the server so only totals reach the page. Hosts are shown as text, never as links or images, so the CSP needs no new host.
 - `src/lib/stats-range.ts`: the stats page's date range (`?range=30|90`), parsed through an allowlist; ranged statements take its start, `NULL` for all time.

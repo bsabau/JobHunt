@@ -229,3 +229,37 @@ export function staleApplicationsStatement(now: string, thresholdDays: number): 
     ORDER BY c.clock_started_at ASC, a.id ASC;
   `);
 }
+
+export interface GhostCandidateRow {
+  id: number;
+  stage_id: number;
+  company: string;
+  role: string;
+  stage_name: string;
+  days_since_applied: number;
+  followed_up_at: string | Date | null;
+}
+
+// Applications that may have been ghosted: sent `minDays` or more before
+// `now`, no reply on their current path (application_milestones), in a lane
+// that can go stale (so not a wishlist, offer or outcome lane), and not
+// snoozed past `now`. A follow-up is not a reply, so a followed-up card stays
+// a candidate. Longest wait first. The bulk-close dialog narrows the list by
+// its own N; `minDays` is the smallest N it offers.
+export function ghostCandidatesStatement(now: string, minDays: number): SqlStatement {
+  return compileSql(sqlFragment`
+    SELECT a.id, a.stage_id, a.company, a.role, s.name AS stage_name,
+           FLOOR(EXTRACT(EPOCH FROM (${now}::timestamptz - m.applied_at)) / 86400.0)::int AS days_since_applied,
+           c.followed_up_at
+    FROM application_milestones m
+    JOIN applications a ON a.id = m.application_id
+    JOIN stages s ON s.id = a.stage_id
+    JOIN application_stale_clock c ON c.application_id = a.id
+    WHERE m.applied_at IS NOT NULL
+      AND NOT m.responded
+      AND s.kind <> ALL(${[...STALE_EXCLUDED_KINDS]}::text[])
+      AND EXTRACT(EPOCH FROM (${now}::timestamptz - m.applied_at)) / 86400.0 >= ${minDays}
+      AND (c.snoozed_until IS NULL OR c.snoozed_until <= ${now}::timestamptz)
+    ORDER BY m.applied_at ASC, a.id ASC;
+  `);
+}

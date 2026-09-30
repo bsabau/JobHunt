@@ -4,13 +4,16 @@ import { CLOSED_KIND, TERMINAL_KINDS, compareStageRank } from "@/lib/stage-kinds
 import { buildFunnel } from "@/lib/funnel";
 import { groupBySource } from "@/lib/sources";
 import { StatsRange, rangeStart } from "@/lib/stats-range";
+import type { Role } from "@/lib/auth";
 import {
+  GhostCandidateRow,
   MilestoneStatsRow,
   OutcomeRow,
   SourceApplicationRow,
   StaleApplicationRow,
   TimeToHearBackRow,
   WeekRow,
+  ghostCandidatesStatement,
   milestoneStatsStatement,
   outcomesStatement,
   sourceApplicationsStatement,
@@ -38,6 +41,7 @@ type StatsRows = [
   { application_id: number; stage_id: number }[],
   { company: string; role: string; interview_date: string; stage_name: string }[],
   StaleApplicationRow[],
+  GhostCandidateRow[],
   OutcomeRow[]
 ];
 
@@ -50,10 +54,14 @@ function roundOrNull(days: number | null): number | null {
 }
 
 // `now` is the page's clock (requestNow()); `range` the date range from the
-// URL. The figures that follow the range count applications sent since its
+// URL; `viewer` the session's role (the guest gets no bulk-close candidates,
+// having nothing to do with them). The figures that follow the range count applications sent since its
 // start; lane counts, upcoming interviews, stale applications and time in the
 // current lane always describe the present.
-export async function getStatsData(timeZone: string, options: { now: number; range: StatsRange }): Promise<StatsPayload> {
+export async function getStatsData(
+  timeZone: string,
+  options: { now: number; range: StatsRange; viewer: Role }
+): Promise<StatsPayload> {
   await ensureSchema();
 
   const zone = normalizeTimeZone(timeZone);
@@ -72,6 +80,8 @@ export async function getStatsData(timeZone: string, options: { now: number; ran
   const visits = visitsStatement(start);
   const outcomesQuery = outcomesStatement(start);
   const staleQuery = staleApplicationsStatement(new Date(options.now).toISOString(), STALE_THRESHOLD_DAYS);
+  // Every candidate from STALE_THRESHOLD_DAYS on; the dialog narrows by its N.
+  const ghostQuery = ghostCandidatesStatement(new Date(options.now).toISOString(), STALE_THRESHOLD_DAYS);
   const [
     stageCountRows,
     milestoneRows,
@@ -84,6 +94,7 @@ export async function getStatsData(timeZone: string, options: { now: number; ran
     visitRows,
     upcomingInterviewRows,
     staleApplicationRows,
+    ghostCandidateRows,
     outcomeRows,
   ] = (await transaction((tx) => [
     tx`
@@ -119,6 +130,7 @@ export async function getStatsData(timeZone: string, options: { now: number; ran
       LIMIT 10;
     `,
     tx.query(staleQuery.text, staleQuery.params),
+    tx.query(ghostQuery.text, ghostQuery.params),
     tx.query(outcomesQuery.text, outcomesQuery.params),
   ], { readOnly: true, isolationLevel: "RepeatableRead" })) as StatsRows;
 
@@ -203,7 +215,8 @@ export async function getStatsData(timeZone: string, options: { now: number; ran
     scopeTotal,
     openWeeks: {
       days: openWeeksFromMedian ? Math.ceil(allTimeReply.reply_median_days as number) : STALE_THRESHOLD_DAYS,
-      fromMedian: openWeeksFromMedian
+      fromMedian: openWeeksFromMedian,
+      medianReplyDays: openWeeksFromMedian ? roundOrNull(allTimeReply.reply_median_days) : null
     },
     totals: {
       applications: totalApps,
@@ -242,6 +255,18 @@ export async function getStatsData(timeZone: string, options: { now: number; ran
     upcomingInterviews,
     staleApplications,
     closeStage,
+    ghostCandidates:
+      options.viewer === "guest"
+        ? []
+        : ghostCandidateRows.map((row) => ({
+            id: row.id,
+            stageId: row.stage_id,
+            company: row.company,
+            role: row.role,
+            stageName: row.stage_name,
+            daysSinceApplied: row.days_since_applied,
+            followedUpAt: row.followed_up_at === null ? null : new Date(row.followed_up_at).toISOString()
+          })),
     outcomes,
     openCount: scopeTotal - resolvedCount
   };
