@@ -589,6 +589,17 @@ This differs from the audit, which proposed one `next_action_date DATE`:
 - With no `closed` lane on the board the Close button is absent.
 - On `dev`, before any action is used, the stale list equals the list from before this step.
 
+Done in PR #39:
+
+- Migration `1730000019000`: `followed_up_at`, `snoozed_until` and the view `application_stale_clock`, as planned.
+- The stale rule moved to the new `src/lib/stale.ts` (loadable from Node; `constants.ts` re-exports it) and reads the clock and the snooze; its SQL twin is `staleApplicationsStatement(now, threshold)` in `stats-statements.ts`, which takes the page's `now` instead of `NOW()`. The stale list rows carry `id`, `stageId` and `followedUpAt`; the payload carries `closeStageId`.
+- `PATCH /api/applications/:id/follow-up` with `followed_up`, `snooze`, `unsnooze` or `unfollow`; the write is `staleActionStatement()` in `application-statements.ts`. A follow-up also ends a snooze (a fresh start); a snooze keeps the follow-up.
+- The stale list's rows get "Followed up", "Snooze 7 days" and "Close" for the owner (`StaleActions`); Close is the normal stage move into the first closed lane, with the row's lane as `expectedStageId`. Board cards show "Followed up today / Nd ago" while that follow-up drives the clock.
+- Checked on `dev` with three backdated temporary cards: the tile went 3, 2, 1, 0 as each was followed up, snoozed and closed; the closed card's timeline ends in the closed lane; neither card keeps a stale marker; the guest sees the list without buttons; the API answers 404, 400, 403 and 401 where it should. The cards were removed.
+- `tests/stale-clock.test.mjs`: every scenario of the plan, the SQL and TypeScript rules compared on each, the inclusive threshold, and the follow-up statement (including `updated_at` untouched).
+- After Fable's review: the buttons' accessible names include the company; focus moves to the list's heading after an action; a 404 (card deleted meanwhile) refreshes like a 409; a follow-up or a snooze can be undone from the toast; a snoozed card shows "Snoozed until <date>" on the board; the card's follow-up and snooze lines use `isStaleEligibleStage()`; Close's message names the lane (`closeStage` in the payload).
+- The planned `clear` (both fields) became two undos that touch one field each, after Fable's re-check found that undoing a snooze erased an earlier follow-up: `unsnooze` keeps the follow-up, and `unfollow` is offered only when the row had no follow-up before, since it cannot bring an older one back.
+
 ### 4.2 Close ghosted applications in bulk (F-2)
 
 **Goal:** clear out applications that will never get a reply, in one confirmed action.

@@ -14,7 +14,7 @@ A single-owner job application tracker with three views: pipeline stats (`/`), a
 - `npm run build`: production build
 - `npm run check`: lint, typecheck and every test. Run it before every commit; CI runs it on every push.
 - `npm run lint`, `npm run typecheck`, `npm test`: the three parts on their own
-- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`, `milestones`, `funnel`, `weeks`, `stats-statements`, `sources`, `stats-range`)
+- `npm run verify:<name>`: one test file from `tests/` (`auth`, `timezone`, `sankey`, `transitions`, `stage-kinds`, `stage-statements`, `schema`, `rows`, `csp`, `timeline`, `board-filter`, `milestones`, `funnel`, `weeks`, `stats-statements`, `sources`, `stats-range`, `stale-clock`)
 - `npm run migrate:up`: apply migrations to `DATABASE_URL`. Refuses when that is production.
 - `npm run migrate:prod`: apply migrations to `PRODUCTION_DATABASE_URL`. Asks for the endpoint id; only run it when the user asks.
 - `npm run migrate:create -- <name>`: scaffold a migration
@@ -54,6 +54,7 @@ API routes live in `src/app/api/`: applications (CRUD and stage moves), stages (
 - `src/lib/weeks.ts`: week arithmetic on `YYYY-MM-DD` strings (Monday week starts, empty weeks filled up to the current one, whether a week is still open).
 - `src/lib/sources.ts`: results by source (job-link host, the "Other" and "Unknown" groups), grouped on the server so only totals reach the page. Hosts are shown as text, never as links or images, so the CSP needs no new host.
 - `src/lib/stats-range.ts`: the stats page's date range (`?range=30|90`), parsed through an allowlist; ranged statements take its start, `NULL` for all time.
+- `src/lib/stale.ts`: the stale rule and `STALE_THRESHOLD_DAYS` (re-exported by `constants.ts`); loadable from Node for the twin test.
 - `src/lib/funnel.ts`: the stats funnel (lanes in pipeline rank, and per lane the share of its cards that reached a later pipeline lane); it imports `compareStageRank()`, so the rank rule is not copied a third time.
 - `src/lib/board-filter.ts`: the board filter's rules (company and role only, never notes; outcome lanes hidden by kind).
 - `src/lib/sankey.ts`: builds the Sankey graph as a DAG.
@@ -75,7 +76,8 @@ These are easy to break and not obvious from any single file.
 - **The rewind rule exists twice**: `rewindTransitionPath()` in `transitions.ts` and `stageMoveStatement()` in `stage-statements.ts`. `tests/stage-statements.test.mjs` runs the SQL on PGlite and fails when the two disagree; add a scenario there when you change either.
 - **`application_transitions` is the current path, not an audit log.** Backward moves delete and rewrite rows.
 - **The entry lane comes from the view `application_entry_stage`.** Read it instead of deriving "first edge's start, else current lane" again. The only other copy is the TypeScript twin in `transitions.ts`; change both together.
-- **When a card entered its current lane comes from the view `application_stage_entry`.** Use it for staleness and time in lane instead of another "latest move into the lane, else created_at" subquery.
+- **When a card entered its current lane comes from the view `application_stage_entry`.** Use it for time in lane instead of another "latest move into the lane, else created_at" subquery.
+- **Staleness counts from the view `application_stale_clock`** (the later of the lane entry and the last follow-up) and skips a card snoozed past now. The rule exists twice: `isApplicationStale()` in `stale.ts` (the board) and `staleApplicationsStatement()` (the stats list). Change both together; `tests/stale-clock.test.mjs` compares them.
 - **When an application was sent comes from the view `application_applied_at`, not `created_at`.** A card that starts in an `intake` lane is not sent until it leaves intake.
 - **Whether and when an application got a reply, an interview or an offer comes from the view `application_milestones`.** Rates use the sent applications as their denominator.
 - **Transitions reference lanes by id** (`from_stage_id`, `to_stage_id`); join history to lanes by id, never by name. `from_status` / `to_status` hold the lane's name: a rename rewrites them in the same statement (`stageUpdateStatement()`), and after a lane is deleted its id becomes `NULL` and the name is all that remains. `new` and `created` are reserved names.

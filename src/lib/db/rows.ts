@@ -27,6 +27,9 @@ export interface ApplicationRow {
   updated_at: Timestamp;
   stage_entered_at: Timestamp;
   applied_at: Timestamp | null;
+  stale_clock_at: Timestamp;
+  followed_up_at: Timestamp | null;
+  snoozed_until: Timestamp | null;
 }
 
 export interface StageRow {
@@ -57,7 +60,10 @@ export function mapApplication(row: ApplicationRow, viewer: Role): Application {
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),
     stageEnteredAt: toIsoString(row.stage_entered_at),
-    appliedAt: row.applied_at === null ? null : toIsoString(row.applied_at)
+    appliedAt: row.applied_at === null ? null : toIsoString(row.applied_at),
+    staleClockAt: toIsoString(row.stale_clock_at),
+    followedUpAt: row.followed_up_at === null ? null : toIsoString(row.followed_up_at),
+    snoozedUntil: row.snoozed_until === null ? null : toIsoString(row.snoozed_until)
   };
 }
 

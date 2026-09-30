@@ -1,29 +1,10 @@
-import { Application, StageKind } from "@/lib/types";
-import { STALE_EXCLUDED_KINDS } from "@/lib/stage-kinds";
-import { daysSince } from "@/lib/timezone";
+import type { StageKind } from "@/lib/types";
 
-export const STALE_THRESHOLD_DAYS = 14;
+export { STALE_THRESHOLD_DAYS, isApplicationStale, isStaleEligibleStage } from "./stale.ts";
 
 // The fewest applications a median is shown for; below it the stats show "—"
 // (owner decision 9 of the product plan).
 export const MEDIAN_MIN_SAMPLE = 5;
-
-// Staleness is a pipeline concept: pre-application (Wishlist) and resolved
-// stages (Offer/Rejected/Closed) are not "going stale", whatever they are named.
-export function isStaleEligibleStage(kind: StageKind): boolean {
-  return !STALE_EXCLUDED_KINDS.includes(kind);
-}
-
-export function stageEnteredAt(app: Application): string {
-  return app.stageEnteredAt ?? app.updatedAt;
-}
-
-export function isApplicationStale(app: Application, now: number): boolean {
-  if (!isStaleEligibleStage(app.stageKind)) {
-    return false;
-  }
-  return daysSince(stageEnteredAt(app), now) >= STALE_THRESHOLD_DAYS;
-}
 
 export const STAGE_TONES = [
   { column: "bg-slate-500/20 border-slate-400/30", logoBg: "bg-slate-500/20" },

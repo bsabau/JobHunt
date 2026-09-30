@@ -46,6 +46,7 @@ All bodies are JSON and must be sent with `Content-Type: application/json` (415 
 | `PUT /api/applications/:id` | all editable fields, `stageId`, `expectedStageId` | Full replacement. 409 if the card moved |
 | `DELETE /api/applications/:id` | | Transitions cascade. `{ ok: true }` |
 | `PATCH /api/applications/:id/status` | `stageId`, `expectedStageId` | The drag-and-drop move. 409 if the card moved |
+| `PATCH /api/applications/:id/follow-up` | `action`: `followed_up`, `snooze`, `unsnooze` or `unfollow` | Owner only. Followed up sets `followed_up_at` to now and ends a snooze; snooze sets `snoozed_until` to now plus 7 days; the two undos empty one field each (`unsnooze` keeps any follow-up). Does not touch `updated_at`. Returns the application; 404 for an unknown one |
 | `GET /api/applications/:id/timeline` | | The card's current path: `{ lanes: [{ stageId, stageName, stageKind, enteredAt }] }`, the entry lane first (entered at creation), then every lane moved into. A deleted lane has `null` id and kind and its name ends in ` (deleted)`. Owner and guest; no notes. 404 for an unknown card |
 | `GET /api/stages` | | |
 | `POST /api/stages` | `name`, optional `kind` | 409 on duplicate name. `new` and `created` are reserved |
@@ -112,6 +113,8 @@ applications
   stage_id        INTEGER NOT NULL -> stages(id) ON DELETE RESTRICT
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()   -- set by the app, no trigger
+  followed_up_at  TIMESTAMPTZ       -- last "Followed up" on a stale application; set by the server
+  snoozed_until   TIMESTAMPTZ       -- a snoozed stale application is hidden until then
 
 application_transitions
   id              SERIAL PK
@@ -138,6 +141,12 @@ application_stage_entry            -- VIEW
 application_applied_at             -- VIEW
   application_id  INTEGER
   applied_at      TIMESTAMPTZ       -- NULL while a card that entered in an intake lane has not left intake
+
+application_stale_clock            -- VIEW
+  application_id    INTEGER
+  clock_started_at  TIMESTAMPTZ     -- GREATEST(lane entry, followed_up_at)
+  followed_up_at    TIMESTAMPTZ
+  snoozed_until     TIMESTAMPTZ
 
 application_milestones             -- VIEW
   application_id      INTEGER
@@ -168,6 +177,7 @@ Migration notes:
 - `1730000014000` creates the view `application_stage_entry`, which reads `applications.id`, `.stage_id` and `.created_at` and the transitions' `id`, `application_id`, `to_stage_id` and `transitioned_at`; the same drop-and-re-create rule applies.
 - `1730000015000` creates the view `application_applied_at` on top of `application_entry_stage`. It reads `applications.id` and `.created_at`, `stages.id` and `.kind`, and the transitions' `application_id`, `to_stage_id` and `transitioned_at`; the same rule applies, and dropping `application_entry_stage` now needs this view dropped first. `1730000016000` replaces it so that a move into a `rejected` or `closed` lane does not count as sending.
 - `1730000017000` creates the view `application_milestones` on top of `application_applied_at` and `application_entry_stage`. It reads `applications.id`, `stages.id` and `.kind`, and the transitions' `id`, `application_id`, `to_stage_id` and `transitioned_at`; the same rule applies, and dropping either view it builds on now needs this one dropped first. `1730000018000` replaces it with the same columns, so that `responded`, `interviewed` and `offered` are never `NULL` (they were when the entry lane had been deleted).
+- `1730000019000` adds `applications.followed_up_at` and `.snoozed_until`, and the view `application_stale_clock` on top of `application_stage_entry`. It reads `applications.id`, `.followed_up_at` and `.snoozed_until`; the same drop-and-re-create rule applies.
 - Every new migration also updates `LATEST_MIGRATION` in `src/lib/db/schema-version.ts`. `ensureSchema()` compares it with the newest row in `schema_migrations` once per process and refuses to query a database that is behind; a test fails when the constant falls behind the `migrations/` folder.
 - The runner serialises concurrent runs with `pg_advisory_xact_lock` inside each migration's transaction, then re-checks `schema_migrations`. A session-level lock would not survive Neon's transaction pooler.
 
@@ -226,7 +236,7 @@ A rename is refused (409) when another lane has the name in any case. Charts gro
 | Value | Definition |
 |---|---|
 | Stage entered at | Latest transition into the current lane, else `created_at` (view `application_stage_entry`). A rewind is a correction, not an event: afterwards this is the time of the edge kept or reconnected, so a card reopened from an outcome lane long after counts from when it first left its last kept lane and can be stale at once |
-| Stale | In a lane that can go stale for 14 days or more since it was entered (`STALE_THRESHOLD_DAYS`) |
+| Stale | In a lane that can go stale, 14 days or more (`STALE_THRESHOLD_DAYS`) since its stale clock started, and not snoozed past now. The clock is the view `application_stale_clock`: the later of the lane entry and the last follow-up, so a follow-up from an earlier lane no longer counts. The rule exists twice, `isApplicationStale()` in `src/lib/stale.ts` (the board) and `staleApplicationsStatement()` (the stats list); `tests/stale-clock.test.mjs` holds them to the same cases. Time in the current lane still counts from the lane entry |
 | Reached (funnel) | Distinct applications whose entry lane or any lane moved into is the lane, by lane id |
 | Went further (funnel) | Of the applications that reached a pipeline lane, the share that also reached a pipeline lane ranked after it, counted per application; none for outcome lanes, the last pipeline lane or a lane nobody reached (`buildFunnel()` in `src/lib/funnel.ts`, run on the server over each application's visited lanes) |
 | Applied at | For a card whose entry lane is `intake`: its first move into a pipeline lane (not `intake`, `rejected` or `closed`; a deleted lane counts), `NULL` until then. Otherwise `created_at` (view `application_applied_at`). Derived, not stored: a card moved back below its entry lane into intake loses its original date, because that move clears the path |
@@ -278,6 +288,7 @@ src/
     weeks.ts           week arithmetic on YYYY-MM-DD strings; fills empty weeks; which weeks are still open
     sources.ts         results by source: job-link hosts and their groups
     stats-range.ts     the stats page's date range: allowlist, start, labels
+    stale.ts           the stale rule (twin of the stats page's stale list)
     funnel.ts          the stats funnel: lanes in rank, and per lane the share of its cards that went further
     sankey.ts          builds the Sankey graph as a DAG
     auth.ts            tokens, credentials, requireSession
@@ -307,6 +318,7 @@ src/
 | `timeline` | The timeline statement on PGlite after real moves: rewinds, renamed and deleted lanes |
 | `board-filter` | The filter matches company and role only; only rejected and closed lanes hide |
 | `weeks` | Monday week starts, month and year ends, empty weeks up to the current one, when a week stops being open |
+| `stale-clock` | The stale clock view, the stale rule in SQL and in TypeScript on the same cases (follow-ups, rewinds, snoozes, excluded lanes, the threshold), and the follow-up statement |
 | `stats-range` | Only `30` and `90` are ranges (not `7`, `-1`, padded values or arrays); a range's start |
 | `sources` | Host extraction (case, `www.`, port, bad links) and the Other and Unknown groups |
 | `funnel` | Rank order with outcome lanes last; the share counted per card, not from lane totals (cards added mid-pipeline, skipped lanes) |

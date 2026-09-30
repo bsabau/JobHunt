@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, ArrowRightLeft, Plus, Settings2, Trash2 } from "lucide-react";
-import { KIND_TONES, STAGE_TONES, isApplicationStale } from "@/lib/constants";
+import { KIND_TONES, STAGE_TONES, isApplicationStale, isStaleEligibleStage } from "@/lib/constants";
 import { daysSince, daysUntil, formatDateOnly, formatDay } from "@/lib/timezone";
 import { INTAKE_KIND, KIND_LABELS, isTerminalKind } from "@/lib/stage-kinds";
 import { Application, Stage } from "@/lib/types";
@@ -250,6 +250,17 @@ function KanbanApplicationCard({
                 {app.stageKind === INTAKE_KIND || app.appliedAt === null
                   ? `Added ${formatDay(app.createdAt, timeZone, { year: false })} · ${formatAge(daysSince(app.createdAt, now))}`
                   : `Applied ${formatDay(app.appliedAt, timeZone, { year: false })} · ${formatAge(daysSince(app.appliedAt, now))}`}
+              </p>
+            ) : null}
+            {/* Only while the follow-up is what the stale clock counts from: one
+                made before the card entered its lane no longer matters. */}
+            {app.followedUpAt !== null && app.followedUpAt === app.staleClockAt && isStaleEligibleStage(app.stageKind) ? (
+              <p className="text-xs text-muted-foreground/70">Followed up {formatAge(daysSince(app.followedUpAt, now))}</p>
+            ) : null}
+            {/* A snoozed card is off the stale list; this says why, and until when. */}
+            {app.snoozedUntil !== null && Date.parse(app.snoozedUntil) > now && isStaleEligibleStage(app.stageKind) ? (
+              <p className="text-xs text-muted-foreground/70">
+                Snoozed until {formatDay(app.snoozedUntil, timeZone, { year: false })}
               </p>
             ) : null}
             {app.sourceUrl ? (
@@ -769,7 +780,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
                 <div className="space-y-3">
                   {(shown[stage.id] ?? []).map((app) => {
                     const stale = isApplicationStale(app, now);
-                    const staleDays = stale ? daysSince(app.stageEnteredAt ?? app.updatedAt, now) : 0;
+                    const staleDays = stale ? daysSince(app.staleClockAt, now) : 0;
                     return (
                       <KanbanApplicationCard
                         key={app.id}

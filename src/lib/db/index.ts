@@ -5,6 +5,7 @@ export {
   createApplication,
   deleteApplication,
   listApplications,
+  recordStaleAction,
   setApplicationLogo,
   updateApplication,
   updateApplicationStage

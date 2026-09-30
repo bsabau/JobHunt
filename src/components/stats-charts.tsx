@@ -17,7 +17,8 @@ import {
 } from "recharts";
 import { StatsPayload } from "@/lib/types";
 import { MEDIAN_MIN_SAMPLE } from "@/lib/constants";
-import { daysUntil, formatDateOnly, todayInTimeZone } from "@/lib/timezone";
+import { daysSince, daysUntil, formatDateOnly, todayInTimeZone } from "@/lib/timezone";
+import { STALE_LIST_HEADING_ID, StaleActions } from "@/components/stale-actions";
 import { fillWeeks, isWeekOpen, weekStartOf } from "@/lib/weeks";
 import { SOURCE_MIN_GROUP, UNKNOWN_SOURCE } from "@/lib/sources";
 import { STATS_RANGES, StatsRange, rangeLabel } from "@/lib/stats-range";
@@ -139,6 +140,10 @@ function RangeControl({ range }: { range: StatsRange }) {
 
 function PresentNote() {
   return <p className="text-xs text-muted-foreground">Now, whatever the date range</p>;
+}
+
+function formatAge(days: number) {
+  return days <= 0 ? "today" : `${days}d ago`;
 }
 
 function OutcomeChip({ label, color, count, total }: { label: string; color: string; count: number; total: number }) {
@@ -368,25 +373,41 @@ export function StatsCharts({
 
             <Card>
               <CardHeader>
-                <CardTitle>Stale Applications</CardTitle>
+                <CardTitle id={STALE_LIST_HEADING_ID} tabIndex={-1} className="outline-none">
+                  Stale Applications
+                </CardTitle>
                 {data.range !== null ? <PresentNote /> : null}
               </CardHeader>
               <CardContent>
                 {data.staleApplications.length > 0 ? (
                   <ul className="space-y-3">
-                    {data.staleApplications.map((row, index) => (
+                    {data.staleApplications.map((row) => (
                       <li
-                        key={`${index}-${row.company}-${row.stageName}`}
-                        className="flex items-start justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2"
+                        key={row.id}
+                        className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2"
                       >
-                        <div>
-                          <p className="text-sm font-medium">{row.company}</p>
-                          <p className="text-xs text-muted-foreground">{row.role}</p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium">{row.company}</p>
+                            <p className="text-xs text-muted-foreground">{row.role}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-medium text-amber-300">Stale · {row.daysSinceUpdate}d</p>
+                            <p className="text-xs text-muted-foreground">
+                              {row.stageName}
+                              {row.followedUpAt ? ` · followed up ${formatAge(daysSince(row.followedUpAt, now))}` : ""}
+                            </p>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-xs font-medium text-amber-300">Stale · {row.daysSinceUpdate}d</p>
-                          <p className="text-xs text-muted-foreground">{row.stageName}</p>
-                        </div>
+                        {readOnly ? null : (
+                          <StaleActions
+                            applicationId={row.id}
+                            company={row.company}
+                            stageId={row.stageId}
+                            followedUpAt={row.followedUpAt}
+                            closeStage={data.closeStage}
+                          />
+                        )}
                       </li>
                     ))}
                   </ul>

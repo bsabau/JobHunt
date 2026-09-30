@@ -26,6 +26,12 @@ export interface Application {
   // When it was sent: its creation, or its first move out of a wishlist
   // (intake) lane; null while it has not left one (view application_applied_at).
   appliedAt: string | null;
+  // The stale clock (view application_stale_clock): when the card entered its
+  // lane, or its latest follow-up if later. Not redacted for the guest: the
+  // board's stale marker needs them and they say no more than the marker.
+  staleClockAt: string;
+  followedUpAt: string | null;
+  snoozedUntil: string | null;
 }
 
 // One lane on an application's current path: the lane it entered in first,
@@ -95,7 +101,19 @@ export interface StatsPayload {
   // lane's applications that reached a later pipeline lane (null where none).
   funnel: { stage: string; reached: number; sortOrder: number; kind: StageKind; advanced: number | null }[];
   upcomingInterviews: { company: string; role: string; interviewDate: string; stageName: string }[];
-  staleApplications: { company: string; role: string; stageName: string; daysSinceUpdate: number }[];
+  // Stale now (application_stale_clock and the stale rule), oldest clock first.
+  // daysSinceUpdate counts from the clock's start: lane entry or a follow-up.
+  staleApplications: {
+    id: number;
+    stageId: number;
+    company: string;
+    role: string;
+    stageName: string;
+    daysSinceUpdate: number;
+    followedUpAt: string | null;
+  }[];
+  // The lane "Close" moves a stale application to: the first closed lane.
+  closeStage: { id: number; name: string } | null;
   // Where applications that reached an outcome lane (offer, rejected, closed)
   // came from: the stage they left to get there.
   outcomes: { fromStage: string; outcomeStage: string; kind: StageKind; count: number }[];
