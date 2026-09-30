@@ -20,6 +20,7 @@ import { TEXT_LIMITS } from "@/lib/limits";
 import { applicationsForCompany, duplicateCompanyWarning } from "@/lib/utils";
 import { useFeedback } from "@/components/feedback";
 import { ApplicationTimeline } from "@/components/application-timeline";
+import { OptionalFieldsInputs } from "@/components/optional-fields";
 
 interface EditApplicationDialogProps {
   open: boolean;
@@ -69,7 +70,11 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
     sourceUrl: application.sourceUrl ?? "",
     notes: application.notes ?? "",
     interviewDate: normalizeDateForInput(application.interviewDate),
-    stageId: application.stageId
+    stageId: application.stageId,
+    referral: application.referral,
+    workMode: application.workMode ?? ("" as const),
+    location: application.location ?? "",
+    salary: application.salary ?? ""
   });
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -172,6 +177,11 @@ function EditApplicationForm({ application, applications, stages, onOpenChange, 
           </SelectContent>
         </Select>
       </div>
+      <OptionalFieldsInputs
+        idPrefix="edit"
+        value={{ referral: form.referral, workMode: form.workMode, location: form.location, salary: form.salary }}
+        onChange={(fields) => setForm((current) => ({ ...current, ...fields }))}
+      />
       <div className="space-y-2">
         <Label htmlFor="edit-notes">Notes</Label>
         <Textarea

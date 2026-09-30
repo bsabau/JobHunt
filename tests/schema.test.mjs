@@ -5,6 +5,7 @@ import { after, before, beforeEach, describe, test } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { getMigrationFiles, runMigrations } from "../scripts/migration-utils.mjs";
 import { LATEST_MIGRATION } from "../src/lib/db/schema-version.ts";
+import { WORK_MODES } from "../src/lib/limits.ts";
 
 let pg;
 
@@ -280,6 +281,17 @@ describe("schema built by the migrations", () => {
       created, // its entry lane was deleted: its creation
       null // left the wishlist straight for an outcome lane: never sent
     ]);
+  });
+
+  test("optional fields: existing rows get no referral; work modes are checked; location and salary are not blank", async () => {
+    const [app] = await sql`INSERT INTO applications (company, role, stage_id) VALUES ('Acme', 'Engineer', ${await applied()}) RETURNING id, referral, work_mode, location, salary`;
+    assert.deepEqual([app.referral, app.work_mode, app.location, app.salary], [false, null, null, null]);
+    for (const mode of WORK_MODES) {
+      await sql`UPDATE applications SET work_mode = ${mode} WHERE id = ${app.id}`;
+    }
+    await rejectsWith(sql`UPDATE applications SET work_mode = 'elsewhere' WHERE id = ${app.id}`, "23514", "applications_work_mode_known");
+    await rejectsWith(sql`UPDATE applications SET location = '  ' WHERE id = ${app.id}`, "23514", "applications_location_not_blank");
+    await rejectsWith(sql`UPDATE applications SET salary = '' WHERE id = ${app.id}`, "23514", "applications_salary_not_blank");
   });
 
   test("a second run applies nothing", async () => {

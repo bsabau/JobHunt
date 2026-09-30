@@ -3,6 +3,7 @@ import { SqlFragment, sqlFragment, stageMoveStatement } from "@/lib/stage-statem
 import { TERMINAL_KINDS } from "@/lib/stage-kinds";
 import { StaleAction, staleActionStatement } from "@/lib/application-statements";
 import type { Role } from "@/lib/auth";
+import type { WorkMode } from "@/lib/limits";
 import { Application } from "@/lib/types";
 import { ensureSchema, getSql, isStageForeignKeyViolation, sql } from "./client";
 import { ApplicationRow, mapApplication } from "./rows";
@@ -20,6 +21,10 @@ async function selectApplicationById(id: number): Promise<Application | null> {
       a.interview_date::text AS interview_date,
       a.source_url,
       a.logo_url,
+      a.referral,
+      a.work_mode,
+      a.location,
+      a.salary,
       a.stage_id,
       s.name AS stage_name,
       s.kind AS stage_kind,
@@ -60,6 +65,10 @@ export async function listApplications(viewer: Role): Promise<Application[]> {
       a.interview_date::text AS interview_date,
       a.source_url,
       a.logo_url,
+      a.referral,
+      a.work_mode,
+      a.location,
+      a.salary,
       a.stage_id,
       s.name AS stage_name,
       s.kind AS stage_kind,
@@ -110,7 +119,16 @@ export async function setApplicationLogo(id: number, company: string, logoUrl: s
   `;
 }
 
-interface CreateApplicationInput {
+// The optional fields shared by create and update. A full update replaces
+// them all, so a body without them clears them.
+interface OptionalFields {
+  referral: boolean;
+  workMode?: WorkMode;
+  location?: string;
+  salary?: string;
+}
+
+interface CreateApplicationInput extends OptionalFields {
   company: string;
   role: string;
   notes?: string;
@@ -151,6 +169,10 @@ export async function createApplication(input: CreateApplicationInput): Promise<
         notes,
         interview_date,
         source_url,
+        referral,
+        work_mode,
+        location,
+        salary,
         stage_id,
         created_at,
         updated_at
@@ -160,6 +182,10 @@ export async function createApplication(input: CreateApplicationInput): Promise<
         ${input.notes?.trim() || null},
         ${input.interviewDate ? input.interviewDate : null},
         ${input.sourceUrl?.trim() || null},
+        ${input.referral},
+        ${input.workMode ?? null},
+        ${input.location?.trim() || null},
+        ${input.salary?.trim() || null},
         ${stage.id},
         NOW(),
         NOW()
@@ -257,7 +283,7 @@ export async function deleteApplication(id: number): Promise<boolean> {
   return deletedRows.length > 0;
 }
 
-interface UpdateApplicationInput {
+interface UpdateApplicationInput extends OptionalFields {
   company: string;
   role: string;
   notes?: string;
@@ -288,6 +314,10 @@ export async function updateApplication(id: number, input: UpdateApplicationInpu
       notes = ${input.notes?.trim() || null},
       interview_date = ${input.interviewDate ? input.interviewDate : null},
       source_url = ${input.sourceUrl?.trim() || null},
+      referral = ${input.referral},
+      work_mode = ${input.workMode ?? null},
+      location = ${input.location?.trim() || null},
+      salary = ${input.salary?.trim() || null},
       stage_id = ${input.stageId},
       updated_at = NOW()
     `,

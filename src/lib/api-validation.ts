@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ApiError } from "@/lib/api-errors";
-import { TEXT_LIMITS } from "@/lib/limits";
+import { TEXT_LIMITS, WORK_MODES, type WorkMode } from "@/lib/limits";
 
 export { TEXT_LIMITS };
 
@@ -120,6 +120,21 @@ export function optionalEnum<T extends string>(
   return requiredEnum(body, field, values);
 }
 
+// A missing field is false; anything but a boolean is refused.
+export function optionalBoolean(body: Record<string, unknown>, field: string): boolean {
+  const value = body[field];
+
+  if (value === undefined || value === null) {
+    return false;
+  }
+
+  if (typeof value !== "boolean") {
+    throw new ApiValidationError(`${field} must be true or false`);
+  }
+
+  return value;
+}
+
 export function positiveInteger(value: unknown, field: string): number {
   if (value === "" || value === null || value === undefined) {
     throw new ApiValidationError(`${field} must be a positive integer`);
@@ -200,4 +215,21 @@ export function optionalHttpUrl(body: Record<string, unknown>, field: string): s
     }
     throw new ApiValidationError(`${field} must be a valid URL`);
   }
+}
+
+// The optional fields of an application, as the create and edit routes take
+// them. Missing fields mean "not set" (and no referral): an edit is a full
+// replacement, so a body without them clears them.
+export function optionalApplicationFields(body: Record<string, unknown>): {
+  referral: boolean;
+  workMode: WorkMode | undefined;
+  location: string | undefined;
+  salary: string | undefined;
+} {
+  return {
+    referral: optionalBoolean(body, "referral"),
+    workMode: optionalEnum(body, "workMode", WORK_MODES),
+    location: optionalString(body, "location", { maxLength: TEXT_LIMITS.location }),
+    salary: optionalString(body, "salary", { maxLength: TEXT_LIMITS.salary })
+  };
 }

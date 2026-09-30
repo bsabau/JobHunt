@@ -10,7 +10,7 @@ Kanban-style job application tracker built with Next.js, TypeScript, Tailwind CS
 - Drag cards to recycle bin to delete
 - Add/reorder/delete stages (stage delete blocked when not empty)
 - Stage types (wishlist, pipeline, interview, offer, rejected, closed) that drive the statistics
-- Add application dialog with automatic company logo lookup from the internet
+- Add application dialog with automatic company logo lookup from the internet, and optional referral, work mode, location and salary (salary visible to the owner only)
 - Sankey diagram (`/sankey`) of application flow transitions
 - Owner login plus an optional read-only guest account
 - Neon Postgres persistence
@@ -51,7 +51,7 @@ AUTH_GUEST_ENABLED="true"
 AUTH_GUEST_PASS="a-separate-guest-password"
 ```
 
-Signing in with the username `guest` and that password grants a session that can view the board, stats, and Sankey but never sees notes and cannot change data. The owner username must not be `guest`. Setting `AUTH_GUEST_ENABLED` to anything other than `true`, or rotating `AUTH_GUEST_PASS`, invalidates every issued guest session.
+Signing in with the username `guest` and that password grants a session that can view the board, stats, and Sankey but never sees notes or salary and cannot change data. The owner username must not be `guest`. Setting `AUTH_GUEST_ENABLED` to anything other than `true`, or rotating `AUTH_GUEST_PASS`, invalidates every issued guest session.
 
 For Vercel deployment, add the same values in Project Settings -> Environment Variables.
 

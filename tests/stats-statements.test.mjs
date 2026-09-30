@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { CREATED, iso, setupBoard } from "./helpers/pglite-board.mjs";
 import { STALE_THRESHOLD_DAYS } from "../src/lib/stale.ts";
 import {
+  fieldResultsStatement,
   ghostCandidatesStatement,
   milestoneStatsStatement,
   outcomesStatement,
@@ -305,4 +306,26 @@ test("ghost candidates: sent long enough ago, no reply, in a lane that can go st
     "counted from the sending; a card that replied at an unknown time is not offered"
   );
   assert.equal(iso(rows.find((row) => row.id === followed).followed_up_at), at(1), "the row carries the follow-up");
+});
+
+test("field results: by referral and by work mode, a card without a work mode in its own group, unsent cards left out", async () => {
+  const add = async (lane, fields, ...moves) => {
+    const app = await createApp(lane);
+    await sql`UPDATE applications SET referral = ${fields.referral ?? false}, work_mode = ${fields.workMode ?? null}, salary = 'secret' WHERE id = ${app}`;
+    if (moves.length) await move(app, ...moves);
+  };
+  await add("Applied", { referral: true, workMode: "remote" }, "Interview", "Offer");
+  await add("Applied", { referral: true, workMode: "remote" }, "Screening");
+  await add("Applied", { workMode: "onsite" }, "Rejected");
+  await add("Applied", {});
+  await add("Wishlist", { referral: true, workMode: "hybrid" }); // not sent
+  const rows = (await run(fieldResultsStatement(null))).map((row) => [row.dimension, row.group_key, row.sent, row.responded, row.interviewed, row.offered]);
+  assert.deepEqual(rows, [
+    ["referral", "no-referral", 2, 1, 0, 0],
+    ["referral", "referral", 2, 2, 1, 1],
+    ["work_mode", "not-set", 1, 0, 0, 0],
+    ["work_mode", "onsite", 1, 1, 0, 0],
+    ["work_mode", "remote", 2, 2, 1, 1]
+  ]);
+  assert.ok(!JSON.stringify(await run(fieldResultsStatement(null))).includes("secret"), "salary never appears");
 });

@@ -21,6 +21,7 @@ import { trackApplicationCreated } from "@/lib/analytics";
 import { TEXT_LIMITS } from "@/lib/limits";
 import { applicationsForCompany, duplicateCompanyWarning } from "@/lib/utils";
 import { useFeedback } from "@/components/feedback";
+import { EMPTY_OPTIONAL_FIELDS, OptionalFieldsInputs } from "@/components/optional-fields";
 
 interface AddApplicationDialogProps {
   stages: Stage[];
@@ -44,7 +45,8 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
     sourceUrl: "",
     notes: "",
     interviewDate: "",
-    stageId: defaultStageId
+    stageId: defaultStageId,
+    ...EMPTY_OPTIONAL_FIELDS
   });
   const selectedStageId = stages.some((stage) => stage.id === form.stageId) ? form.stageId : defaultStageId;
 
@@ -78,7 +80,7 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
         hasNotes: Boolean(form.notes.trim())
       });
       setOpen(false);
-      setForm({ company: "", role: "", sourceUrl: "", notes: "", interviewDate: "", stageId: defaultStageId });
+      setForm({ company: "", role: "", sourceUrl: "", notes: "", interviewDate: "", stageId: defaultStageId, ...EMPTY_OPTIONAL_FIELDS });
     } catch (error) {
       console.error(error);
       toast(error instanceof Error ? error.message : "Could not add application.", { tone: "error" });
@@ -92,7 +94,8 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
       <DialogTrigger asChild>
         <Button>Add Application</Button>
       </DialogTrigger>
-      <DialogContent>
+      {/* The form is taller than a small screen with the optional fields. */}
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add a new application</DialogTitle>
           <DialogDescription>
@@ -158,6 +161,11 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
               </SelectContent>
             </Select>
           </div>
+          <OptionalFieldsInputs
+            idPrefix="add"
+            value={{ referral: form.referral, workMode: form.workMode, location: form.location, salary: form.salary }}
+            onChange={(fields) => setForm((current) => ({ ...current, ...fields }))}
+          />
           <div className="space-y-2">
             <Label htmlFor="notes">Notes</Label>
             <Textarea

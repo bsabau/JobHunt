@@ -5,6 +5,7 @@ import { errorResponse } from "@/lib/api-errors";
 import { requireSession } from "@/lib/auth";
 import {
   TEXT_LIMITS,
+  optionalApplicationFields,
   optionalDateOnly,
   optionalHttpUrl,
   optionalString,
@@ -31,6 +32,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
       notes: optionalString(payload, "notes", { maxLength: TEXT_LIMITS.notes }),
       interviewDate: optionalDateOnly(payload, "interviewDate"),
       sourceUrl: optionalHttpUrl(payload, "sourceUrl"),
+      ...optionalApplicationFields(payload),
       stageId: positiveInteger(payload.stageId, "stageId"),
       // Mandatory so the stage change is always guarded against a concurrent move.
       expectedStageId: positiveInteger(payload.expectedStageId, "expectedStageId")

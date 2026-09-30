@@ -17,6 +17,7 @@ import {
 } from "recharts";
 import { StatsPayload } from "@/lib/types";
 import { MEDIAN_MIN_SAMPLE } from "@/lib/constants";
+import { WORK_MODE_LABELS, type WorkMode } from "@/lib/limits";
 import { daysSince, daysUntil, formatDateOnly, todayInTimeZone } from "@/lib/timezone";
 import { STALE_LIST_HEADING_ID, StaleActions } from "@/components/stale-actions";
 import { CloseGhostedDialog } from "@/components/close-ghosted-dialog";
@@ -82,6 +83,58 @@ function MedianTile({ label, days, count }: { label: string; days: number | null
       value={enough ? days : "—"}
       hint={enough ? `Median of ${count}` : `Not enough data yet (${count} of ${MEDIAN_MIN_SAMPLE})`}
     />
+  );
+}
+
+interface ResultsRow {
+  key: string;
+  label: React.ReactNode;
+  // The full label as text, when the cell may cut it short.
+  title?: string;
+  muted?: boolean;
+  sent: number;
+  responded: number;
+  interviewed: number;
+  offered: number;
+}
+
+// The results tables (by week, by source, by referral and work mode): one row
+// per group with its sent count and how many replied, reached an interview
+// and got an offer.
+function ResultsTable({ firstHeader, rows, truncateLabels }: { firstHeader: string; rows: ResultsRow[]; truncateLabels?: boolean }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+            <th scope="col" className="py-2 pr-4 font-medium">{firstHeader}</th>
+            <th scope="col" className="py-2 pr-4 text-right font-medium">Sent</th>
+            <th scope="col" className="py-2 pr-4 font-medium">Replied</th>
+            <th scope="col" className="py-2 pr-4 font-medium">Interview</th>
+            <th scope="col" className="py-2 font-medium">Offer</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key} className={`border-t border-border/40 ${row.muted ? "text-muted-foreground" : ""}`}>
+              <th
+                scope="row"
+                className={`py-2 pr-4 text-left font-normal ${
+                  truncateLabels ? "max-w-[9rem] truncate sm:max-w-[16rem]" : "whitespace-nowrap"
+                }`}
+                title={row.title}
+              >
+                {row.label}
+              </th>
+              <td className="py-2 pr-4 text-right tabular-nums">{row.sent}</td>
+              <ShareCell count={row.responded} of={row.sent} color={KIND_COLORS.active} muted={Boolean(row.muted)} />
+              <ShareCell count={row.interviewed} of={row.sent} color={KIND_COLORS.interview} muted={Boolean(row.muted)} />
+              <ShareCell count={row.offered} of={row.sent} color={KIND_COLORS.offer} muted={Boolean(row.muted)} last />
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -231,6 +284,31 @@ export function StatsCharts({
       .reverse()
       .map((week) => ({ ...week, open: isWeekOpen(week.weekStart, openDays, today) }));
   }, [data.weeks, openDays, timeZone, now]);
+
+  // The referral and work-mode groups, labelled; "used" once any sent
+  // application has a referral or a work mode, so the card is not two
+  // one-row tables of "No referral" and "Not set".
+  const fieldGroups = useMemo(() => {
+    const rows = (dimension: "referral" | "work_mode") =>
+      data.fieldResults
+        .filter((row) => row.dimension === dimension)
+        .map((row) => ({
+          key: row.group,
+          label:
+            row.group === "referral"
+              ? "Referral"
+              : row.group === "no-referral"
+                ? "No referral"
+                : row.group === "not-set"
+                  ? "Not set"
+                  : WORK_MODE_LABELS[row.group as WorkMode] ?? row.group,
+          ...row
+        }));
+    const used = data.fieldResults.some(
+      (row) => (row.dimension === "referral" && row.group === "referral") || (row.dimension === "work_mode" && row.group !== "not-set")
+    );
+    return { referral: rows("referral"), workMode: rows("work_mode"), used };
+  }, [data.fieldResults]);
 
   // The label beside each bar: the count, and for a pipeline lane the share
   // that went on to the next one.
@@ -602,37 +680,24 @@ export function StatsCharts({
             </CardHeader>
             <CardContent>
               {weekResults.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-                        <th scope="col" className="py-2 pr-4 font-medium">Week of</th>
-                        <th scope="col" className="py-2 pr-4 text-right font-medium">Sent</th>
-                        <th scope="col" className="py-2 pr-4 font-medium">Replied</th>
-                        <th scope="col" className="py-2 pr-4 font-medium">Interview</th>
-                        <th scope="col" className="py-2 font-medium">Offer</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {weekResults.map((week) => (
-                        <tr key={week.weekStart} className={`border-t border-border/40 ${week.open ? "text-muted-foreground" : ""}`}>
-                          <th scope="row" className="whitespace-nowrap py-2 pr-4 text-left font-normal">
-                            {formatDateOnly(week.weekStart)}
-                            {week.open ? (
-                              <span className="ml-2 rounded-full border border-border/60 px-2 py-0.5 text-[10px] uppercase tracking-wider">
-                                still open
-                              </span>
-                            ) : null}
-                          </th>
-                          <td className="py-2 pr-4 text-right tabular-nums">{week.sent}</td>
-                          <ShareCell count={week.responded} of={week.sent} color={KIND_COLORS.active} muted={week.open} />
-                          <ShareCell count={week.interviewed} of={week.sent} color={KIND_COLORS.interview} muted={week.open} />
-                          <ShareCell count={week.offered} of={week.sent} color={KIND_COLORS.offer} muted={week.open} last />
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <ResultsTable
+                  firstHeader="Week of"
+                  rows={weekResults.map((week) => ({
+                    key: week.weekStart,
+                    label: (
+                      <>
+                        {formatDateOnly(week.weekStart)}
+                        {week.open ? (
+                          <span className="ml-2 rounded-full border border-border/60 px-2 py-0.5 text-[10px] uppercase tracking-wider">
+                            still open
+                          </span>
+                        ) : null}
+                      </>
+                    ),
+                    muted: week.open,
+                    ...week
+                  }))}
+                />
               ) : (
                 <p className="py-6 text-center text-sm text-muted-foreground">{data.range === null ? "No application sent yet." : `No application sent in the last ${data.range} days.`}</p>
               )}
@@ -656,36 +721,31 @@ export function StatsCharts({
                   {readOnly ? null : " Add one in a card's dialog to see which sites lead to replies."}
                 </p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-                        <th scope="col" className="py-2 pr-4 font-medium">Source</th>
-                        <th scope="col" className="py-2 pr-4 text-right font-medium">Sent</th>
-                        <th scope="col" className="py-2 pr-4 font-medium">Replied</th>
-                        <th scope="col" className="py-2 pr-4 font-medium">Interview</th>
-                        <th scope="col" className="py-2 font-medium">Offer</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.sources.map((row) => (
-                        <tr key={row.source} className="border-t border-border/40">
-                          <th
-                            scope="row"
-                            className="max-w-[9rem] truncate py-2 pr-4 text-left font-normal sm:max-w-[16rem]"
-                            title={row.source}
-                          >
-                            {row.source}
-                          </th>
-                          <td className="py-2 pr-4 text-right tabular-nums">{row.sent}</td>
-                          <ShareCell count={row.responded} of={row.sent} color={KIND_COLORS.active} muted={false} />
-                          <ShareCell count={row.interviewed} of={row.sent} color={KIND_COLORS.interview} muted={false} />
-                          <ShareCell count={row.offered} of={row.sent} color={KIND_COLORS.offer} muted={false} last />
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <ResultsTable
+                  firstHeader="Source"
+                  truncateLabels
+                  rows={data.sources.map((row) => ({ key: row.source, label: row.source, title: row.source, ...row }))}
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Results by Referral and Work Mode</CardTitle>
+              <p className="text-xs text-muted-foreground">Sent applications split by whether a referral helped, and by work mode.</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {fieldGroups.used ? (
+                <>
+                  <ResultsTable firstHeader="Referral" rows={fieldGroups.referral} />
+                  <ResultsTable firstHeader="Work mode" rows={fieldGroups.workMode} />
+                </>
+              ) : (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No sent application has a referral or a work mode yet.
+                  {readOnly ? null : " Set them in a card's dialog to compare them."}
+                </p>
               )}
             </CardContent>
           </Card>
