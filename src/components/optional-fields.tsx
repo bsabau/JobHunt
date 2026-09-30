@@ -50,7 +50,7 @@ export function OptionalFieldsInputs({
         </Select>
       </div>
       <div className="space-y-2">
-        <Label htmlFor={`${idPrefix}-location`}>Location</Label>
+        <Label htmlFor={`${idPrefix}-location`}>Location (the guest sees it)</Label>
         <Input
           id={`${idPrefix}-location`}
           value={value.location}

@@ -722,6 +722,8 @@ Done in PR #41:
 - `OptionalFieldsInputs` adds the four inputs to the add and edit dialogs (the add dialog now scrolls); the card shows "Hybrid · Referral"; the guest's details dialog shows work mode, location and referral.
 - "Results by Referral and Work Mode" (`fieldResultsStatement()`, following the date range) appears once any sent application has a referral or a work mode. The three results tables now share one `ResultsTable` component, as Fable suggested in #37.
 - Checked on `dev` with a card added through the dialog with a salary marker: the fields saved; a salary-only edit changed neither lane, history nor logo; the stats card shows the groups; the marker appears nowhere for the guest (API, board HTML, details dialog, stats HTML) and nowhere in the stats page's HTML for the owner. Export and import (5.3, 5.4) are not built, so the fields' part there waits for them.
+- After Fable's review: the add and edit dialogs keep their footer (the submit button) in view and scroll only the fields, which PR #30 had done for the edit dialog's history and which the extra fields had undone; the location field says the guest sees it; the field results are in the ranged statement test.
+- Open, not in this step: `api-validation.ts` imports `next/server`, so its parsers (`optionalApplicationFields()` included) cannot be loaded by the Node tests; they are checked through the API only. Moving the parsing into a module without that import would let the tests cover it.
 
 ### 5.2 Calendar export for interviews (F-7)
 

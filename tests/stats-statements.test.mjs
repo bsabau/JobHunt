@@ -261,9 +261,17 @@ test("ranged: sent applications, their medians and their sources follow the rang
     const [hearBack] = await run(timeToHearBackStatement(start));
     const sources = await run(sourceApplicationsStatement(start));
     const weeks = await run(weeklyStatement("UTC", start));
-    counts[label] = [milestone.applied, milestone.responded, hearBack.rejection_count, sources.length, weeks.reduce((sum, week) => sum + week.sent, 0)];
+    const byReferral = (await run(fieldResultsStatement(start))).filter((row) => row.dimension === "referral");
+    counts[label] = [
+      milestone.applied,
+      milestone.responded,
+      hearBack.rejection_count,
+      sources.length,
+      weeks.reduce((sum, week) => sum + week.sent, 0),
+      byReferral.reduce((sum, row) => sum + row.sent, 0)
+    ];
   }
-  assert.deepEqual(counts, { "all time": [4, 4, 4, 4, 4], "90 days": [3, 3, 3, 3, 3], "30 days": [2, 2, 2, 2, 2] });
+  assert.deepEqual(counts, { "all time": [4, 4, 4, 4, 4, 4], "90 days": [3, 3, 3, 3, 3, 3], "30 days": [2, 2, 2, 2, 2, 2] });
 });
 
 test("ranged: the funnel, the companies and the outcomes count the unsent card only under all time", async () => {
