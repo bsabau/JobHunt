@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deleteApplication, updateApplication } from "@/lib/db";
+import { deleteApplication, isKnownTimeZone, updateApplication } from "@/lib/db";
 import { scheduleLogoLookup } from "@/lib/logo-lookup";
 import { errorResponse } from "@/lib/api-errors";
 import { requireSession } from "@/lib/auth";
 import {
   TEXT_LIMITS,
+  ApiValidationError,
   optionalApplicationFields,
+  optionalInterviewTime,
   optionalDateOnly,
   optionalHttpUrl,
   optionalString,
@@ -26,11 +28,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
     await requireSession({ write: true });
     const applicationId = positiveInteger(id, "id");
     const payload = await readJsonObject(request);
+    const interviewDate = optionalDateOnly(payload, "interviewDate");
+    const interviewTime = optionalInterviewTime(payload, interviewDate);
+    if (interviewTime.interviewTimeZone && !(await isKnownTimeZone(interviewTime.interviewTimeZone))) {
+      throw new ApiValidationError("interviewTimeZone is not a time zone the database knows");
+    }
     const updated = await updateApplication(applicationId, {
       company: requiredString(payload, "company", { maxLength: TEXT_LIMITS.company }),
       role: requiredString(payload, "role", { maxLength: TEXT_LIMITS.role }),
       notes: optionalString(payload, "notes", { maxLength: TEXT_LIMITS.notes }),
-      interviewDate: optionalDateOnly(payload, "interviewDate"),
+      interviewDate,
+      ...interviewTime,
       sourceUrl: optionalHttpUrl(payload, "sourceUrl"),
       ...optionalApplicationFields(payload),
       stageId: positiveInteger(payload.stageId, "stageId"),

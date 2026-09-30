@@ -8,6 +8,7 @@ Feature backlog, in priority order. The app is in daily use, so these are the ne
 - **Stats page** (`/`), for all time or the last 30 or 90 days: response, interview, offer and ghosted rates, median days to a reply and to a rejection, results by the week applications were sent and by job site, one funnel with the share of each lane's cards that went further, applications sent per week with a running total, outcomes, upcoming interviews.
 - **Stale actions**: followed up, snooze 7 days, or close, from the stats page; a follow-up restarts the 14-day clock. Applications with no reply after N days (21 by default) can be closed in bulk.
 - **Stale alerts**: cards that have sat for 14 days or more in a lane that can go stale (not a wishlist, offer or outcome lane) are flagged on the board and listed on the stats page.
+- **Calendar export**: an optional interview time and zone, and an "Add to calendar" file for the owner.
 - **Optional fields**: referral, work mode, location and salary (owner-only), with results by referral and work mode on the stats page.
 - **Board filter**: narrows every lane by company or role, and a remembered toggle hides the rejected and closed lanes.
 - **Application timeline**: the card dialog shows the lanes a card passed through, with dates and time in each; the guest gets a read-only version.
@@ -15,14 +16,7 @@ Feature backlog, in priority order. The app is in daily use, so these are the ne
 
 ## Next
 
-In the order of `docs/PRODUCT-PLAN.md`.
-
-### 1. Calendar export for interviews
-
-An optional interview time and an "Add to calendar" download (F-7). The optional fields have shipped.
-
-### Later
-
+Every step of `docs/PRODUCT-PLAN.md` has shipped. What remains is optional.
 
 ### Optional
 

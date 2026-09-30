@@ -179,7 +179,10 @@ export interface Session {
 // Second line of defense behind the proxy: every route handler and page calls
 // this before touching the database. Throws a typed 401 when there is no valid
 // session, and a typed 403 when a guest attempts a write.
-export async function requireSession(options: { write?: boolean } = {}): Promise<Session> {
+// `write` refuses the guest for anything that changes data; `owner` refuses it
+// for reads that are the owner's alone (a calendar file). Both are the same
+// check, named for what the route does.
+export async function requireSession(options: { write?: boolean; owner?: boolean } = {}): Promise<Session> {
   // Imported lazily so this module remains importable outside the Next runtime
   // (e.g. tests/auth.test.mjs), which only exercises the pure helpers.
   const [{ cookies }, { ForbiddenError, UnauthorizedError }] = await Promise.all([
@@ -197,6 +200,10 @@ export async function requireSession(options: { write?: boolean } = {}): Promise
 
   if (options.write && session.role === "guest") {
     throw new ForbiddenError("Guest access is read-only");
+  }
+
+  if (options.owner && session.role === "guest") {
+    throw new ForbiddenError("Only the owner can do this");
   }
 
   return { role: session.role };

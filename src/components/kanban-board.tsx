@@ -282,8 +282,23 @@ function KanbanApplicationCard({
               </a>
             ) : null}
             {app.interviewDate ? (
-              <div className="rounded-md border border-border/60 bg-background/70 p-2">
-                <p className="text-xs text-amber-300">Interview: {formatInterviewLabel(app.interviewDate, timeZone, now)}</p>
+              <div className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-background/70 p-2">
+                <p className="text-xs text-amber-300">
+                  Interview: {formatInterviewLabel(app.interviewDate, timeZone, now)}
+                  {app.interviewTime
+                    ? ` · ${app.interviewTime}${app.interviewTimeZone && app.interviewTimeZone !== timeZone ? ` (${app.interviewTimeZone})` : ""}`
+                    : ""}
+                </p>
+                {readOnly ? null : (
+                  <a
+                    href={`/api/applications/${app.id}/interview.ics`}
+                    className="shrink-0 text-xs text-sky-400 hover:text-sky-300"
+                    aria-label={`Add the interview with ${app.company} to a calendar`}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                  >
+                    Add to calendar
+                  </a>
+                )}
               </div>
             ) : null}
           </CardContent>
@@ -713,6 +728,7 @@ export function KanbanBoard({ initialApplications, initialStages, readOnly = fal
             <AddApplicationDialog
               stages={stages}
               applications={applications}
+              timeZone={timeZone}
               onCreated={(app) => {
                 setApplications((current) => [app, ...current]);
                 explainIfNotShown(app);

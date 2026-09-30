@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ApiError } from "@/lib/api-errors";
 import { TEXT_LIMITS, WORK_MODES, type WorkMode } from "@/lib/limits";
+import { isValidTimeZone } from "@/lib/timezone";
 
 export { TEXT_LIMITS };
 
@@ -232,4 +233,28 @@ export function optionalApplicationFields(body: Record<string, unknown>): {
     location: optionalString(body, "location", { maxLength: TEXT_LIMITS.location }),
     salary: optionalString(body, "salary", { maxLength: TEXT_LIMITS.salary })
   };
+}
+
+// An interview time ("HH:MM", 24-hour) and its IANA zone, which come together:
+// a time needs a zone and a date, and without a time the zone is dropped.
+// Whether Postgres knows the zone is checked by the route (isKnownTimeZone()).
+export function optionalInterviewTime(
+  body: Record<string, unknown>,
+  interviewDate: string | null
+): { interviewTime: string | undefined; interviewTimeZone: string | undefined } {
+  const time = body.interviewTime;
+  if (time === undefined || time === null || time === "") {
+    return { interviewTime: undefined, interviewTimeZone: undefined };
+  }
+  if (typeof time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    throw new ApiValidationError("interviewTime must be HH:MM");
+  }
+  if (interviewDate === null) {
+    throw new ApiValidationError("interviewTime needs an interviewDate");
+  }
+  const zone = body.interviewTimeZone;
+  if (!isValidTimeZone(zone)) {
+    throw new ApiValidationError("interviewTimeZone must be a time zone name");
+  }
+  return { interviewTime: time, interviewTimeZone: zone };
 }

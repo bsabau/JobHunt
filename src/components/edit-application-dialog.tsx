@@ -20,7 +20,7 @@ import { TEXT_LIMITS } from "@/lib/limits";
 import { applicationsForCompany, duplicateCompanyWarning } from "@/lib/utils";
 import { useFeedback } from "@/components/feedback";
 import { ApplicationTimeline } from "@/components/application-timeline";
-import { OptionalFieldsInputs } from "@/components/optional-fields";
+import { InterviewTimeInputs, OptionalFieldsInputs } from "@/components/optional-fields";
 
 interface EditApplicationDialogProps {
   open: boolean;
@@ -67,8 +67,9 @@ function EditApplicationForm({
   stages,
   onOpenChange,
   onUpdated,
+  timeZone,
   children
-}: EditApplicationFormProps & { children?: React.ReactNode }) {
+}: EditApplicationFormProps & { timeZone: string; children?: React.ReactNode }) {
   const { confirm, toast } = useFeedback();
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
@@ -77,6 +78,8 @@ function EditApplicationForm({
     sourceUrl: application.sourceUrl ?? "",
     notes: application.notes ?? "",
     interviewDate: normalizeDateForInput(application.interviewDate),
+    interviewTime: application.interviewTime ?? "",
+    interviewTimeZone: application.interviewTimeZone ?? timeZone,
     stageId: application.stageId,
     referral: application.referral,
     workMode: application.workMode ?? ("" as const),
@@ -97,7 +100,12 @@ function EditApplicationForm({
       const response = await fetch(`/api/applications/${application.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, expectedStageId: application.stageId })
+        // A time without a date is dropped with the date.
+        body: JSON.stringify({
+          ...form,
+          interviewTime: form.interviewDate ? form.interviewTime : "",
+          expectedStageId: application.stageId
+        })
       });
 
       if (response.status === 409) {
@@ -170,6 +178,13 @@ function EditApplicationForm({
             onChange={(e) => setForm((current) => ({ ...current, interviewDate: e.target.value }))}
           />
         </div>
+        <InterviewTimeInputs
+          idPrefix="edit"
+          hasDate={form.interviewDate !== ""}
+          time={form.interviewTime}
+          zone={form.interviewTimeZone}
+          onChange={({ time, zone }) => setForm((current) => ({ ...current, interviewTime: time, interviewTimeZone: zone }))}
+        />
         <div className="space-y-2">
           <Label>Stage</Label>
           <Select
@@ -240,6 +255,7 @@ export function EditApplicationDialog({
             stages={stages}
             onOpenChange={onOpenChange}
             onUpdated={onUpdated}
+            timeZone={timeZone}
           >
             {/* Below the fields: the owner opens this dialog to edit, and the
                 fields must not move when the history arrives. */}

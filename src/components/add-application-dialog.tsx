@@ -21,12 +21,14 @@ import { trackApplicationCreated } from "@/lib/analytics";
 import { TEXT_LIMITS } from "@/lib/limits";
 import { applicationsForCompany, duplicateCompanyWarning } from "@/lib/utils";
 import { useFeedback } from "@/components/feedback";
-import { EMPTY_OPTIONAL_FIELDS, OptionalFieldsInputs } from "@/components/optional-fields";
+import { EMPTY_OPTIONAL_FIELDS, InterviewTimeInputs, OptionalFieldsInputs } from "@/components/optional-fields";
 
 interface AddApplicationDialogProps {
   stages: Stage[];
   applications: Application[];
   onCreated: (application: Application) => void;
+  // The viewer's zone: an interview time starts out in it.
+  timeZone: string;
 }
 
 function getDefaultStageId(stages: Stage[]): number {
@@ -34,7 +36,7 @@ function getDefaultStageId(stages: Stage[]): number {
   return active?.id ?? stages[0]?.id ?? 0;
 }
 
-export function AddApplicationDialog({ stages, applications, onCreated }: AddApplicationDialogProps) {
+export function AddApplicationDialog({ stages, applications, onCreated, timeZone }: AddApplicationDialogProps) {
   const { confirm, toast } = useFeedback();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -45,6 +47,8 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
     sourceUrl: "",
     notes: "",
     interviewDate: "",
+    interviewTime: "",
+    interviewTimeZone: timeZone,
     stageId: defaultStageId,
     ...EMPTY_OPTIONAL_FIELDS
   });
@@ -63,7 +67,8 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
       const response = await fetch("/api/applications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, stageId: selectedStageId })
+        // A time without a date is dropped with the date.
+        body: JSON.stringify({ ...form, interviewTime: form.interviewDate ? form.interviewTime : "", stageId: selectedStageId })
       });
 
       if (!response.ok) {
@@ -80,7 +85,17 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
         hasNotes: Boolean(form.notes.trim())
       });
       setOpen(false);
-      setForm({ company: "", role: "", sourceUrl: "", notes: "", interviewDate: "", stageId: defaultStageId, ...EMPTY_OPTIONAL_FIELDS });
+      setForm({
+        company: "",
+        role: "",
+        sourceUrl: "",
+        notes: "",
+        interviewDate: "",
+        interviewTime: "",
+        interviewTimeZone: timeZone,
+        stageId: defaultStageId,
+        ...EMPTY_OPTIONAL_FIELDS
+      });
     } catch (error) {
       console.error(error);
       toast(error instanceof Error ? error.message : "Could not add application.", { tone: "error" });
@@ -144,6 +159,13 @@ export function AddApplicationDialog({ stages, applications, onCreated }: AddApp
                 onChange={(e) => setForm((current) => ({ ...current, interviewDate: e.target.value }))}
               />
             </div>
+            <InterviewTimeInputs
+              idPrefix="add"
+              hasDate={form.interviewDate !== ""}
+              time={form.interviewTime}
+              zone={form.interviewTimeZone}
+              onChange={({ time, zone }) => setForm((current) => ({ ...current, interviewTime: time, interviewTimeZone: zone }))}
+            />
             <div className="space-y-2">
               <Label>Initial stage</Label>
               <Select

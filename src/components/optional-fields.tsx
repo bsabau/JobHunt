@@ -80,3 +80,63 @@ export function OptionalFieldsInputs({
     </div>
   );
 }
+
+// Every zone name the browser knows, for the zone field's suggestions; empty
+// where Intl cannot list them (the field still takes a typed name).
+function zoneNames(): string[] {
+  try {
+    return (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// The interview's time and the zone it is in, next to its date. A time needs
+// a date; the zone starts as the viewer's and matters only with a time.
+export function InterviewTimeInputs({
+  idPrefix,
+  hasDate,
+  time,
+  zone,
+  onChange
+}: {
+  idPrefix: string;
+  hasDate: boolean;
+  time: string;
+  zone: string;
+  onChange: (value: { time: string; zone: string }) => void;
+}) {
+  const listId = `${idPrefix}-zone-names`;
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-interview-time`}>Interview time (optional)</Label>
+        <Input
+          id={`${idPrefix}-interview-time`}
+          type="time"
+          value={hasDate ? time : ""}
+          disabled={!hasDate}
+          onChange={(event) => onChange({ time: event.target.value, zone })}
+        />
+        {!hasDate ? <p className="text-xs text-muted-foreground">Set the date first.</p> : null}
+      </div>
+      {hasDate && time ? (
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-interview-zone`}>Time zone</Label>
+          <Input
+            id={`${idPrefix}-interview-zone`}
+            list={listId}
+            value={zone}
+            onChange={(event) => onChange({ time, zone: event.target.value })}
+            placeholder="e.g. Europe/Amsterdam"
+          />
+          <datalist id={listId}>
+            {zoneNames().map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
+        </div>
+      ) : null}
+    </div>
+  );
+}

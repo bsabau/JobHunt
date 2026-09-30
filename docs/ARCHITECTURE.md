@@ -42,11 +42,12 @@ All bodies are JSON and must be sent with `Content-Type: application/json` (415 
 | `POST /api/auth/login` | `user`, `pass` | Sets the `session` cookie. 401 on bad credentials, 429 after 5 failures per minute per IP |
 | `POST /api/auth/logout` | none | Clears the cookie; works without a session |
 | `GET /api/applications` | | Returns `{ applications, stages }`; `notes` and `salary` are `null` for guests (redacted in the data layer) |
-| `POST /api/applications` | `company`, `role`, optional `notes`, `referral` (boolean), `workMode` (`remote`, `hybrid`, `onsite`), `location`, `salary`, `interviewDate`, `sourceUrl`, `stageId` | Returns at once; the logo is looked up after the response. Default lane is the first `active` lane |
+| `POST /api/applications` | `company`, `role`, optional `notes`, `referral` (boolean), `workMode` (`remote`, `hybrid`, `onsite`), `location`, `salary`, `interviewDate`, `interviewTime` (`HH:MM`) with `interviewTimeZone` (an IANA zone Postgres knows), `sourceUrl`, `stageId` | Returns at once; the logo is looked up after the response. Default lane is the first `active` lane |
 | `PUT /api/applications/:id` | all editable fields, `stageId`, `expectedStageId` | Full replacement: a body without the optional fields clears them. 409 if the card moved |
 | `DELETE /api/applications/:id` | | Transitions cascade. `{ ok: true }` |
 | `PATCH /api/applications/:id/status` | `stageId`, `expectedStageId` | The drag-and-drop move. 409 if the card moved |
 | `PATCH /api/applications/:id/follow-up` | `action`: `followed_up`, `snooze`, `unsnooze` or `unfollow` | Owner only. Followed up sets `followed_up_at` to now and ends a snooze; snooze sets `snoozed_until` to now plus 7 days; the two undos empty one field each (`unsnooze` keeps any follow-up). Does not touch `updated_at`. Returns the application; 404 for an unknown one |
+| `GET /api/applications/:id/interview.ics` | | Owner only (`requireSession({ owner: true })`). The interview as an iCalendar file: all-day on `interview_date`, or 60 minutes from the instant Postgres computes from the date, the time and its zone. Company, role and job link only, never notes or salary. 404 without an interview date |
 | `GET /api/applications/:id/timeline` | | The card's current path: `{ lanes: [{ stageId, stageName, stageKind, enteredAt }] }`, the entry lane first (entered at creation), then every lane moved into. A deleted lane has `null` id and kind and its name ends in ` (deleted)`. Owner and guest; no notes. 404 for an unknown card |
 | `GET /api/stages` | | |
 | `POST /api/stages` | `name`, optional `kind` | 409 on duplicate name. `new` and `created` are reserved |
@@ -108,6 +109,8 @@ applications
   role            TEXT NOT NULL     -- not blank
   notes           TEXT
   interview_date  DATE
+  interview_time  TIME              -- with interview_time_zone, and only with a date
+  interview_time_zone TEXT          -- IANA name; set exactly when interview_time is
   source_url      TEXT
   logo_url        TEXT
   stage_id        INTEGER NOT NULL -> stages(id) ON DELETE RESTRICT
@@ -183,6 +186,7 @@ Migration notes:
 - `1730000017000` creates the view `application_milestones` on top of `application_applied_at` and `application_entry_stage`. It reads `applications.id`, `stages.id` and `.kind`, and the transitions' `id`, `application_id`, `to_stage_id` and `transitioned_at`; the same rule applies, and dropping either view it builds on now needs this one dropped first. `1730000018000` replaces it with the same columns, so that `responded`, `interviewed` and `offered` are never `NULL` (they were when the entry lane had been deleted).
 - `1730000019000` adds `applications.followed_up_at` and `.snoozed_until`, and the view `application_stale_clock` on top of `application_stage_entry`. It reads `applications.id`, `.followed_up_at` and `.snoozed_until`; the same drop-and-re-create rule applies.
 - `1730000020000` adds `referral`, `work_mode`, `location` and `salary` to `applications`, with guarded checks: `work_mode` in `WORK_MODES`, `location` and `salary` not blank.
+- `1730000021000` adds `interview_time` and `interview_time_zone`, with guarded checks: the two are set together, and a time needs a date.
 - Every new migration also updates `LATEST_MIGRATION` in `src/lib/db/schema-version.ts`. `ensureSchema()` compares it with the newest row in `schema_migrations` once per process and refuses to query a database that is behind; a test fails when the constant falls behind the `migrations/` folder.
 - The runner serialises concurrent runs with `pg_advisory_xact_lock` inside each migration's transaction, then re-checks `schema_migrations`. A session-level lock would not survive Neon's transaction pooler.
 
@@ -262,7 +266,7 @@ A deleted entry lane has no kind, so its cards count as sent at creation (as in 
 
 ## Time zones
 
-Timestamps are stored as `TIMESTAMPTZ`; `interview_date` is a plain `DATE`. The viewer's zone comes from the `tz` cookie written by `TimezoneSync`, then Vercel's `x-vercel-ip-timezone` header, then UTC. It is validated with `Intl` before it reaches SQL, where day and week buckets use `AT TIME ZONE` (weeks start on Monday: `date_trunc('week', ...)`, returned as `YYYY-MM-DD`; `src/lib/weeks.ts` does the week arithmetic on those strings and fills empty weeks up to the current one). Date formatting pins both locale and zone so server and browser render the same text. Relative ages ("3d", "in 2 days", stale, upcoming) are computed from one `now` that the page reads on the server and passes to the client component, so the server HTML and hydration agree.
+Timestamps are stored as `TIMESTAMPTZ`; `interview_date` is a plain `DATE`. The viewer's zone comes from the `tz` cookie written by `TimezoneSync`, then Vercel's `x-vercel-ip-timezone` header, then UTC. It is validated with `Intl` before it reaches SQL, where day and week buckets use `AT TIME ZONE` (weeks start on Monday: `date_trunc('week', ...)`, returned as `YYYY-MM-DD`; `src/lib/weeks.ts` does the week arithmetic on those strings and fills empty weeks up to the current one). Date formatting pins both locale and zone so server and browser render the same text. Relative ages ("3d", "in 2 days", stale, upcoming) are computed from one `now` that the page reads on the server and passes to the client component, so the server HTML and hydration agree. An interview time is stored as a wall-clock `TIME` with its IANA zone; the calendar file's instant is computed by Postgres (`(interview_date + interview_time) AT TIME ZONE interview_time_zone`), so clock changes are the database's job. Cards show the time as entered, with the zone when it differs from the viewer's.
 
 ## Logo lookup
 
@@ -296,6 +300,7 @@ src/
     sources.ts         results by source: job-link hosts and their groups
     stats-range.ts     the stats page's date range: allowlist, start, labels
     stale.ts           the stale rule (twin of the stats page's stale list)
+    ics.ts             the interview calendar file (RFC 5545)
     funnel.ts          the stats funnel: lanes in rank, and per lane the share of its cards that went further
     sankey.ts          builds the Sankey graph as a DAG
     auth.ts            tokens, credentials, requireSession
@@ -325,6 +330,8 @@ src/
 | `timeline` | The timeline statement on PGlite after real moves: rewinds, renamed and deleted lanes |
 | `board-filter` | The filter matches company and role only; only rejected and closed lanes hide |
 | `weeks` | Monday week starts, month and year ends, empty weeks up to the current one, when a week stops being open |
+| `ics` | The calendar file: all-day and timed events, CRLF, escaping, folding at 75 octets without splitting a character |
+| `interview-time` | The interview's instant from Postgres on both sides of a clock change, the date-only case, the constraints |
 | `stale-clock` | The stale clock view, the stale rule in SQL and in TypeScript on the same cases (follow-ups, rewinds, snoozes, excluded lanes, the threshold), the follow-up statement, and the ghost candidates |
 | `stats-range` | Only `30` and `90` are ranges (not `7`, `-1`, padded values or arrays); a range's start |
 | `sources` | Host extraction (case, `www.`, port, bad links) and the Other and Unknown groups |
