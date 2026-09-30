@@ -53,3 +53,7 @@ export function trackStageReordered() {
 export function trackStaleAction(props: { action: "followed_up" | "snooze" | "close" }) {
   track("stale_action", props);
 }
+
+export function trackGhostedClosed(props: { count: number; days: number }) {
+  track("ghosted_closed", props);
+}

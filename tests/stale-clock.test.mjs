@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { iso, setupBoard } from "./helpers/pglite-board.mjs";
 import { staleActionStatement } from "../src/lib/application-statements.ts";
 import { STALE_THRESHOLD_DAYS, isApplicationStale } from "../src/lib/stale.ts";
-import { staleApplicationsStatement } from "../src/lib/stats-statements.ts";
+import { ghostCandidatesStatement, staleApplicationsStatement } from "../src/lib/stats-statements.ts";
 
 const { sql, createApp, move, run } = setupBoard();
 
@@ -133,4 +133,25 @@ test("undoing a snooze keeps an earlier follow-up", async () => {
   const [row] = await sql`SELECT followed_up_at, snoozed_until FROM applications WHERE id = ${app}`;
   assert.deepEqual([iso(row.followed_up_at), row.snoozed_until], [daysAgo(16), null]);
   assert.deepEqual(await staleBoth(), [app], "stale again, counted from the kept follow-up");
+});
+
+test("ghost candidates: sent long enough ago, no reply, in a lane that can go stale, not snoozed", async () => {
+  const at = (days) => daysAgo(days);
+  const tooRecent = await createApp("Applied", at(10));
+  const twenty = await createApp("Applied", at(20));
+  const forty = await createApp("Applied", at(40));
+  const replied = await createApp("Applied", at(40));
+  await moveAt(replied, "Screening", at(35)); // a reply
+  const snoozed = await createApp("Applied", at(40));
+  await sql`UPDATE applications SET snoozed_until = ${at(-3)} WHERE id = ${snoozed}`;
+  const followed = await createApp("Applied", at(30));
+  await sql`UPDATE applications SET followed_up_at = ${at(1)} WHERE id = ${followed}`; // not a reply
+  await createApp("Wishlist", at(40)); // never sent
+  const closed = await createApp("Applied", at(40));
+  await moveAt(closed, "Ghosted", at(20)); // already in an outcome lane
+  assert.ok(tooRecent && replied && snoozed && closed);
+
+  const rows = await run(ghostCandidatesStatement(new Date(NOW).toISOString(), STALE_THRESHOLD_DAYS));
+  assert.deepEqual(rows.map((row) => [row.id, row.days_since_applied]), [[forty, 40], [followed, 30], [twenty, 20]]);
+  assert.equal(iso(rows.find((row) => row.id === followed).followed_up_at), at(1), "the row carries the follow-up");
 });

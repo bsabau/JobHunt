@@ -244,6 +244,7 @@ A rename is refused (409) when another lane has the name in any case. Charts gro
 | Replied | The first edge after the application was sent whose target is not `intake` or `closed` (a deleted lane counts); for a card that entered in intake, after the edge that sent it, compared by `(transitioned_at, id)`. Also true, with no time, for a card that entered in an `interview`, `offer` or `rejected` lane, and for any card that reached an interview or an offer (view `application_milestones`) |
 | Response, interview, offer rates | Shares of the sent applications (applied at set) that replied, reached an `interview` lane (or entered in one), reached an `offer` lane (or entered in one). On the current path: a card moved back out of an interview lane no longer counts as interviewed |
 | Ghosted | Share of the sent applications currently in a `closed` lane |
+| Ghost candidates | Sent at least 14 days before the page's `now`, no reply (`application_milestones.responded` false), in a lane that can go stale, not snoozed; a follow-up is not a reply (`ghostCandidatesStatement()`). The bulk-close dialog narrows them by its N (default 21) and moves the ticked ones one by one through `PATCH .../status`, at most 50 per run. Empty for the guest |
 | Open count | Total minus applications in a resolved lane |
 | Days to first reply, to rejection | Medians of `responded_at - applied_at` and `rejected_at - applied_at` (`percentile_cont(0.5)`) over the sent applications where both times are known; shown from 5 applications (`MEDIAN_MIN_SAMPLE`), "—" below |
 | Date range | `?range=30` or `90`: applications whose applied date is within that many days of the page's `now`. Rates, medians, funnel, outcomes, weekly figures, sources and repeat companies follow it; lane counts, upcoming interviews, stale applications and time in the current lane always show the present. How long a week stays open uses the all-time median |
@@ -318,7 +319,7 @@ src/
 | `timeline` | The timeline statement on PGlite after real moves: rewinds, renamed and deleted lanes |
 | `board-filter` | The filter matches company and role only; only rejected and closed lanes hide |
 | `weeks` | Monday week starts, month and year ends, empty weeks up to the current one, when a week stops being open |
-| `stale-clock` | The stale clock view, the stale rule in SQL and in TypeScript on the same cases (follow-ups, rewinds, snoozes, excluded lanes, the threshold), and the follow-up statement |
+| `stale-clock` | The stale clock view, the stale rule in SQL and in TypeScript on the same cases (follow-ups, rewinds, snoozes, excluded lanes, the threshold), the follow-up statement, and the ghost candidates |
 | `stats-range` | Only `30` and `90` are ranges (not `7`, `-1`, padded values or arrays); a range's start |
 | `sources` | Host extraction (case, `www.`, port, bad links) and the Other and Unknown groups |
 | `funnel` | Rank order with outcome lanes last; the share counted per card, not from lane totals (cards added mid-pipeline, skipped lanes) |

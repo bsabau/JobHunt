@@ -19,6 +19,7 @@ import { StatsPayload } from "@/lib/types";
 import { MEDIAN_MIN_SAMPLE } from "@/lib/constants";
 import { daysSince, daysUntil, formatDateOnly, todayInTimeZone } from "@/lib/timezone";
 import { STALE_LIST_HEADING_ID, StaleActions } from "@/components/stale-actions";
+import { CloseGhostedDialog } from "@/components/close-ghosted-dialog";
 import { fillWeeks, isWeekOpen, weekStartOf } from "@/lib/weeks";
 import { SOURCE_MIN_GROUP, UNKNOWN_SOURCE } from "@/lib/sources";
 import { STATS_RANGES, StatsRange, rangeLabel } from "@/lib/stats-range";
@@ -373,9 +374,18 @@ export function StatsCharts({
 
             <Card>
               <CardHeader>
-                <CardTitle id={STALE_LIST_HEADING_ID} tabIndex={-1} className="outline-none">
-                  Stale Applications
-                </CardTitle>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <CardTitle id={STALE_LIST_HEADING_ID} tabIndex={-1} className="outline-none">
+                    Stale Applications
+                  </CardTitle>
+                  {readOnly || data.closeStage === null || data.ghostCandidates.length === 0 ? null : (
+                    <CloseGhostedDialog
+                      candidates={data.ghostCandidates}
+                      closeStage={data.closeStage}
+                      medianReplyDays={data.openWeeks.fromMedian ? data.openWeeks.days : null}
+                    />
+                  )}
+                </div>
                 {data.range !== null ? <PresentNote /> : null}
               </CardHeader>
               <CardContent>
